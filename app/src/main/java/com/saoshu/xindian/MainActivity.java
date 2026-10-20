@@ -38,17 +38,29 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,14 +69,18 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int DB_VERSION = 1;
+    private static final int REQUEST_EXPORT_DATA = 2201;
+    private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int TEAL = Color.rgb(0, 150, 136);
     private static final int TEAL_DARK = Color.rgb(0, 105, 96);
     private static final int TEAL_DEEP = Color.rgb(0, 77, 76);
     private static final int TEAL_PALE = Color.rgb(224, 242, 241);
     private static final int TEAL_SOFT = Color.rgb(242, 249, 248);
-    private static final int PINK = Color.rgb(255, 64, 129);
-    private static final int PINK_DARK = Color.rgb(202, 38, 99);
-    private static final int PINK_PALE = Color.rgb(255, 236, 243);
+    // Legacy names are retained to keep the view code compact; the whole UI is
+    // now one teal family, with gold reserved for a few reading accents.
+    private static final int PINK = TEAL;
+    private static final int PINK_DARK = TEAL_DEEP;
+    private static final int PINK_PALE = TEAL_PALE;
     private static final int GOLD = Color.rgb(244, 195, 0);
     private static final int BG = Color.rgb(245, 247, 246);
     private static final int CARD = Color.WHITE;
@@ -81,7 +97,7 @@ public class MainActivity extends Activity {
     private LinearLayout mainColumn;
     private FrameLayout content;
     private LinearLayout bottomBar;
-    private final TextView[] navItems = new TextView[4];
+    private final TextView[] navItems = new TextView[5];
     private int currentTab = 0;
     private int detailBackTab = 0;
     private boolean detailOpen = false;
@@ -104,6 +120,8 @@ public class MainActivity extends Activity {
     private boolean booksLoading = false;
     private boolean booksEnded = false;
     private String bookQuery = "";
+    private boolean dataBusy = false;
+    private TextView dataStatus;
 
     private static final Pattern QUERY_CHUNKS =
             Pattern.compile("[a-z0-9]+|[\\u4e00-\\u9fff]+", Pattern.CASE_INSENSITIVE);
@@ -170,11 +188,18 @@ public class MainActivity extends Activity {
                 preferences.edit().putInt("db_asset_version", DB_VERSION).apply();
             }
             db = SQLiteDatabase.openDatabase(
-                    target.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
+                    target.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+            initializeLocalSchema();
             mainHandler.post(this::showMainShell);
         } catch (Exception error) {
             mainHandler.post(() -> showFatalError(error));
         }
+    }
+
+    private void initializeLocalSchema() {
+        db.execSQL("CREATE TABLE IF NOT EXISTS local_deleted (" +
+                "document_id INTEGER PRIMARY KEY," +
+                "deleted_at TEXT NOT NULL)");
     }
 
     private void copyDatabase(File target) throws Exception {
@@ -290,11 +315,11 @@ public class MainActivity extends Activity {
         bar.setPadding(dp(6), dp(4), dp(6), dp(4));
         bar.setBackgroundColor(PINK_DARK);
         bar.setElevation(dp(10));
-        String[] icons = {"⌂", "⌕", "▤", "★"};
-        String[] labels = {"首页", "搜索", "书库", "收藏"};
-        for (int i = 0; i < 4; i++) {
+        String[] icons = {"⌂", "⌕", "▤", "★", "⇅"};
+        String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
+        for (int i = 0; i < 5; i++) {
             final int tab = i;
-            TextView item = text(icons[i] + "  " + labels[i], 14, Color.WHITE, Typeface.BOLD);
+            TextView item = text(icons[i] + " " + labels[i], 12, Color.WHITE, Typeface.BOLD);
             item.setGravity(Gravity.CENTER);
             item.setClickable(true);
             item.setFocusable(true);
@@ -328,8 +353,10 @@ public class MainActivity extends Activity {
             content.addView(buildSearch());
         } else if (tab == 2) {
             content.addView(buildBooks());
-        } else {
+        } else if (tab == 3) {
             content.addView(buildFavorites());
+        } else {
+            content.addView(buildDataManager());
         }
     }
 
@@ -348,7 +375,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.0", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.1", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -362,9 +389,9 @@ public class MainActivity extends Activity {
 
         LinearLayout stats = row();
         stats.setPadding(0, dp(18), 0, 0);
-        long docs = metaLong("documents", 75176);
-        long booksCount = metaLong("books", 27153);
-        long sourceRows = metaLong("source_rows", 75747);
+        long docs = localDocumentCount();
+        long booksCount = localBookCount();
+        long sourceRows = visibleSourceCount();
         stats.addView(statBox(formatCompact(docs), "条内容"),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         stats.addView(statBox(formatCompact(booksCount), "本书名"),
@@ -433,6 +460,7 @@ public class MainActivity extends Activity {
         }));
         List<Document> recent = queryDocuments(
                 "SELECT d.* FROM documents d WHERE d.published_at<>'' " +
+                        "AND d.id NOT IN (SELECT document_id FROM local_deleted) " +
                         "ORDER BY d.published_at DESC,d.id DESC LIMIT 8", new String[]{});
         for (Document document : recent) {
             addWithTop(page, documentCard(document, 100, false), 10);
@@ -444,7 +472,7 @@ public class MainActivity extends Activity {
         TextView noteTitle = text("本地资料库 · 数据截止 2026-10-20", 13, TEAL_DARK, Typeface.BOLD);
         note.addView(noteTitle);
         TextView noteBody = text(
-                "共合并 75,747 次来源关系。原帖链接只用于追溯来源；本应用不提供小说文件下载。",
+                "资料可在“数据”页导出为本地备份，也可以随时删除或恢复。原帖链接只用于追溯来源。",
                 12, MUTED, Typeface.NORMAL);
         noteBody.setLineSpacing(0, 1.35f);
         addWithTop(note, noteBody, 6);
@@ -666,7 +694,7 @@ public class MainActivity extends Activity {
                 sql.append(" JOIN search_idx s ON s.docid=d.id");
             }
         }
-        sql.append(" WHERE 1=1");
+        sql.append(" WHERE d.id NOT IN (SELECT document_id FROM local_deleted)");
         if (!category.isEmpty()) {
             sql.append(" AND d.category=?");
             args.add(category);
@@ -706,7 +734,8 @@ public class MainActivity extends Activity {
 
         // A title/book lookup should still find an exact quote inside a long review.
         StringBuilder fallback = new StringBuilder("SELECT * FROM documents WHERE " +
-                "(title LIKE ? OR author LIKE ? OR content LIKE ?)");
+                "(title LIKE ? OR author LIKE ? OR content LIKE ?) " +
+                "AND id NOT IN (SELECT document_id FROM local_deleted)");
         List<String> fallbackArgs = new ArrayList<>();
         String like = "%" + query + "%";
         Collections.addAll(fallbackArgs, like, like, like);
@@ -900,8 +929,9 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             List<Document> related = new ArrayList<>();
-            String candidates = "SELECT d.* FROM documents d WHERE d.title_norm=?" +
-                    " OR instr(d.mentioned_books_json, ?)>0" +
+            String candidates = "SELECT d.* FROM documents d WHERE (d.title_norm=?" +
+                    " OR instr(d.mentioned_books_json, ?)>0)" +
+                    " AND d.id NOT IN (SELECT document_id FROM local_deleted)" +
                     " ORDER BY d.published_at DESC,d.hot_score DESC,d.id DESC LIMIT 300";
             Cursor cursor = db.rawQuery(candidates,
                     new String[]{book.titleNorm, book.title});
@@ -984,6 +1014,767 @@ public class MainActivity extends Activity {
         return page;
     }
 
+    private View buildDataManager() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+        page.setPadding(0, 0, 0, dp(24));
+        scroll.addView(page);
+
+        LinearLayout header = column();
+        header.setPadding(dp(17), dp(16), dp(17), dp(16));
+        header.setBackground(gradient(TEAL_DEEP, TEAL, 0));
+        TextView title = text("本地数据管理", 23, Color.WHITE, Typeface.BOLD);
+        header.addView(title);
+        TextView subtitle = text("备份、迁移或整理这台设备上的扫书资料", 12,
+                Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+        addWithTop(header, subtitle, 4);
+
+        LinearLayout stats = row();
+        stats.setPadding(0, dp(15), 0, 0);
+        stats.addView(dataStat(String.valueOf(localDocumentCount()), "本地内容"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        stats.addView(dataStat(String.valueOf(localBookCount()), "书名聚合"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        stats.addView(dataStat(String.valueOf(localDeletedCount()), "已删除"),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(stats);
+        page.addView(header);
+
+        TextView section = text("备份与迁移", 17, TEXT, Typeface.BOLD);
+        section.setPadding(dp(16), dp(18), dp(16), dp(2));
+        page.addView(section);
+
+        LinearLayout exportCard = dataActionCard(
+                "导出扫书",
+                "将全部未删除内容、正文和来源关系导出为 UTF-8 JSONL 文件，可在其他设备重新导入。",
+                "选择导出位置",
+                v -> requestDataExport());
+        addWithTop(page, exportCard, 10);
+
+        LinearLayout importCard = dataActionCard(
+                "导入扫书",
+                "选择由本应用导出的 JSONL 文件。按 canonical_key 自动查重，已有内容不会重复写入。",
+                "选择导入文件",
+                v -> requestDataImport());
+        addWithTop(page, importCard, 10);
+
+        int deleted = (int) localDeletedCount();
+        LinearLayout restoreCard = dataActionCard(
+                "恢复本地删除",
+                deleted == 0 ? "当前没有已删除内容。" :
+                        "恢复 " + deleted + " 条仅在本机隐藏的内容，并重新加入搜索与书名聚合。",
+                deleted == 0 ? "无需恢复" : "恢复全部",
+                v -> confirmRestoreAll());
+        if (deleted == 0) {
+            setChildrenEnabled(restoreCard, false);
+        }
+        addWithTop(page, restoreCard, 10);
+
+        LinearLayout statusCard = column();
+        statusCard.setPadding(dp(15), dp(14), dp(15), dp(14));
+        statusCard.setBackground(round(TEAL_SOFT, 14));
+        TextView statusTitle = text("操作状态", 13, TEAL_DARK, Typeface.BOLD);
+        statusCard.addView(statusTitle);
+        dataStatus = text(preferences.getString("last_data_message",
+                        "本地数据只保存在这台设备；删除与导入都会立即写入本地数据库。"),
+                12, MUTED, Typeface.NORMAL);
+        dataStatus.setLineSpacing(0, 1.35f);
+        addWithTop(statusCard, dataStatus, 6);
+        addWithTop(page, statusCard, 16);
+
+        TextView format = text(
+                "导入导出范围包含扫书、推书、排雷、讨论与求书记录。" +
+                        "本应用不下载小说正文，只管理已采集的评论与来源信息。",
+                11, MUTED, Typeface.NORMAL);
+        format.setLineSpacing(0, 1.4f);
+        format.setPadding(dp(18), dp(15), dp(18), 0);
+        page.addView(format);
+        return scroll;
+    }
+
+    private View dataStat(String value, String label) {
+        LinearLayout box = column();
+        box.setGravity(Gravity.CENTER);
+        TextView number = text(value, 19, Color.WHITE, Typeface.BOLD);
+        number.setGravity(Gravity.CENTER);
+        box.addView(number);
+        TextView caption = text(label, 11, Color.argb(215, 255, 255, 255), Typeface.NORMAL);
+        caption.setGravity(Gravity.CENTER);
+        box.addView(caption);
+        return box;
+    }
+
+    private LinearLayout dataActionCard(String title, String description,
+                                        String buttonLabel, View.OnClickListener listener) {
+        LinearLayout card = column();
+        card.setPadding(dp(16), dp(15), dp(16), dp(14));
+        card.setBackground(round(Color.WHITE, 15));
+        card.setElevation(dp(2));
+        TextView heading = text(title, 17, TEXT, Typeface.BOLD);
+        card.addView(heading);
+        TextView body = text(description, 12, MUTED, Typeface.NORMAL);
+        body.setLineSpacing(0, 1.35f);
+        addWithTop(card, body, 7);
+        TextView button = actionButton(buttonLabel, TEAL_PALE, TEAL_DARK);
+        button.setOnClickListener(dataBusy ? v -> toast("请等待当前操作完成") : listener);
+        addWithTop(card, button, 11);
+        return card;
+    }
+
+    private void setChildrenEnabled(ViewGroup root, boolean enabled) {
+        for (int i = 0; i < root.getChildCount(); i++) {
+            View child = root.getChildAt(i);
+            child.setEnabled(enabled);
+            child.setAlpha(enabled ? 1f : 0.5f);
+            if (child instanceof ViewGroup) {
+                setChildrenEnabled((ViewGroup) child, enabled);
+            }
+        }
+    }
+
+    private void requestDataExport() {
+        if (dataBusy) {
+            return;
+        }
+        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT)
+                .format(new Date());
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/x-ndjson");
+        intent.putExtra(Intent.EXTRA_TITLE, "扫书导出-" + stamp + ".jsonl");
+        startActivityForResult(intent, REQUEST_EXPORT_DATA);
+    }
+
+    private void requestDataImport() {
+        if (dataBusy) {
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_DATA);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+        Uri uri = data.getData();
+        if (requestCode == REQUEST_EXPORT_DATA) {
+            startDataExport(uri);
+        } else if (requestCode == REQUEST_IMPORT_DATA) {
+            startDataImport(uri);
+        }
+    }
+
+    private void startDataExport(Uri uri) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在导出扫书资料，请保持应用在前台…");
+        executor.execute(() -> {
+            try {
+                ExportResult result = exportData(uri);
+                finishDataOperation("导出完成：" + result.documents + " 条内容，" +
+                        result.sources + " 条来源关系。", false);
+            } catch (Exception error) {
+                finishDataOperation("导出失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private ExportResult exportData(Uri uri) throws Exception {
+        OutputStream raw = getContentResolver().openOutputStream(uri);
+        if (raw == null) {
+            throw new IllegalStateException("无法创建导出文件");
+        }
+        int documents = 0;
+        int sources = 0;
+        String exportedAt = isoNow();
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
+            JSONObject meta = new JSONObject();
+            meta.put("kind", "meta");
+            meta.put("format", "saoshu-xindian-jsonl");
+            meta.put("version", 1);
+            meta.put("exported_at", exportedAt);
+            meta.put("data_cutoff", metaValue("data_cutoff", ""));
+            writer.write(meta.toString());
+            writer.newLine();
+
+            Cursor cursor = db.rawQuery(
+                    "SELECT d.* FROM documents d " +
+                            "WHERE d.id NOT IN (SELECT document_id FROM local_deleted) " +
+                            "ORDER BY d.id", null);
+            try {
+                while (cursor.moveToNext()) {
+                    Document document = Document.fromCursor(cursor);
+                    JSONObject item = new JSONObject();
+                    item.put("kind", "document");
+                    item.put("canonical_key", cursor.getString(
+                            cursor.getColumnIndexOrThrow("canonical_key")));
+                    item.put("title", document.title);
+                    item.put("author", document.author);
+                    item.put("content", document.content);
+                    item.put("category", document.category);
+                    item.put("source_type", document.sourceType);
+                    item.put("forum", document.forum);
+                    item.put("mname", safe(cursor.getString(
+                            cursor.getColumnIndexOrThrow("mname"))));
+                    item.put("zname", safe(cursor.getString(
+                            cursor.getColumnIndexOrThrow("zname"))));
+                    item.put("published_at", document.date);
+                    item.put("source_url", document.sourceUrl);
+                    item.put("word", document.word);
+                    item.put("hot_score", cursor.getLong(
+                            cursor.getColumnIndexOrThrow("hot_score")));
+                    item.put("mentioned_books_json", document.mentionedJson);
+                    writer.write(item.toString());
+                    writer.newLine();
+                    documents++;
+                }
+            } finally {
+                cursor.close();
+            }
+
+            Cursor sourceCursor = db.rawQuery(
+                    "SELECT d.canonical_key,s.source_kind,s.source_ref,s.source_url " +
+                            "FROM document_sources s JOIN documents d ON d.id=s.document_id " +
+                            "WHERE d.id NOT IN (SELECT document_id FROM local_deleted) " +
+                            "ORDER BY d.id,s.id", null);
+            try {
+                while (sourceCursor.moveToNext()) {
+                    JSONObject source = new JSONObject();
+                    source.put("kind", "source");
+                    source.put("document_key", safe(sourceCursor.getString(0)));
+                    source.put("source_kind", safe(sourceCursor.getString(1)));
+                    source.put("source_ref", safe(sourceCursor.getString(2)));
+                    source.put("source_url", safe(sourceCursor.getString(3)));
+                    writer.write(source.toString());
+                    writer.newLine();
+                    sources++;
+                }
+            } finally {
+                sourceCursor.close();
+            }
+
+            JSONObject end = new JSONObject();
+            end.put("kind", "end");
+            end.put("documents", documents);
+            end.put("sources", sources);
+            writer.write(end.toString());
+            writer.newLine();
+            writer.flush();
+        }
+        return new ExportResult(documents, sources);
+    }
+
+    private void startDataImport(Uri uri) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在读取并查重导入文件…");
+        executor.execute(() -> {
+            try {
+                ImportResult result = importData(uri);
+                finishDataOperation("导入完成：新增 " + result.inserted +
+                        " 条，恢复 " + result.restored + " 条，跳过重复 " +
+                        result.skipped + " 条，补充来源 " + result.sources + " 条。", false);
+            } catch (Exception error) {
+                finishDataOperation("导入失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private ImportResult importData(Uri uri) throws Exception {
+        InputStream raw = getContentResolver().openInputStream(uri);
+        if (raw == null) {
+            throw new IllegalStateException("无法读取导入文件");
+        }
+        int inserted = 0;
+        int restored = 0;
+        int skipped = 0;
+        int sourcesAdded = 0;
+        db.beginTransaction();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(raw, StandardCharsets.UTF_8))) {
+            String line;
+            int lineNumber = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                JSONObject item;
+                try {
+                    item = new JSONObject(line);
+                } catch (Exception error) {
+                    throw new IllegalArgumentException("第 " + lineNumber + " 行不是有效 JSON");
+                }
+                String kind = item.optString("kind", "");
+                if ("meta".equals(kind) || "end".equals(kind)) {
+                    continue;
+                }
+                if ("document".equals(kind)) {
+                    String content = item.optString("content", "").trim();
+                    if (content.isEmpty()) {
+                        skipped++;
+                        continue;
+                    }
+                    String title = normalizedTitle(item.optString("title", "未命名内容"));
+                    String key = item.optString("canonical_key", "").trim();
+                    if (key.isEmpty()) {
+                        key = deterministicKey(content, title);
+                    }
+                    ExistingDocument existing = findDocumentByKey(key);
+                    if (existing != null) {
+                        if (existing.deleted) {
+                            restoreDocument(existing.id);
+                            restored++;
+                        } else {
+                            skipped++;
+                        }
+                        continue;
+                    }
+
+                    String author = safe(item.optString("author", ""));
+                    String mentioned = item.optString("mentioned_books_json", "[]");
+                    if (!isJsonArray(mentioned)) {
+                        mentioned = "[]";
+                    }
+                    String date = safe(item.optString("published_at", ""));
+                    String sourceType = safe(item.optString("source_type", "导入"));
+                    long word = item.optLong("word", compact(content).length());
+                    db.execSQL("INSERT INTO documents(" +
+                                    "canonical_key,title,title_norm,author,author_norm," +
+                                    "content,category,source_type,forum,mname,zname," +
+                                    "published_at,source_url,word,hot_score," +
+                                    "mentioned_books_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            new Object[]{key, title, compact(title), author, compact(author),
+                                    content, safe(item.optString("category", "讨论")),
+                                    sourceType, safe(item.optString("forum", "")),
+                                    safe(item.optString("mname", "")),
+                                    safe(item.optString("zname", "")), date,
+                                    safe(item.optString("source_url", "")), word,
+                                    item.optLong("hot_score", 0), mentioned});
+                    long id = db.compileStatement("SELECT last_insert_rowid()")
+                            .simpleQueryForLong();
+                    indexDocumentSearch(id, title, author, mentioned);
+                    adjustBookIndex(title, mentioned, sourceType, date, id, word, 1);
+                    inserted++;
+                } else if ("source".equals(kind)) {
+                    String documentKey = item.optString("document_key", "");
+                    Long documentId = documentIdForKey(documentKey);
+                    if (documentId == null) {
+                        continue;
+                    }
+                    String sourceKind = safe(item.optString("source_kind", "导入"));
+                    String sourceRef = safe(item.optString("source_ref", ""));
+                    String sourceUrl = safe(item.optString("source_url", ""));
+                    if (insertSourceIfMissing(documentId, sourceKind, sourceRef, sourceUrl)) {
+                        sourcesAdded++;
+                    }
+                }
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+            raw.close();
+        }
+        return new ImportResult(inserted, restored, skipped, sourcesAdded);
+    }
+
+    private void confirmLocalDelete(Document document) {
+        if (dataBusy) {
+            toast("请等待当前操作完成");
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("从本地删除？")
+                .setMessage("这条内容将从搜索、书库和收藏中隐藏。内置原始数据不会被修改，" +
+                        "之后可在“数据”页恢复。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("本地删除", (dialog, which) -> {
+                    dataBusy = true;
+                    toast("正在删除本地记录…");
+                    executor.execute(() -> {
+                        try {
+                            boolean removed = deleteDocumentLocally(document);
+                            mainHandler.post(() -> {
+                                dataBusy = false;
+                                if (removed) {
+                                    toast("已从本地资料库删除");
+                                    switchTab(detailBackTab);
+                                } else {
+                                    toast("这条内容已经删除");
+                                }
+                            });
+                        } catch (Exception error) {
+                            mainHandler.post(() -> {
+                                dataBusy = false;
+                                toast("删除失败：" + readableError(error));
+                            });
+                        }
+                    });
+                })
+                .show();
+    }
+
+    private boolean deleteDocumentLocally(Document document) throws Exception {
+        db.beginTransaction();
+        try {
+            db.execSQL("INSERT OR IGNORE INTO local_deleted(document_id,deleted_at) " +
+                    "VALUES(?,?)", new Object[]{document.id, isoNow()});
+            int changed = db.compileStatement("SELECT changes()").simpleQueryForLong() > 0 ? 1 : 0;
+            if (changed == 0) {
+                db.setTransactionSuccessful();
+                return false;
+            }
+            db.execSQL("DELETE FROM search_idx WHERE rowid=?",
+                    new Object[]{document.id});
+            adjustBookIndex(document.title, document.mentionedJson,
+                    document.sourceType, document.date, document.id, document.word, -1);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        removeFavorite(document.id);
+        preferences.edit().putString("last_data_message",
+                "已在本地删除《" + previewText(document.title, 36) + "》。").apply();
+        return true;
+    }
+
+    private void confirmRestoreAll() {
+        int count = (int) localDeletedCount();
+        if (count == 0) {
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("恢复全部本地删除？")
+                .setMessage("将恢复 " + count + " 条内容，并重新加入搜索、书库和书名聚合。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("恢复", (dialog, which) -> {
+                    dataBusy = true;
+                    updateDataStatus("正在恢复本地删除…");
+                    executor.execute(() -> {
+                        try {
+                            int restored = restoreAllDeleted();
+                            finishDataOperation("已恢复 " + restored + " 条本地删除内容。", false);
+                        } catch (Exception error) {
+                            finishDataOperation("恢复失败：" + readableError(error), true);
+                        }
+                    });
+                })
+                .show();
+    }
+
+    private int restoreAllDeleted() throws Exception {
+        List<Long> ids = new ArrayList<>();
+        Cursor cursor = db.rawQuery(
+                "SELECT document_id FROM local_deleted ORDER BY deleted_at,rowid", null);
+        try {
+            while (cursor.moveToNext()) {
+                ids.add(cursor.getLong(0));
+            }
+        } finally {
+            cursor.close();
+        }
+        db.beginTransaction();
+        try {
+            for (long id : ids) {
+                restoreDocument(id);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return ids.size();
+    }
+
+    private void restoreDocument(long id) {
+        Cursor cursor = db.rawQuery("SELECT * FROM documents WHERE id=?",
+                new String[]{String.valueOf(id)});
+        try {
+            if (!cursor.moveToFirst()) {
+                db.delete("local_deleted", "document_id=?",
+                        new String[]{String.valueOf(id)});
+                return;
+            }
+            Document document = Document.fromCursor(cursor);
+            db.delete("local_deleted", "document_id=?",
+                    new String[]{String.valueOf(id)});
+            indexDocumentSearch(id, document.title, document.author, document.mentionedJson);
+            adjustBookIndex(document.title, document.mentionedJson,
+                    document.sourceType, document.date, id, document.word, 1);
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private void finishDataOperation(String message, boolean error) {
+        mainHandler.post(() -> {
+            dataBusy = false;
+            preferences.edit().putString("last_data_message", message).apply();
+            if (currentTab == 4 && !detailOpen) {
+                switchTab(4);
+            } else if (!error) {
+                toast(message);
+            }
+        });
+    }
+
+    private void updateDataStatus(String message) {
+        mainHandler.post(() -> {
+            if (dataStatus != null) {
+                dataStatus.setText(message);
+            }
+        });
+    }
+
+    private long localDocumentCount() {
+        return scalarLong("SELECT count(*) FROM documents WHERE id NOT IN " +
+                "(SELECT document_id FROM local_deleted)", 0);
+    }
+
+    private long localDeletedCount() {
+        return scalarLong("SELECT count(*) FROM local_deleted", 0);
+    }
+
+    private long localBookCount() {
+        return scalarLong("SELECT count(*) FROM books", 0);
+    }
+
+    private long visibleSourceCount() {
+        return scalarLong("SELECT count(*) FROM document_sources s " +
+                "WHERE s.document_id NOT IN (SELECT document_id FROM local_deleted)", 0);
+    }
+
+    private long scalarLong(String sql, long fallback) {
+        try (Cursor cursor = db.rawQuery(sql, null)) {
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0);
+            }
+        } catch (Exception ignored) {
+        }
+        return fallback;
+    }
+
+    private String metaValue(String key, String fallback) {
+        try (Cursor cursor = db.rawQuery("SELECT value FROM meta WHERE key=?",
+                new String[]{key})) {
+            if (cursor.moveToFirst()) {
+                return safe(cursor.getString(0));
+            }
+        }
+        return fallback;
+    }
+
+    private String isoNow() {
+        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT)
+                .format(new Date());
+    }
+
+    private String normalizedTitle(String value) {
+        String title = safe(value).replace('\r', ' ').replace('\n', ' ').trim();
+        return title.isEmpty() ? "未命名内容" : title;
+    }
+
+    private String deterministicKey(String content, String title) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((compact(title) + "\n" + compact(content))
+                    .getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder();
+            for (byte value : bytes) {
+                result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+            }
+            return result.toString();
+        } catch (Exception ignored) {
+            return UUID.nameUUIDFromBytes((title + content)
+                    .getBytes(StandardCharsets.UTF_8)).toString();
+        }
+    }
+
+    private ExistingDocument findDocumentByKey(String canonicalKey) {
+        Cursor cursor = db.rawQuery(
+                "SELECT d.id, EXISTS(SELECT 1 FROM local_deleted ld " +
+                        "WHERE ld.document_id=d.id) AS deleted " +
+                        "FROM documents d WHERE d.canonical_key=? LIMIT 1",
+                new String[]{canonicalKey});
+        try {
+            if (cursor.moveToFirst()) {
+                return new ExistingDocument(cursor.getLong(0), cursor.getInt(1) != 0);
+            }
+        } finally {
+            cursor.close();
+        }
+        return null;
+    }
+
+    private Long documentIdForKey(String canonicalKey) {
+        if (canonicalKey == null || canonicalKey.isEmpty()) {
+            return null;
+        }
+        try (Cursor cursor = db.rawQuery(
+                "SELECT id FROM documents WHERE canonical_key=? LIMIT 1",
+                new String[]{canonicalKey})) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : null;
+        }
+    }
+
+    private boolean isJsonArray(String value) {
+        try {
+            new JSONArray(value);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void indexDocumentSearch(long id, String title, String author,
+                                     String mentionedJson) {
+        StringBuilder searchable = new StringBuilder(safe(title)).append(' ')
+                .append(safe(author));
+        try {
+            JSONArray books = new JSONArray(mentionedJson);
+            for (int i = 0; i < books.length(); i++) {
+                searchable.append(' ').append(books.optString(i, ""));
+            }
+        } catch (Exception ignored) {
+        }
+        String tokens = buildFtsQuery(searchable.toString());
+        db.execSQL("DELETE FROM search_idx WHERE rowid=?", new Object[]{id});
+        db.execSQL("INSERT INTO search_idx(rowid,tokens) VALUES(?,?)",
+                new Object[]{id, tokens});
+    }
+
+    private boolean insertSourceIfMissing(long documentId, String kind,
+                                          String ref, String url) {
+        try (Cursor cursor = db.rawQuery(
+                "SELECT 1 FROM document_sources WHERE document_id=? " +
+                        "AND source_kind=? AND source_ref=? AND source_url=? LIMIT 1",
+                new String[]{String.valueOf(documentId), safe(kind),
+                        safe(ref), safe(url)})) {
+            if (cursor.moveToFirst()) {
+                return false;
+            }
+        }
+        db.execSQL("INSERT INTO document_sources(" +
+                        "document_id,source_kind,source_ref,source_url) VALUES(?,?,?,?)",
+                new Object[]{documentId, safe(kind), safe(ref), safe(url)});
+        return true;
+    }
+
+    private Map<String, String> candidateBookTitles(String title, String mentionedJson) {
+        Map<String, String> candidates = new java.util.LinkedHashMap<>();
+        String cleanTitle = normalizedTitle(title).replaceAll("^《|》$", "").trim();
+        boolean titleLooksLikePost = cleanTitle.matches(
+                ".*(近期|记录|书单|推荐|求书|合集|杂谈|吐槽|楼中楼).*");
+        if (cleanTitle.length() >= 2 && cleanTitle.length() <= 80 && !titleLooksLikePost) {
+            candidates.put(compact(cleanTitle), cleanTitle);
+        }
+        try {
+            JSONArray books = new JSONArray(mentionedJson);
+            for (int i = 0; i < books.length(); i++) {
+                String book = normalizedTitle(books.optString(i, ""))
+                        .replaceAll("^《|》$", "").trim();
+                if (book.length() >= 2 && book.length() <= 80) {
+                    String norm = compact(book);
+                    if (!candidates.containsKey(norm)) {
+                        candidates.put(norm, book);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return candidates;
+    }
+
+    private void adjustBookIndex(String title, String mentionedJson,
+                                 String sourceType, String date, long documentId,
+                                 long word, int delta) {
+        for (Map.Entry<String, String> entry :
+                candidateBookTitles(title, mentionedJson).entrySet()) {
+            String norm = entry.getKey();
+            String display = entry.getValue();
+            int exists;
+            Cursor check = db.rawQuery(
+                    "SELECT 1 FROM books WHERE title_norm=? LIMIT 1",
+                    new String[]{norm});
+            try {
+                exists = check.moveToFirst() ? 1 : 0;
+            } finally {
+                check.close();
+            }
+            if (delta > 0) {
+                if (exists == 0) {
+                    String sources;
+                    try {
+                        sources = new JSONArray().put(safe(sourceType)).toString();
+                    } catch (Exception ignored) {
+                        sources = "[]";
+                    }
+                    db.execSQL("INSERT OR IGNORE INTO books(" +
+                                    "title_norm,title,review_count,best_document_id," +
+                                    "latest_at,sources_json) VALUES(?,?,?,?,?,?)",
+                            new Object[]{norm, display, 1, documentId,
+                                    safe(date), sources});
+                } else {
+                    db.execSQL("UPDATE books SET review_count=review_count+1," +
+                                    "latest_at=CASE WHEN latest_at IS NULL OR latest_at<? " +
+                                    "THEN ? ELSE latest_at END WHERE title_norm=?",
+                            new Object[]{safe(date), safe(date), norm});
+                }
+            } else {
+                if (exists == 0) {
+                    continue;
+                }
+                db.execSQL("UPDATE books SET review_count=review_count-1 " +
+                        "WHERE title_norm=?", new Object[]{norm});
+                Cursor replacement = db.rawQuery(
+                        "SELECT id FROM documents WHERE (title_norm=? OR " +
+                                "instr(mentioned_books_json,?)>0) AND id NOT IN " +
+                                "(SELECT document_id FROM local_deleted) " +
+                                "ORDER BY word DESC,published_at DESC,id DESC LIMIT 1",
+                        new String[]{norm, display});
+                try {
+                    if (replacement.moveToFirst()) {
+                        long best = replacement.getLong(0);
+                        db.execSQL("UPDATE books SET best_document_id=? " +
+                                "WHERE title_norm=?", new Object[]{best, norm});
+                    } else {
+                        db.execSQL("DELETE FROM books WHERE title_norm=?",
+                                new Object[]{norm});
+                    }
+                } finally {
+                    replacement.close();
+                }
+            }
+        }
+    }
+
+    private void removeFavorite(long id) {
+        Set<String> saved = preferences.getStringSet(
+                "favorite_ids", new LinkedHashSet<>());
+        Set<String> updated = new LinkedHashSet<>(saved == null
+                ? Collections.emptySet() : saved);
+        updated.remove(String.valueOf(id));
+        preferences.edit().putStringSet("favorite_ids", updated).apply();
+    }
+
+    private String readableError(Exception error) {
+        String message = error.getMessage();
+        return message == null || message.trim().isEmpty()
+                ? error.getClass().getSimpleName() : message;
+    }
+
     private List<Document> favoritesDocuments() {
         Set<String> saved = preferences.getStringSet("favorite_ids", new LinkedHashSet<>());
         if (saved == null || saved.isEmpty()) {
@@ -998,7 +1789,8 @@ public class MainActivity extends Activity {
             placeholders.append('?');
         }
         return queryDocuments("SELECT * FROM documents WHERE id IN (" + placeholders +
-                ") ORDER BY published_at DESC,id DESC", ids.toArray(new String[0]));
+                ") AND id NOT IN (SELECT document_id FROM local_deleted) " +
+                "ORDER BY published_at DESC,id DESC", ids.toArray(new String[0]));
     }
 
     private void openDocument(long documentId) {
@@ -1153,6 +1945,10 @@ public class MainActivity extends Activity {
         pager.addView(next, weightedAction());
         addWithTop(article, pager, 10);
 
+        TextView deleteLocal = actionButton("本地删除此条", Color.WHITE, TEAL_DARK);
+        deleteLocal.setOnClickListener(v -> confirmLocalDelete(document));
+        addWithTop(article, deleteLocal, 9);
+
         favorite.setOnClickListener(v -> {
             boolean now = toggleFavorite(document.id);
             favorite.setText(now ? "★ 已收藏" : "☆ 收藏");
@@ -1238,10 +2034,12 @@ public class MainActivity extends Activity {
         if (newer) {
             sql = "SELECT * FROM documents WHERE " +
                     "(published_at>? OR (published_at=? AND id<?)) " +
+                    "AND id NOT IN (SELECT document_id FROM local_deleted) " +
                     "ORDER BY published_at ASC,id DESC LIMIT 1";
         } else {
             sql = "SELECT * FROM documents WHERE " +
                     "(published_at<? OR (published_at=? AND id>?)) " +
+                    "AND id NOT IN (SELECT document_id FROM local_deleted) " +
                     "ORDER BY published_at DESC,id ASC LIMIT 1";
         }
         List<Document> result = queryDocuments(sql,
@@ -1390,7 +2188,8 @@ public class MainActivity extends Activity {
     }
 
     private Document loadDocument(long id) {
-        List<Document> found = queryDocuments("SELECT * FROM documents WHERE id=?",
+        List<Document> found = queryDocuments("SELECT * FROM documents WHERE id=? " +
+                        "AND id NOT IN (SELECT document_id FROM local_deleted)",
                 new String[]{String.valueOf(id)});
         return found.isEmpty() ? null : found.get(0);
     }
@@ -1468,34 +2267,10 @@ public class MainActivity extends Activity {
     }
 
     private int categoryTextColor(String category) {
-        if ("排雷".equals(category)) {
-            return Color.rgb(174, 58, 48);
-        }
-        if ("推书".equals(category)) {
-            return Color.rgb(142, 91, 0);
-        }
-        if ("求书".equals(category)) {
-            return Color.rgb(102, 73, 151);
-        }
-        if ("讨论".equals(category)) {
-            return Color.rgb(52, 101, 164);
-        }
         return TEAL_DARK;
     }
 
     private int categoryPaleColor(String category) {
-        if ("排雷".equals(category)) {
-            return Color.rgb(255, 235, 232);
-        }
-        if ("推书".equals(category)) {
-            return Color.rgb(255, 247, 219);
-        }
-        if ("求书".equals(category)) {
-            return Color.rgb(242, 235, 252);
-        }
-        if ("讨论".equals(category)) {
-            return Color.rgb(232, 241, 253);
-        }
         return TEAL_PALE;
     }
 
@@ -1759,6 +2534,40 @@ public class MainActivity extends Activity {
             String result = sourcesJson.replace("[\"", "").replace("\"]", "")
                     .replace("\",\"", " / ").replace("\"", "");
             return result.isEmpty() ? "来源未知" : result;
+        }
+    }
+
+    private static class ExportResult {
+        final int documents;
+        final int sources;
+
+        ExportResult(int documents, int sources) {
+            this.documents = documents;
+            this.sources = sources;
+        }
+    }
+
+    private static class ImportResult {
+        final int inserted;
+        final int restored;
+        final int skipped;
+        final int sources;
+
+        ImportResult(int inserted, int restored, int skipped, int sources) {
+            this.inserted = inserted;
+            this.restored = restored;
+            this.skipped = skipped;
+            this.sources = sources;
+        }
+    }
+
+    private static class ExistingDocument {
+        final long id;
+        final boolean deleted;
+
+        ExistingDocument(long id, boolean deleted) {
+            this.id = id;
+            this.deleted = deleted;
         }
     }
 
