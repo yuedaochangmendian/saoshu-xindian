@@ -1,0 +1,18 @@
+# Android/Gradle generated files
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+
+# Large binary data is distributed through GitHub Releases
+app/src/main/assets/saoshu.db
+*.apk
+*.aab
+*.zip
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp

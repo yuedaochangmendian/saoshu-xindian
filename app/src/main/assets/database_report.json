@@ -1,0 +1,26 @@
+{
+  "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
+  "bytes": 177451008,
+  "integrity": "ok",
+  "documents": 75176,
+  "books": 27153,
+  "source_rows": 75747,
+  "categories": {
+    "卷首": 6,
+    "扫书": 43625,
+    "推书": 5473,
+    "讨论": 19879,
+    "排雷": 4727,
+    "求书": 1394,
+    "书评": 72
+  },
+  "sources": {
+    "无": 6,
+    "百度贴吧": 33553,
+    "雪群推书": 10902,
+    "丫丫书屋": 322,
+    "龙空论坛": 51,
+    "资料库": 29939,
+    "文本页面": 403
+  }
+}
