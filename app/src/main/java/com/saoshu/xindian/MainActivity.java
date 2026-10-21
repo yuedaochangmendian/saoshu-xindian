@@ -86,7 +86,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 7;
+    private static final int DB_VERSION = 8;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -273,7 +273,7 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 65_536L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v7.db");
+            File legacy = new File(getFilesDir(), "saoshu.pre-v8.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -640,7 +640,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v3.1", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v3.2", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1824,6 +1824,7 @@ public class MainActivity extends Activity {
         long cleanedDuplicates = metaLong("removed_duplicates", 0);
         long cleanedReplies = metaLong("removed_meaningless", 0);
         long cleanedShortAll = metaLong("removed_short_all", 0);
+        long cleanedSerialized = metaLong("removed_serialized", 0);
         TextView format = text(
                 "导入导出范围包含扫书、推书、排雷、讨论与求书记录。" +
                         (cleanedDuplicates > 0
@@ -1837,6 +1838,10 @@ public class MainActivity extends Activity {
                         (cleanedShortAll > 0
                                 ? " 全库不足 10 字的内容已清理 " +
                                 formatCompact(cleanedShortAll) + " 条。"
+                                : "") +
+                        (cleanedSerialized > 0
+                                ? " 含 text/u3000 等解析残留的帖子已清理 " +
+                                formatCompact(cleanedSerialized) + " 条。"
                                 : "") +
                         " 单条删除可在阅读页执行；单条导出也在阅读页操作。" +
                         " 本应用不下载小说正文，只管理已采集的评论与来源信息。",

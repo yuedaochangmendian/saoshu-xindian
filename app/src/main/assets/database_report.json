@@ -1,23 +1,24 @@
 {
-  "bytes": 105320448,
+  "bytes": 59727872,
   "integrity": "ok",
-  "documents": 52152,
-  "books": 27109,
-  "source_rows": 73065,
+  "documents": 34508,
+  "books": 18053,
+  "source_rows": 44402,
   "removed_duplicates": 18668,
   "duplicate_threshold": 0.60,
   "removed_noise": 3,
   "removed_meaningless": 430,
   "removed_recent_short": 966,
   "removed_short_all": 1238,
+  "removed_serialized": 17644,
   "search_index": "built locally on first launch",
   "categories": {
     "卷首": 6,
-    "扫书": 23060,
-    "推书": 4930,
-    "讨论": 18253,
-    "排雷": 4585,
-    "求书": 1250,
+    "扫书": 20653,
+    "推书": 2592,
+    "讨论": 10085,
+    "排雷": 515,
+    "求书": 589,
     "书评": 68
   },
   "sources": {
@@ -26,7 +27,7 @@
     "雪群推书": 10537,
     "丫丫书屋": 310,
     "龙空论坛": 42,
-    "资料库": 29220,
+    "资料库": 11566,
     "文本页面": 197
   }
 }
