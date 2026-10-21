@@ -638,7 +638,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.3", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.4", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -692,13 +692,10 @@ public class MainActivity extends Activity {
         page.setBackgroundColor(BG);
 
         LinearLayout header = column();
-        header.setPadding(dp(16), dp(14), dp(16), dp(13));
+        header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(gradient(PINK_DARK, PINK, 0));
-        TextView title = text("全库搜索", 23, Color.WHITE, Typeface.BOLD);
+        TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
-        TextView hint = text("标题、作者、书名聚合与正文都可查", 12,
-                Color.argb(225, 255, 255, 255), Typeface.NORMAL);
-        addWithTop(header, hint, 3);
 
         LinearLayout inputRow = row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -715,31 +712,31 @@ public class MainActivity extends Activity {
         searchField.setPadding(0, 0, 0, 0);
         searchField.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         inputRow.addView(searchField, new LinearLayout.LayoutParams(
-                0, dp(51), 1f));
+                0, dp(46), 1f));
         TextView searchButton = text("搜索", 14, Color.WHITE, Typeface.BOLD);
         searchButton.setGravity(Gravity.CENTER);
         searchButton.setBackground(rippleRound(TEAL, Color.TRANSPARENT, 11,
                 Color.argb(55, 255, 255, 255)));
         searchButton.setPadding(dp(17), dp(9), dp(17), dp(9));
         inputRow.addView(searchButton);
-        addWithTop(header, inputRow, 13);
+        addWithTop(header, inputRow, 7);
 
         LinearLayout categoryChoices = choiceRow(
                 new String[]{"全部类型", "扫书", "推书", "排雷", "讨论", "求书"},
                 searchCategory.isEmpty() ? "全部类型" : searchCategory,
                 value -> searchCategory = value.equals("全部类型") ? "" : value);
-        addWithTop(header, categoryChoices, 11);
+        addWithTop(header, categoryChoices, 7);
         LinearLayout sourceChoices = choiceRow(
                 new String[]{"全部来源", "百度贴吧", "雪群推书", "资料库",
                         "文本页面", "丫丫书屋", "剪贴板"},
                 searchSource.isEmpty() ? "全部来源" : searchSource,
                 value -> searchSource = value.equals("全部来源") ? "" : value);
-        addWithTop(header, sourceChoices, 7);
+        addWithTop(header, sourceChoices, 5);
         page.addView(header);
 
         LinearLayout resultHeader = row();
         resultHeader.setGravity(Gravity.CENTER_VERTICAL);
-        resultHeader.setPadding(dp(17), dp(11), dp(10), dp(5));
+        resultHeader.setPadding(dp(13), dp(7), dp(8), dp(4));
         searchStatus = text("最近收录的内容", 13, MUTED, Typeface.BOLD);
         resultHeader.addView(searchStatus, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -760,7 +757,7 @@ public class MainActivity extends Activity {
         searchList.setDivider(null);
         searchList.setDividerHeight(0);
         searchList.setClipToPadding(false);
-        searchList.setPadding(dp(10), dp(4), dp(10), dp(64));
+        searchList.setPadding(dp(9), dp(2), dp(9), dp(64));
         searchList.setBackgroundColor(BG);
         page.addView(searchList, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -814,7 +811,7 @@ public class MainActivity extends Activity {
             TextView chip = text(option, 12, option.equals(active[0]) ? Color.WHITE : PINK_DARK,
                     Typeface.BOLD);
             chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(11), dp(6), dp(11), dp(6));
+            chip.setPadding(dp(9), dp(4), dp(9), dp(4));
             chip.setBackground(rippleRound(option.equals(active[0])
                             ? PINK_DARK : Color.argb(210, 255, 255, 255),
                     Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
@@ -833,7 +830,7 @@ public class MainActivity extends Activity {
             });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.rightMargin = dp(6);
+            params.rightMargin = dp(5);
             row.addView(chip, params);
         }
         scroll.addView(row);
@@ -958,13 +955,10 @@ public class MainActivity extends Activity {
         page.setBackgroundColor(BG);
 
         LinearLayout header = column();
-        header.setPadding(dp(17), dp(15), dp(17), dp(14));
+        header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(gradient(TEAL_DARK, TEAL, 0));
-        TextView title = text("书名聚合", 23, Color.WHITE, Typeface.BOLD);
+        TextView title = text("书库", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text("按评论数量聚合；同一本书可追溯全部相关楼内回复", 12,
-                Color.argb(220, 255, 255, 255), Typeface.NORMAL);
-        addWithTop(header, subtitle, 3);
         LinearLayout input = row();
         input.setGravity(Gravity.CENTER_VERTICAL);
         input.setPadding(dp(12), 0, dp(12), 0);
@@ -980,8 +974,8 @@ public class MainActivity extends Activity {
         bookField.setHint("搜索书名");
         bookField.setHintTextColor(Color.rgb(145, 153, 151));
         bookField.setPadding(dp(8), 0, 0, 0);
-        input.addView(bookField, new LinearLayout.LayoutParams(0, dp(49), 1f));
-        addWithTop(header, input, 12);
+        input.addView(bookField, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        addWithTop(header, input, 7);
         page.addView(header);
 
         bookList = new ListView(this);
@@ -989,7 +983,7 @@ public class MainActivity extends Activity {
         bookList.setDivider(null);
         bookList.setDividerHeight(0);
         bookList.setClipToPadding(false);
-        bookList.setPadding(dp(11), dp(8), dp(11), dp(64));
+        bookList.setPadding(dp(9), dp(4), dp(9), dp(64));
         bookList.setBackgroundColor(BG);
         bookAdapter = new BookAdapter();
         bookList.setAdapter(bookAdapter);
@@ -1171,19 +1165,19 @@ public class MainActivity extends Activity {
         scroll.addView(page);
 
         LinearLayout header = column();
-        header.setPadding(dp(5), dp(16), dp(5), dp(14));
-        TextView title = text("收藏与简记", 23, TEXT, Typeface.BOLD);
+        header.setPadding(dp(4), dp(9), dp(4), dp(6));
+        TextView title = text("收藏与简记", 20, TEXT, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text("收藏阅读内容，同时记录自己的书评与随笔", 12,
+        TextView subtitle = text("收藏阅读内容与个人随笔", 11,
                 MUTED, Typeface.NORMAL);
-        addWithTop(header, subtitle, 3);
+        addWithTop(header, subtitle, 2);
         page.addView(header);
 
         List<Document> favorites = favoritesDocuments();
         LinearLayout favoriteHeader = row();
         favoriteHeader.setGravity(Gravity.CENTER_VERTICAL);
-        favoriteHeader.setPadding(dp(4), dp(12), dp(4), dp(8));
-        TextView favoriteTitle = text("收藏夹 · " + favorites.size(), 18,
+        favoriteHeader.setPadding(dp(4), dp(7), dp(4), dp(5));
+        TextView favoriteTitle = text("收藏夹 · " + favorites.size(), 17,
                 TEXT, Typeface.BOLD);
         favoriteHeader.addView(favoriteTitle, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1219,8 +1213,8 @@ public class MainActivity extends Activity {
 
         LinearLayout noteHeader = row();
         noteHeader.setGravity(Gravity.CENTER_VERTICAL);
-        noteHeader.setPadding(dp(4), dp(24), dp(4), dp(8));
-        TextView noteTitle = text("简记", 18, TEXT, Typeface.BOLD);
+        noteHeader.setPadding(dp(4), dp(16), dp(4), dp(5));
+        TextView noteTitle = text("简记", 17, TEXT, Typeface.BOLD);
         noteHeader.addView(noteTitle, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView trash = text("回收站", 12, TEAL_DARK, Typeface.BOLD);
@@ -1602,27 +1596,19 @@ public class MainActivity extends Activity {
         scroll.addView(page);
 
         LinearLayout header = column();
-        header.setPadding(dp(17), dp(16), dp(17), dp(16));
+        header.setPadding(dp(12), dp(10), dp(12), dp(9));
         header.setBackground(gradient(TEAL_DEEP, TEAL, 0));
-        TextView title = text("数据库管理", 23, Color.WHITE, Typeface.BOLD);
+        TextView title = text("数据管理", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text("导入、导出、单条删除与用户数据备份", 12,
-                Color.argb(220, 255, 255, 255), Typeface.NORMAL);
-        addWithTop(header, subtitle, 4);
-
-        LinearLayout stats = row();
-        stats.setPadding(0, dp(15), 0, 0);
-        stats.addView(dataStat(String.valueOf(localDocumentCount()), "本地内容"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(dataStat(String.valueOf(localBookCount()), "书名聚合"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(dataStat(String.valueOf(localDeletedCount()), "已删除"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        header.addView(stats);
+        TextView subtitle = text(formatCompact(localDocumentCount()) + " 条内容 · " +
+                        formatCompact(localBookCount()) + " 本书名 · " +
+                        formatCompact(localDeletedCount()) + " 条本地删除",
+                11, Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+        addWithTop(header, subtitle, 3);
         page.addView(header);
 
         TextView appearance = text("主题颜色", 17, TEXT, Typeface.BOLD);
-        appearance.setPadding(dp(16), dp(18), dp(16), dp(6));
+        appearance.setPadding(dp(14), dp(11), dp(14), dp(5));
         page.addView(appearance);
         HorizontalScrollView themeScroll = new HorizontalScrollView(this);
         themeScroll.setHorizontalScrollBarEnabled(false);
@@ -1815,18 +1801,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.rightMargin = dp(8);
         return params;
-    }
-
-    private View dataStat(String value, String label) {
-        LinearLayout box = column();
-        box.setGravity(Gravity.CENTER);
-        TextView number = text(value, 19, Color.WHITE, Typeface.BOLD);
-        number.setGravity(Gravity.CENTER);
-        box.addView(number);
-        TextView caption = text(label, 11, Color.argb(215, 255, 255, 255), Typeface.NORMAL);
-        caption.setGravity(Gravity.CENTER);
-        box.addView(caption);
-        return box;
     }
 
     private LinearLayout dataActionCard(String title, String description,
