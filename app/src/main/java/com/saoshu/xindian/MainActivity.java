@@ -608,9 +608,9 @@ public class MainActivity extends Activity {
             ((ScrollView) target).setOnScrollChangeListener(
                     (view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                         if (scrollY > oldScrollY + dp(2)) {
-                            showBottomBar();
-                        } else if (scrollY < oldScrollY - dp(2)) {
                             hideBottomBar();
+                        } else if (scrollY < oldScrollY - dp(2)) {
+                            showBottomBar();
                         }
                     });
         } else if (target instanceof ListView) {
@@ -638,9 +638,9 @@ public class MainActivity extends Activity {
         if (lastListScrollSignature >= 0) {
             long delta = signature - lastListScrollSignature;
             if (delta > dp(2)) {
-                showBottomBar();
-            } else if (delta < -dp(2)) {
                 hideBottomBar();
+            } else if (delta < -dp(2)) {
+                showBottomBar();
             }
         }
         lastListScrollSignature = signature;
@@ -697,7 +697,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.5", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.6", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
