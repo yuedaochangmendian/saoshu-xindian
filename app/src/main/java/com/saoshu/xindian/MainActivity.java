@@ -145,13 +145,15 @@ public class MainActivity extends Activity {
     private ListView searchList;
     private Runnable pendingSearch;
     private String glossaryQuery = "";
-    private LinearLayout glossaryContainer;
     private TextView glossaryCount;
     private List<GlossaryTerm> glossaryTerms;
+    private List<GlossaryTerm> glossaryShown = new ArrayList<>();
     private TextView bookModeButton;
     private TextView glossaryModeButton;
-    private ScrollView glossaryScroll;
-    private int glossaryReturnScrollY;
+    private ListView glossaryList;
+    private TextView glossaryEmptyState;
+    private int glossaryReturnPosition;
+    private int glossaryReturnTop;
     private int searchBackTab = TAB_HOME;
     private ScrollView homeScroll;
     private ScrollView collectionScroll;
@@ -705,7 +707,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.13", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.14", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -868,40 +870,26 @@ public class MainActivity extends Activity {
     }
 
     private void renderGlossary() {
-        if (glossaryContainer == null || glossaryCount == null) {
+        if (glossaryList == null || glossaryCount == null) {
             return;
         }
         List<GlossaryTerm> all = loadGlossaryTerms();
         String needle = safe(glossaryQuery).toLowerCase(Locale.ROOT);
-        List<GlossaryTerm> shown = new ArrayList<>();
+        glossaryShown.clear();
         for (GlossaryTerm term : all) {
             if (needle.isEmpty()
                     || term.term.toLowerCase(Locale.ROOT).contains(needle)
                     || term.explanation.toLowerCase(Locale.ROOT).contains(needle)) {
-                shown.add(term);
+                glossaryShown.add(term);
             }
         }
         glossaryCount.setText(needle.isEmpty()
                 ? all.size() + " 个词条 · 点击卡片查看完整释义"
-                : "找到 " + shown.size() + " 个词条");
-        glossaryContainer.removeAllViews();
-        if (shown.isEmpty()) {
-            LinearLayout empty = column();
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(16), dp(28), dp(16), dp(24));
-            empty.setBackground(round(Color.WHITE, 14));
-            TextView hint = text("没有匹配的词条", 17, TEXT, Typeface.BOLD);
-            hint.setGravity(Gravity.CENTER);
-            empty.addView(hint);
-            TextView sub = text("尝试搜索简称、书名现象或雷点名称。",
-                    12, MUTED, Typeface.NORMAL);
-            sub.setGravity(Gravity.CENTER);
-            addWithTop(empty, sub, 7);
-            glossaryContainer.addView(empty);
-            return;
-        }
-        for (int i = 0; i < shown.size(); i++) {
-            addWithTop(glossaryContainer, createGlossaryCard(shown.get(i), i), dp(7));
+                : "找到 " + glossaryShown.size() + " 个词条");
+        if (glossaryList.getAdapter() instanceof GlossaryAdapter) {
+            ((GlossaryAdapter) glossaryList.getAdapter()).notifyDataSetChanged();
+        } else {
+            glossaryList.setAdapter(new GlossaryAdapter());
         }
     }
 
@@ -941,7 +929,11 @@ public class MainActivity extends Activity {
     }
 
     private void showGlossaryDetail(GlossaryTerm glossary) {
-        glossaryReturnScrollY = glossaryScroll == null ? 0 : glossaryScroll.getScrollY();
+        if (glossaryList != null) {
+            glossaryReturnPosition = glossaryList.getFirstVisiblePosition();
+            View first = glossaryList.getChildAt(0);
+            glossaryReturnTop = first == null ? 0 : first.getTop();
+        }
         LinearLayout content = column();
         content.setPadding(dp(20), dp(8), dp(20), dp(12));
         TextView body = text(glossary.explanation, 14,
@@ -963,9 +955,10 @@ public class MainActivity extends Activity {
                         copyText(glossary.term + " 名词解释", glossary.explanation))
                 .create();
         detailDialog.setOnDismissListener(ignored -> {
-            if (glossaryScroll != null) {
-                glossaryScroll.post(() ->
-                        glossaryScroll.scrollTo(0, glossaryReturnScrollY));
+            if (glossaryList != null) {
+                glossaryList.post(() ->
+                        glossaryList.setSelectionFromTop(
+                                glossaryReturnPosition, glossaryReturnTop));
             }
         });
         detailDialog.show();
@@ -1189,8 +1182,17 @@ public class MainActivity extends Activity {
     }
 
     private TextView libraryModeButton(String label) {
-        TextView button = text(label, 12, Color.WHITE, Typeface.BOLD);
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
         button.setGravity(Gravity.CENTER);
+        button.setTextSize(12);
+        button.setTypeface(Typeface.create("sans", Typeface.BOLD));
+        button.setTextColor(Color.WHITE);
+        button.setMinHeight(0);
+        button.setMinimumHeight(dp(44));
+        button.setMinWidth(0);
+        button.setPadding(dp(8), 0, dp(8), 0);
         button.setClickable(true);
         button.setFocusable(true);
         return button;
@@ -1236,12 +1238,27 @@ public class MainActivity extends Activity {
         glossaryCount.setPadding(dp(17), dp(6), dp(17), dp(5));
         page.addView(glossaryCount);
 
-        glossaryScroll = new ScrollView(this);
-        glossaryScroll.setFillViewport(true);
-        glossaryContainer = column();
-        glossaryContainer.setPadding(dp(12), 0, dp(12), dp(28));
-        glossaryScroll.addView(glossaryContainer);
-        page.addView(glossaryScroll, new LinearLayout.LayoutParams(
+        FrameLayout listArea = new FrameLayout(this);
+        glossaryList = new ListView(this);
+        configureListFeedback(glossaryList);
+        glossaryList.setDivider(null);
+        glossaryList.setDividerHeight(0);
+        glossaryList.setClipToPadding(false);
+        glossaryList.setPadding(dp(9), 0, dp(9), dp(12));
+        glossaryList.setBackgroundColor(BG);
+        glossaryList.setAdapter(new GlossaryAdapter());
+        listArea.addView(glossaryList, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        glossaryEmptyState = text("没有匹配的词条\n尝试搜索简称、书名现象或雷点名称。",
+                14, MUTED, Typeface.NORMAL);
+        glossaryEmptyState.setGravity(Gravity.CENTER);
+        glossaryEmptyState.setBackgroundColor(BG);
+        glossaryEmptyState.setPadding(dp(18), dp(18), dp(18), dp(18));
+        glossaryEmptyState.setVisibility(View.GONE);
+        listArea.addView(glossaryEmptyState, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        glossaryList.setEmptyView(glossaryEmptyState);
+        page.addView(listArea, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         content.addView(page);
 
@@ -4317,6 +4334,34 @@ public class MainActivity extends Activity {
             holder.addView(view, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             return holder;
+        }
+    }
+
+    private class GlossaryAdapter extends BaseAdapter {
+        @Override
+        public int getCount() {
+            return glossaryShown.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return glossaryShown.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            LinearLayout outer = column();
+            outer.setPadding(0, dp(4), 0, dp(4));
+            outer.addView(createGlossaryCard(glossaryShown.get(position), position),
+                    new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+            return outer;
         }
     }
 
