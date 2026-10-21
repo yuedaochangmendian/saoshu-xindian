@@ -11,6 +11,8 @@ app/src/main/assets/saoshu.db
 *.apk
 *.aab
 *.zip
+__pycache__/
+*.pyc
 
 # OS/editor files
 .DS_Store

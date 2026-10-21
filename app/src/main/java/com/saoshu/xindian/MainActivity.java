@@ -61,6 +61,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -79,7 +80,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private int TEAL;
@@ -113,6 +114,8 @@ public class MainActivity extends Activity {
     private int detailBackTab = 0;
     private boolean detailOpen = false;
     private long currentDetailId = -1;
+    private boolean bottomHidden = false;
+    private Runnable pendingBottomShow;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -254,7 +257,7 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 150_000_000L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v2.db");
+            File legacy = new File(getFilesDir(), "saoshu.pre-v3.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -520,6 +523,7 @@ public class MainActivity extends Activity {
             bottomBar = buildBottomBar();
             mainColumn.addView(bottomBar, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
+            bottomHidden = false;
             setContentView(root);
             switchTab(0);
         } catch (Exception error) {
@@ -584,6 +588,7 @@ public class MainActivity extends Activity {
                     i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
                     Color.TRANSPARENT, 14, Color.argb(55, 255, 255, 255)));
         }
+        showBottomBar();
         content.removeAllViews();
         if (tab == 0) {
             content.addView(buildHome());
@@ -596,6 +601,77 @@ public class MainActivity extends Activity {
         } else {
             content.addView(buildDataManager());
         }
+    }
+
+    private void attachAutoHideBottom(View target) {
+        final float[] lastY = {Float.NaN};
+        target.setOnTouchListener((view, event) -> {
+            if (bottomBar == null || detailOpen) {
+                return false;
+            }
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                lastY[0] = event.getRawY();
+                if (pendingBottomShow != null) {
+                    mainHandler.removeCallbacks(pendingBottomShow);
+                    pendingBottomShow = null;
+                }
+            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) {
+                if (Float.isNaN(lastY[0])) {
+                    lastY[0] = event.getRawY();
+                } else {
+                    float delta = lastY[0] - event.getRawY();
+                    if (delta > dp(2)) {
+                        hideBottomBar();
+                    } else if (delta < -dp(2)) {
+                        showBottomBar();
+                    }
+                    lastY[0] = event.getRawY();
+                }
+            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                    || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
+                lastY[0] = Float.NaN;
+                if (pendingBottomShow != null) {
+                    mainHandler.removeCallbacks(pendingBottomShow);
+                }
+                pendingBottomShow = this::showBottomBar;
+                mainHandler.postDelayed(pendingBottomShow, 520);
+            }
+            return false;
+        });
+    }
+
+    private void hideBottomBar() {
+        if (bottomBar == null || detailOpen || bottomHidden) {
+            return;
+        }
+        bottomHidden = true;
+        bottomBar.animate()
+                .translationY(bottomBar.getHeight() + dp(8))
+                .alpha(0f)
+                .setDuration(170)
+                .withEndAction(() -> {
+                    if (bottomHidden && bottomBar != null) {
+                        bottomBar.setVisibility(View.GONE);
+                    }
+                })
+                .start();
+    }
+
+    private void showBottomBar() {
+        if (bottomBar == null || detailOpen || !bottomHidden) {
+            return;
+        }
+        bottomHidden = false;
+        bottomBar.animate().cancel();
+        bottomBar.setVisibility(View.VISIBLE);
+        bottomBar.setTranslationY(bottomBar.getHeight() > 0
+                ? bottomBar.getHeight() + dp(8) : dp(72));
+        bottomBar.setAlpha(0f);
+        bottomBar.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(190)
+                .start();
     }
 
     private View buildHome() {
@@ -613,7 +689,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.2", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.3", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -717,6 +793,7 @@ public class MainActivity extends Activity {
         noteBody.setLineSpacing(0, 1.35f);
         addWithTop(note, noteBody, 6);
         addWithTop(page, note, 16);
+        attachAutoHideBottom(scroll);
         return scroll;
     }
 
@@ -846,6 +923,7 @@ public class MainActivity extends Activity {
             }
         });
         mainHandler.post(this::launchSearch);
+        attachAutoHideBottom(searchList);
         return page;
     }
 
@@ -1079,6 +1157,7 @@ public class MainActivity extends Activity {
         bookOffset = 0;
         booksEnded = false;
         loadBooks(true);
+        attachAutoHideBottom(bookList);
         return page;
     }
 
@@ -1149,7 +1228,7 @@ public class MainActivity extends Activity {
         LinearLayout hero = column();
         hero.setPadding(dp(18), dp(16), dp(18), dp(16));
         hero.setBackground(gradient(TEAL_DARK, TEAL, 0));
-        TextView title = text(book.title, 22, Color.WHITE, Typeface.BOLD);
+        TextView title = text(book.displayTitle(), 22, Color.WHITE, Typeface.BOLD);
         title.setLineSpacing(0, 1.15f);
         hero.addView(title);
         TextView meta = text("评论聚合 " + book.reviewCount + " 条 · " +
@@ -1174,6 +1253,7 @@ public class MainActivity extends Activity {
         list.setBackgroundColor(BG);
         page.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        attachAutoHideBottom(list);
         content.addView(page);
 
         executor.execute(() -> {
@@ -1261,6 +1341,7 @@ public class MainActivity extends Activity {
                     openDocument(favorites.get(position).id));
             page.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            attachAutoHideBottom(list);
         }
         return page;
     }
@@ -1358,17 +1439,23 @@ public class MainActivity extends Activity {
         addWithTop(page, statusCard, 16);
 
         long cleanedDuplicates = metaLong("removed_duplicates", 0);
+        long cleanedReplies = metaLong("removed_meaningless", 0);
         TextView format = text(
                 "导入导出范围包含扫书、推书、排雷、讨论与求书记录。" +
                         (cleanedDuplicates > 0
                                 ? " 内置资料库已清理 " + formatCompact(cleanedDuplicates) +
                                 " 条高相似重复内容。"
                                 : "") +
+                        (cleanedReplies > 0
+                                ? " 另过滤 " + formatCompact(cleanedReplies) +
+                                " 条无意义短回复。"
+                                : "") +
                         " 本应用不下载小说正文，只管理已采集的评论与来源信息。",
                 11, MUTED, Typeface.NORMAL);
         format.setLineSpacing(0, 1.4f);
         format.setPadding(dp(18), dp(15), dp(18), 0);
         page.addView(format);
+        attachAutoHideBottom(scroll);
         return scroll;
     }
 
@@ -1426,8 +1513,12 @@ public class MainActivity extends Activity {
                                         String buttonLabel, View.OnClickListener listener) {
         LinearLayout card = column();
         card.setPadding(dp(16), dp(15), dp(16), dp(14));
-        card.setBackground(round(Color.WHITE, 15));
+        card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 15,
+                Color.argb(30, 0, 0, 0)));
         card.setElevation(dp(2));
+        card.setClickable(true);
+        card.setFocusable(true);
+        bindHapticFeedback(card);
         TextView heading = text(title, 17, TEXT, Typeface.BOLD);
         card.addView(heading);
         TextView body = text(description, 12, MUTED, Typeface.NORMAL);
@@ -1435,6 +1526,9 @@ public class MainActivity extends Activity {
         addWithTop(card, body, 7);
         TextView button = actionButton(buttonLabel, TEAL_PALE, TEAL_DARK);
         button.setOnClickListener(dataBusy ? v -> toast("请等待当前操作完成") : listener);
+        card.setOnClickListener(dataBusy
+                ? v -> toast("请等待当前操作完成")
+                : v -> listener.onClick(v));
         addWithTop(card, button, 11);
         return card;
     }
@@ -1451,7 +1545,7 @@ public class MainActivity extends Activity {
     }
 
     private CharSequence formatScanContent(String content) {
-        String raw = safe(content)
+        String raw = stripSourceMetadata(safe(content))
                 .replace("\r\n", "\n")
                 .replace('\r', '\n')
                 .replaceAll("看高清大图[，,]?\\s*打开贴吧App", "")
@@ -2244,39 +2338,6 @@ public class MainActivity extends Activity {
         bodyCard.addView(body);
         addWithTop(article, bodyCard, 10);
 
-        List<Source> sources = loadSources(document.id);
-        if (!sources.isEmpty()) {
-            LinearLayout sourceCard = column();
-            sourceCard.setPadding(dp(16), dp(14), dp(16), dp(13));
-            sourceCard.setBackground(round(TEAL_PALE, 14));
-            TextView sourceTitle = text("来源与合并记录", 14, TEAL_DEEP, Typeface.BOLD);
-            sourceCard.addView(sourceTitle);
-            int visibleSources = Math.min(5, sources.size());
-            for (int i = 0; i < visibleSources; i++) {
-                Source source = sources.get(i);
-                String label = "· " + source.kind +
-                        (source.ref.isEmpty() ? "" : "  " + source.ref);
-                TextView line = text(label, 12, TEAL_DARK, Typeface.NORMAL);
-                line.setPadding(0, dp(6), 0, dp(2));
-                line.setSingleLine(true);
-                line.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                if (!source.url.isEmpty()) {
-                    final String url = source.url;
-                    line.setTextColor(PINK_DARK);
-                    line.setOnClickListener(v -> openUrl(url));
-                }
-                sourceCard.addView(line);
-            }
-            if (sources.size() > 5) {
-                TextView more = text("查看全部 " + sources.size() + " 条来源 ›",
-                        12, PINK_DARK, Typeface.BOLD);
-                more.setPadding(0, dp(8), 0, 0);
-                more.setOnClickListener(v -> showSourcesDialog(sources));
-                sourceCard.addView(more);
-            }
-            addWithTop(article, sourceCard, 10);
-        }
-
         List<String> mentioned = readMentionedBooks(document.mentionedJson);
         if (!mentioned.isEmpty()) {
             LinearLayout booksCard = column();
@@ -2387,28 +2448,6 @@ public class MainActivity extends Activity {
         detailOpen = false;
         currentDetailId = -1;
         switchTab(detailBackTab);
-    }
-
-    private void showSourcesDialog(List<Source> sources) {
-        StringBuilder message = new StringBuilder();
-        for (int i = 0; i < sources.size(); i++) {
-            Source source = sources.get(i);
-            if (i > 0) {
-                message.append("\n\n");
-            }
-            message.append(i + 1).append(". ").append(source.kind);
-            if (!source.ref.isEmpty()) {
-                message.append("\n记录：").append(source.ref);
-            }
-            if (!source.url.isEmpty()) {
-                message.append("\n链接：").append(source.url);
-            }
-        }
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("全部来源")
-                .setMessage(message.toString())
-                .setPositiveButton("关闭", null)
-                .show();
     }
 
     private Document adjacentDocument(Document current, boolean newer) {
@@ -2553,7 +2592,7 @@ public class MainActivity extends Activity {
     }
 
     private String previewText(String content, int limit) {
-        String text = content == null ? "" : content
+        String text = stripSourceMetadata(content == null ? "" : content)
                 .replace("\r", " ")
                 .replace("\n", " ")
                 .replace("\t", " ")
@@ -2563,6 +2602,15 @@ public class MainActivity extends Activity {
             return text;
         }
         return text.substring(0, limit).trim() + "…";
+    }
+
+    private static String stripSourceMetadata(String value) {
+        return safe(value)
+                .replaceAll("(?m)^\\s*(?:来源|原始来源|合并记录|来源链接)" +
+                        "\\s*[:：].*$", "")
+                .replaceAll("https?://\\S+", "")
+                .replaceAll("\\(@[^\\n)]*#[^\\n)]*\\)", "")
+                .trim();
     }
 
     private List<Document> queryDocuments(String sql, String[] args) {
@@ -2580,22 +2628,6 @@ public class MainActivity extends Activity {
                         "AND id NOT IN (SELECT document_id FROM local_deleted)",
                 new String[]{String.valueOf(id)});
         return found.isEmpty() ? null : found.get(0);
-    }
-
-    private List<Source> loadSources(long documentId) {
-        List<Source> sources = new ArrayList<>();
-        Cursor cursor = db.rawQuery("SELECT source_kind,source_ref,source_url " +
-                        "FROM document_sources WHERE document_id=? ORDER BY id",
-                new String[]{String.valueOf(documentId)});
-        try {
-            while (cursor.moveToNext()) {
-                sources.add(new Source(safe(cursor.getString(0)),
-                        safe(cursor.getString(1)), safe(cursor.getString(2))));
-            }
-        } finally {
-            cursor.close();
-        }
-        return sources;
     }
 
     private List<String> readMentionedBooks(String json) {
@@ -2652,6 +2684,24 @@ public class MainActivity extends Activity {
             return "";
         }
         return value.toLowerCase(Locale.ROOT).replaceAll("[\\p{P}\\p{S}\\s]+", "");
+    }
+
+    private static String cleanDisplayTitle(String value) {
+        String title = Normalizer.normalize(stripSourceMetadata(safe(value)), Normalizer.Form.NFKC)
+                .replace("\r", " ")
+                .replace("\n", " ")
+                .replace("\u200b", "")
+                .trim();
+        title = title.replaceAll("\\s*[·•]\\s*楼中楼\\s*$", "");
+        title = title.replaceAll("^\\s*(?:回复|楼中楼)\\s*[:：]\\s*", "");
+        title = title.replaceAll("^\\s*[（(]?再补档[）)]?\\s*", "");
+        title = title.replaceAll("^\\s*【\\s*Time\\s*[:：].*?】\\s*", "");
+        title = title.replaceAll("(?i)\\[(?:图片|image)\\]|看高清大图[，,]?\\s*打开贴吧App", "");
+        title = title.replaceAll("_20\\d{6}_\\d{6}\\s*$", "");
+        title = title.replaceAll("\\s+", " ").trim();
+        title = title.replaceAll("\\s+([,，。.!！？:：;；])", "$1");
+        title = title.replaceAll("^[\\s·•\\-—_]+|[\\s·•\\-—_]+$", "");
+        return title.isEmpty() ? "未命名内容" : title;
     }
 
     private int categoryTextColor(String category) {
@@ -2853,6 +2903,12 @@ public class MainActivity extends Activity {
             card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
                     Color.argb(35, 0, 0, 0)));
             card.setElevation(dp(1));
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setOnClickListener(v -> {
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                showBookDetail(book);
+            });
 
             TextView rank = text(String.valueOf(position + 1), 13,
                     position < 3 ? PINK_DARK : MUTED, Typeface.BOLD);
@@ -2862,7 +2918,7 @@ public class MainActivity extends Activity {
 
             LinearLayout info = column();
             info.setPadding(dp(11), 0, 0, 0);
-            TextView title = text(book.title, 16, TEXT, Typeface.BOLD);
+            TextView title = text(book.displayTitle(), 16, TEXT, Typeface.BOLD);
             title.setMaxLines(1);
             title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             info.addView(title);
@@ -2913,10 +2969,20 @@ public class MainActivity extends Activity {
         }
 
         static Document fromCursor(Cursor cursor) {
+            String content = safe(cursor.getString(cursor.getColumnIndexOrThrow("content")));
+            String title = cleanDisplayTitle(
+                    cursor.getString(cursor.getColumnIndexOrThrow("title")));
+            if ("未命名内容".equals(title) && !content.isEmpty()) {
+                String firstLine = stripSourceMetadata(content).split("\\n", 2)[0].trim();
+                if (!firstLine.isEmpty()) {
+                    title = firstLine.length() > 32
+                            ? firstLine.substring(0, 32).trim() + "…" : firstLine;
+                }
+            }
             return new Document(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
-                    safe(cursor.getString(cursor.getColumnIndexOrThrow("title"))),
+                    title,
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("author"))),
-                    safe(cursor.getString(cursor.getColumnIndexOrThrow("content"))),
+                    content,
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("category"))),
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("source_type"))),
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("forum"))),
@@ -2962,6 +3028,10 @@ public class MainActivity extends Activity {
                     .replace("\",\"", " / ").replace("\"", "");
             return result.isEmpty() ? "来源未知" : result;
         }
+
+        String displayTitle() {
+            return cleanDisplayTitle(title);
+        }
     }
 
     private static class ExportResult {
@@ -2998,15 +3068,4 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static class Source {
-        final String kind;
-        final String ref;
-        final String url;
-
-        Source(String kind, String ref, String url) {
-            this.kind = kind;
-            this.ref = ref;
-            this.url = url;
-        }
-    }
 }
