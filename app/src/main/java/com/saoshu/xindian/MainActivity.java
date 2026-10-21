@@ -629,134 +629,62 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout page = column();
-        page.setPadding(dp(16), dp(16), dp(16), dp(74));
+        page.setPadding(dp(12), dp(12), dp(12), dp(64));
         scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout hero = column();
-        hero.setPadding(dp(20), dp(20), dp(20), dp(18));
-        hero.setBackground(gradient(TEAL_DARK, TEAL, 20));
-        LinearLayout brandRow = row();
-        TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
-        brandRow.addView(brand, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v3.2", 12, Color.WHITE, Typeface.BOLD);
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
+        titleRow.addView(brand, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView edition = text("v3.3", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
-        edition.setPadding(dp(10), dp(5), dp(10), dp(5));
-        edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
-        brandRow.addView(edition);
-        hero.addView(brandRow);
+        edition.setPadding(dp(8), dp(4), dp(8), dp(4));
+        edition.setBackground(round(TEAL_PALE, 9));
+        titleRow.addView(edition);
+        page.addView(titleRow);
 
-        TextView subtitle = text("把散落在贴吧与资料库里的扫书评论，收进一本随身书。",
-                14, Color.argb(225, 255, 255, 255), Typeface.NORMAL);
-        subtitle.setLineSpacing(0, 1.25f);
-        addWithTop(hero, subtitle, 7);
-
-        LinearLayout stats = row();
-        stats.setPadding(0, dp(18), 0, 0);
         long docs = localDocumentCount();
         long booksCount = localBookCount();
         long sourceRows = visibleSourceCount();
-        stats.addView(statBox(formatCompact(docs), "条内容"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(statBox(formatCompact(booksCount), "本书名"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        stats.addView(statBox(formatCompact(sourceRows), "次来源"),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        hero.addView(stats);
-        page.addView(hero);
+        TextView statsLine = text(formatCompact(docs) + " 条内容  ·  " +
+                        formatCompact(booksCount) + " 本书名  ·  " +
+                        formatCompact(sourceRows) + " 条来源",
+                11, MUTED, Typeface.NORMAL);
+        addWithTop(page, statsLine, 3);
 
         LinearLayout searchCard = row();
         searchCard.setGravity(Gravity.CENTER_VERTICAL);
-        searchCard.setPadding(dp(17), dp(14), dp(13), dp(14));
-        searchCard.setBackground(rippleRound(PINK, Color.TRANSPARENT, 15,
-                Color.argb(60, 255, 255, 255)));
-        searchCard.setElevation(dp(3));
-        TextView searchIcon = text("⌕", 25, Color.WHITE, Typeface.BOLD);
+        searchCard.setPadding(dp(13), dp(9), dp(11), dp(9));
+        searchCard.setBackground(rippleRound(TEAL_PALE, LINE, 12,
+                Color.argb(35, 0, 0, 0)));
+        TextView searchIcon = text("⌕", 20, TEAL_DARK, Typeface.BOLD);
         searchCard.addView(searchIcon);
-        TextView searchPrompt = text("搜索书名、作者或正文关键词", 15,
-                Color.WHITE, Typeface.NORMAL);
-        searchPrompt.setPadding(dp(10), 0, 0, 0);
+        TextView searchPrompt = text("搜索书名、作者或正文", 14,
+                TEXT, Typeface.NORMAL);
+        searchPrompt.setPadding(dp(8), 0, 0, 0);
         searchCard.addView(searchPrompt, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView go = text("进入 ›", 13, PINK_DARK, Typeface.BOLD);
-        go.setPadding(dp(10), dp(6), dp(10), dp(6));
-        go.setBackground(round(Color.WHITE, 12));
+        TextView go = text("搜索 ›", 12, Color.WHITE, Typeface.BOLD);
+        go.setPadding(dp(10), dp(5), dp(10), dp(5));
+        go.setBackground(round(TEAL, 10));
         searchCard.addView(go);
         searchCard.setOnClickListener(v -> switchTab(1));
-        addWithTop(page, searchCard, 14);
+        addWithTop(page, searchCard, 10);
 
-        page.addView(sectionTitle("按类型浏览", "全部搜索", v -> switchTab(1)));
-
-        HorizontalScrollView categoriesScroll = new HorizontalScrollView(this);
-        categoriesScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout categoryRow = row();
-        Cursor categories = db.rawQuery(
-                "SELECT name,count FROM categories ORDER BY count DESC", null);
-        try {
-            while (categories.moveToNext()) {
-                String name = safe(categories.getString(0));
-                long count = categories.getLong(1);
-                TextView chip = text(name + "  " + formatCompact(count), 13,
-                        categoryTextColor(name), Typeface.BOLD);
-                chip.setGravity(Gravity.CENTER);
-                chip.setPadding(dp(15), dp(9), dp(15), dp(9));
-                chip.setBackground(rippleRound(categoryPaleColor(name),
-                        Color.TRANSPARENT, 18, Color.argb(45, 0, 0, 0)));
-                chip.setOnClickListener(v -> {
-                    searchQuery = "";
-                    searchCategory = name;
-                    searchSource = "";
-                    searchFullText = false;
-                    switchTab(1);
-                });
-                LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                cp.rightMargin = dp(8);
-                categoryRow.addView(chip, cp);
-            }
-        } finally {
-            categories.close();
-        }
-        categoriesScroll.addView(categoryRow);
-        page.addView(categoriesScroll);
-
-        page.addView(sectionTitle("最近收录", "最近 8 条", v -> {
+        page.addView(sectionTitle("最近扫书", "查看全部", v -> {
             searchCategory = "";
             switchTab(1);
         }));
         List<Document> recent = queryDocuments(
                 "SELECT d.* FROM documents d WHERE d.published_at<>'' " +
                         "AND d.id NOT IN (SELECT document_id FROM local_deleted) " +
-                        "ORDER BY d.published_at DESC,d.id DESC LIMIT 8", new String[]{});
+                        "ORDER BY d.published_at DESC,d.id DESC LIMIT 20", new String[]{});
         for (Document document : recent) {
-            addWithTop(page, documentCard(document, 100, false), 10);
+            addWithTop(page, documentCard(document, 120, false), 8);
         }
-
-        LinearLayout note = column();
-        note.setPadding(dp(15), dp(14), dp(15), dp(14));
-        note.setBackground(round(TEAL_SOFT, 14));
-        TextView noteTitle = text("本地资料库 · 数据截止 2026-10-20", 13, TEAL_DARK, Typeface.BOLD);
-        note.addView(noteTitle);
-        TextView noteBody = text(
-                "资料可在“数据”页导出为本地备份，也可以随时删除或恢复。原帖链接只用于追溯来源。",
-                12, MUTED, Typeface.NORMAL);
-        noteBody.setLineSpacing(0, 1.35f);
-        addWithTop(note, noteBody, 6);
-        addWithTop(page, note, 16);
         return scroll;
-    }
-
-    private View statBox(String value, String label) {
-        LinearLayout box = column();
-        box.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView number = text(value, 20, Color.WHITE, Typeface.BOLD);
-        number.setGravity(Gravity.CENTER);
-        box.addView(number);
-        TextView caption = text(label, 12, Color.argb(215, 255, 255, 255), Typeface.NORMAL);
-        caption.setGravity(Gravity.CENTER);
-        box.addView(caption);
-        return box;
     }
 
     private View buildSearch() {
