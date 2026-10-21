@@ -11,8 +11,8 @@ from dedupe_app_content import rebuild_books
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "app" / "src" / "main" / "assets" / "saoshu.db"
 REPORT_PATH = ROOT / "build" / "reports" / "recent_short_filter_report.json"
-CUTOFF = "2026-09-20"
-MIN_CHARS = 50
+DEFAULT_CUTOFF = "2026-09-20"
+DEFAULT_MIN_CHARS = 50
 
 
 def effective_length(value):
@@ -25,21 +25,26 @@ def effective_length(value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--all-dates", action="store_true")
+    parser.add_argument("--min-chars", type=int, default=DEFAULT_MIN_CHARS)
     args = parser.parse_args()
+    cutoff = None if args.all_dates else DEFAULT_CUTOFF
+    minimum_chars = max(1, args.min_chars)
     db = sqlite3.connect(DB_PATH)
     before = db.execute("SELECT count(*) FROM documents").fetchone()[0]
     removed = []
-    for row in db.execute(
-        """
+    query = """
         SELECT id,title,content,published_at,category
           FROM documents
-         WHERE published_at>=?
-         ORDER BY published_at DESC,id DESC
-        """,
-        (CUTOFF,),
-    ):
+    """
+    params = ()
+    if cutoff is not None:
+        query += " WHERE published_at>=?"
+        params = (cutoff,)
+    query += " ORDER BY published_at DESC,id DESC"
+    for row in db.execute(query, params):
         length = effective_length(row[2])
-        if length < MIN_CHARS:
+        if length < minimum_chars:
             removed.append({
                 "id": row[0],
                 "title": row[1],
@@ -49,8 +54,8 @@ def main():
                 "effective_characters": length,
             })
     report = {
-        "cutoff": CUTOFF,
-        "minimum_characters": MIN_CHARS,
+        "cutoff": cutoff or "all-dates",
+        "minimum_characters": minimum_chars,
         "removed_count": len(removed),
         "before_count": before,
         "applied": bool(args.apply),
@@ -76,11 +81,12 @@ def main():
             document_count = db.execute("SELECT count(*) FROM documents").fetchone()[0]
             book_count = db.execute("SELECT count(*) FROM books").fetchone()[0]
             source_count = db.execute("SELECT count(*) FROM document_sources").fetchone()[0]
+            removed_key = "removed_short_all" if cutoff is None else "removed_recent_short"
             for key, value in (
                 ("documents", document_count),
                 ("books", book_count),
                 ("source_rows", source_count),
-                ("removed_recent_short", len(removed)),
+                (removed_key, len(removed)),
             ):
                 db.execute(
                     "INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)",
