@@ -148,15 +148,17 @@ public class MainActivity extends Activity {
     private LinearLayout glossaryContainer;
     private TextView glossaryCount;
     private List<GlossaryTerm> glossaryTerms;
-    private boolean libraryShowGlossary;
-    private boolean syncingLibrarySearch;
     private TextView bookModeButton;
     private TextView glossaryModeButton;
     private ScrollView glossaryScroll;
-    private View glossaryPanel;
-    private FrameLayout libraryBody;
     private int glossaryReturnScrollY;
     private int searchBackTab = TAB_HOME;
+    private ScrollView homeScroll;
+    private ScrollView collectionScroll;
+    private int restorePageTab = -1;
+    private int restoreScrollY;
+    private int restoreListPosition;
+    private int restoreListTop;
 
     private EditText bookField;
     private ListView bookList;
@@ -648,8 +650,50 @@ public class MainActivity extends Activity {
         switchTab(TAB_SEARCH);
     }
 
+    private void rememberPagePosition() {
+        int tab = currentTab;
+        if (tab == TAB_HOME && homeScroll != null) {
+            restorePageTab = tab;
+            restoreScrollY = homeScroll.getScrollY();
+        } else if (tab == TAB_SEARCH && searchList != null) {
+            rememberListPosition(searchList, tab);
+        } else if (tab == TAB_BOOKS && bookList != null) {
+            rememberListPosition(bookList, tab);
+        } else if (tab == TAB_COLLECTION && collectionScroll != null) {
+            restorePageTab = tab;
+            restoreScrollY = collectionScroll.getScrollY();
+        }
+    }
+
+    private void rememberListPosition(ListView list, int tab) {
+        restorePageTab = tab;
+        restoreListPosition = list.getFirstVisiblePosition();
+        View first = list.getChildAt(0);
+        restoreListTop = first == null ? 0 : first.getTop();
+    }
+
+    private void restoreScrollPositionIfNeeded(ScrollView scroll, int tab) {
+        if (restorePageTab != tab) {
+            return;
+        }
+        int target = restoreScrollY;
+        restorePageTab = -1;
+        scroll.post(() -> scroll.scrollTo(0, target));
+    }
+
+    private void restoreListPositionIfNeeded(ListView list, int tab) {
+        if (restorePageTab != tab) {
+            return;
+        }
+        int position = restoreListPosition;
+        int top = restoreListTop;
+        restorePageTab = -1;
+        list.post(() -> list.setSelectionFromTop(position, top));
+    }
+
     private View buildHome() {
         ScrollView scroll = new ScrollView(this);
+        homeScroll = scroll;
         scroll.setFillViewport(true);
         LinearLayout page = column();
         page.setPadding(dp(12), dp(12), dp(12), dp(64));
@@ -661,7 +705,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.12", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.13", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -706,6 +750,7 @@ public class MainActivity extends Activity {
         for (Document document : recent) {
             addWithTop(page, documentCard(document, 120, false), 8);
         }
+        restoreScrollPositionIfNeeded(scroll, TAB_HOME);
         return scroll;
     }
 
@@ -977,6 +1022,7 @@ public class MainActivity extends Activity {
                             : "找到 " + formatCompact(results.size()) + " 条" +
                             (results.size() >= 250 ? "（显示前 250 条）" : ""));
                     searchList.setAdapter(new DocumentAdapter(results, query));
+                    restoreListPositionIfNeeded(searchList, TAB_SEARCH);
                     if (results.isEmpty()) {
                         searchStatus.setText("没有匹配内容，试试减少关键词或切换全文");
                     }
@@ -1064,6 +1110,10 @@ public class MainActivity extends Activity {
                 0, dp(44), 1f);
         glossaryModeParams.leftMargin = dp(4);
         switcher.addView(glossaryModeButton, glossaryModeParams);
+        styleLibraryModeButton(bookModeButton, true);
+        styleLibraryModeButton(glossaryModeButton, false);
+        bookModeButton.setOnClickListener(v -> hideKeyboard());
+        glossaryModeButton.setOnClickListener(v -> showGlossaryPage());
         addWithTop(header, switcher, 7);
 
         LinearLayout input = row();
@@ -1085,9 +1135,6 @@ public class MainActivity extends Activity {
         addWithTop(header, input, 7);
         page.addView(header);
 
-        libraryBody = new FrameLayout(this);
-        libraryBody.setBackgroundColor(BG);
-
         bookList = new ListView(this);
         configureListFeedback(bookList);
         bookList.setDivider(null);
@@ -1097,13 +1144,7 @@ public class MainActivity extends Activity {
         bookList.setBackgroundColor(BG);
         bookAdapter = new BookAdapter();
         bookList.setAdapter(bookAdapter);
-        libraryBody.addView(bookList, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        glossaryPanel = buildGlossaryPanel();
-        libraryBody.addView(glossaryPanel, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        page.addView(libraryBody, new LinearLayout.LayoutParams(
+        page.addView(bookList, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         bookList.setOnScrollListener(new AbsListView.OnScrollListener() {
@@ -1125,9 +1166,6 @@ public class MainActivity extends Activity {
                 showBookDetail(books.get(position));
             }
         });
-        bookModeButton.setOnClickListener(v -> activateLibraryMode(false));
-        glossaryModeButton.setOnClickListener(v -> activateLibraryMode(true));
-        updateLibraryMode(libraryShowGlossary);
         bookField.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -1135,16 +1173,8 @@ public class MainActivity extends Activity {
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (syncingLibrarySearch) {
-                    return;
-                }
-                if (libraryShowGlossary) {
-                    glossaryQuery = s.toString().trim();
-                    renderGlossary();
-                } else {
-                    bookQuery = s.toString().trim();
-                    loadBooks(true);
-                }
+                bookQuery = s.toString().trim();
+                loadBooks(true);
             }
 
             @Override
@@ -1154,11 +1184,7 @@ public class MainActivity extends Activity {
         books.clear();
         bookOffset = 0;
         booksEnded = false;
-        if (libraryShowGlossary) {
-            renderGlossary();
-        } else {
-            loadBooks(true);
-        }
+        loadBooks(true);
         return page;
     }
 
@@ -1170,64 +1196,71 @@ public class MainActivity extends Activity {
         return button;
     }
 
-    private View buildGlossaryPanel() {
-        LinearLayout panel = column();
-        panel.setBackgroundColor(BG);
+    private void showGlossaryPage() {
+        glossaryQuery = "";
+        rememberPagePosition();
+        detailOpen = true;
+        detailBackTab = TAB_BOOKS;
+        bottomBar.setVisibility(View.GONE);
+        content.removeAllViews();
+
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+        page.addView(simpleToolbar("名词解释", this::returnFromDetail));
+
+        LinearLayout intro = column();
+        intro.setPadding(dp(16), dp(13), dp(16), dp(13));
+        intro.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        TextView title = text("扫书常用词", 18, Color.WHITE, Typeface.BOLD);
+        intro.addView(title);
+        TextView subtitle = text("来自《扫书宝典》3.10.250109 · 原文顺序",
+                11, Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+        addWithTop(intro, subtitle, 3);
+        page.addView(intro);
+
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setHint("搜索名词或释义");
+        search.setTextSize(14);
+        search.setTextColor(TEXT);
+        search.setHintTextColor(MUTED);
+        search.setBackground(round(Color.WHITE, 12));
+        search.setPadding(dp(12), 0, dp(12), 0);
+        LinearLayout searchWrapper = row();
+        searchWrapper.setPadding(dp(12), dp(10), dp(12), 0);
+        searchWrapper.addView(search, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
+        page.addView(searchWrapper);
+
         glossaryCount = text("", 12, MUTED, Typeface.BOLD);
-        glossaryCount.setPadding(dp(17), dp(9), dp(17), dp(5));
-        panel.addView(glossaryCount);
+        glossaryCount.setPadding(dp(17), dp(6), dp(17), dp(5));
+        page.addView(glossaryCount);
 
         glossaryScroll = new ScrollView(this);
         glossaryScroll.setFillViewport(true);
         glossaryContainer = column();
-        glossaryContainer.setPadding(dp(12), 0, dp(12), dp(64));
+        glossaryContainer.setPadding(dp(12), 0, dp(12), dp(28));
         glossaryScroll.addView(glossaryContainer);
-        panel.addView(glossaryScroll, new LinearLayout.LayoutParams(
+        page.addView(glossaryScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        return panel;
-    }
+        content.addView(page);
 
-    private void activateLibraryMode(boolean showGlossary) {
-        if (showGlossary) {
-            glossaryQuery = "";
-        }
-        updateLibraryMode(showGlossary);
-        if (showGlossary) {
-            renderGlossary();
-        } else if (books.isEmpty() && !booksLoading) {
-            loadBooks(true);
-        }
-        hideKeyboard();
-    }
-
-    private void updateLibraryMode(boolean showGlossary) {
-        libraryShowGlossary = showGlossary;
-        if (bookList != null) {
-            bookList.setVisibility(showGlossary ? View.GONE : View.VISIBLE);
-        }
-        if (glossaryPanel != null) {
-            glossaryPanel.setVisibility(showGlossary ? View.VISIBLE : View.GONE);
-        }
-        if (libraryBody != null) {
-            View shown = showGlossary ? glossaryPanel : bookList;
-            libraryBody.removeAllViews();
-            if (shown != null) {
-                libraryBody.addView(shown, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
             }
-        }
-        styleLibraryModeButton(bookModeButton, !showGlossary);
-        styleLibraryModeButton(glossaryModeButton, showGlossary);
-        if (bookField != null) {
-            syncingLibrarySearch = true;
-            bookField.setHint(showGlossary
-                    ? "搜索名词或释义"
-                    : "搜索书名");
-            bookField.setText(showGlossary ? glossaryQuery : bookQuery);
-            bookField.setSelection(bookField.getText().length());
-            syncingLibrarySearch = false;
-        }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                glossaryQuery = s.toString().trim();
+                renderGlossary();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        renderGlossary();
     }
 
     private void styleLibraryModeButton(TextView button, boolean selected) {
@@ -1291,11 +1324,13 @@ public class MainActivity extends Activity {
                 booksEnded = loaded.size() < 120;
                 booksLoading = false;
                 bookAdapter.notifyDataSetChanged();
+                restoreListPositionIfNeeded(bookList, TAB_BOOKS);
             });
         });
     }
 
     private void showBookDetail(Book book) {
+        rememberPagePosition();
         detailOpen = true;
         detailBackTab = TAB_BOOKS;
         bottomBar.setVisibility(View.GONE);
@@ -1368,6 +1403,7 @@ public class MainActivity extends Activity {
 
     private View buildCollection() {
         ScrollView scroll = new ScrollView(this);
+        collectionScroll = scroll;
         scroll.setFillViewport(true);
         LinearLayout page = column();
         page.setPadding(dp(12), 0, dp(12), dp(64));
@@ -1441,6 +1477,7 @@ public class MainActivity extends Activity {
             }
         });
         loadCollectionInto(collectionContainer, countView, collectionQuery);
+        restoreScrollPositionIfNeeded(scroll, TAB_COLLECTION);
         return scroll;
     }
 
@@ -1642,6 +1679,7 @@ public class MainActivity extends Activity {
             toast("这条简记已不存在");
             return;
         }
+        rememberPagePosition();
         noteEditorOpen = true;
         activeNoteId = noteId;
         bottomBar.setVisibility(View.GONE);
@@ -3644,6 +3682,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (!detailOpen) {
+            rememberPagePosition();
             detailBackTab = currentTab;
         }
         detailOpen = true;
