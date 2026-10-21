@@ -6,17 +6,27 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.text.SpannableStringBuilder;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.StyleSpan;
+import android.text.Layout;
+import android.text.style.AlignmentSpan;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -43,6 +53,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -68,19 +79,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
-    private static final int TEAL = Color.rgb(0, 150, 136);
-    private static final int TEAL_DARK = Color.rgb(0, 105, 96);
-    private static final int TEAL_DEEP = Color.rgb(0, 77, 76);
-    private static final int TEAL_PALE = Color.rgb(224, 242, 241);
-    private static final int TEAL_SOFT = Color.rgb(242, 249, 248);
+    private int TEAL;
+    private int TEAL_DARK;
+    private int TEAL_DEEP;
+    private int TEAL_PALE;
+    private int TEAL_SOFT;
     // Legacy names are retained to keep the view code compact; the whole UI is
     // now one teal family, with gold reserved for a few reading accents.
-    private static final int PINK = TEAL;
-    private static final int PINK_DARK = TEAL_DEEP;
-    private static final int PINK_PALE = TEAL_PALE;
+    private int PINK;
+    private int PINK_DARK;
+    private int PINK_PALE;
     private static final int GOLD = Color.rgb(244, 195, 0);
     private static final int BG = Color.rgb(245, 247, 246);
     private static final int CARD = Color.WHITE;
@@ -130,6 +141,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        applySelectedTheme();
         configureWindow();
         showLoadingScreen();
         executor.execute(this::prepareDatabase);
@@ -142,6 +154,65 @@ public class MainActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             window.getDecorView().setSystemUiVisibility(0);
         }
+    }
+
+    private void applySelectedTheme() {
+        String themeId = preferences.getString("theme_id", "teal");
+        int[] palette = themePalette(themeId);
+        TEAL = palette[0];
+        TEAL_DARK = palette[1];
+        TEAL_DEEP = palette[2];
+        TEAL_PALE = palette[3];
+        TEAL_SOFT = palette[4];
+        PINK = TEAL;
+        PINK_DARK = TEAL_DEEP;
+        PINK_PALE = TEAL_PALE;
+    }
+
+    private int[] themePalette(String themeId) {
+        if ("ocean".equals(themeId)) {
+            return new int[]{
+                    Color.rgb(30, 136, 229),
+                    Color.rgb(21, 101, 192),
+                    Color.rgb(13, 60, 104),
+                    Color.rgb(227, 242, 253),
+                    Color.rgb(245, 250, 255)
+            };
+        }
+        if ("amber".equals(themeId)) {
+            return new int[]{
+                    Color.rgb(166, 106, 46),
+                    Color.rgb(122, 74, 29),
+                    Color.rgb(74, 43, 18),
+                    Color.rgb(247, 235, 221),
+                    Color.rgb(252, 248, 242)
+            };
+        }
+        if ("rose".equals(themeId)) {
+            return new int[]{
+                    Color.rgb(199, 91, 122),
+                    Color.rgb(156, 62, 91),
+                    Color.rgb(97, 38, 58),
+                    Color.rgb(252, 233, 239),
+                    Color.rgb(255, 247, 249)
+            };
+        }
+        if ("violet".equals(themeId)) {
+            return new int[]{
+                    Color.rgb(126, 87, 194),
+                    Color.rgb(94, 53, 177),
+                    Color.rgb(46, 26, 71),
+                    Color.rgb(238, 232, 247),
+                    Color.rgb(249, 247, 252)
+            };
+        }
+        return new int[]{
+                Color.rgb(0, 150, 136),
+                Color.rgb(0, 105, 96),
+                Color.rgb(0, 77, 76),
+                Color.rgb(224, 242, 241),
+                Color.rgb(242, 249, 248)
+        };
     }
 
     private void showLoadingScreen() {
@@ -183,13 +254,23 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 150_000_000L;
+            File legacy = new File(getFilesDir(), "saoshu.pre-v2.db");
             if (!available || installedVersion != DB_VERSION) {
+                if (target.isFile() && target.length() > 1_000_000L) {
+                    copyFile(target, legacy);
+                }
                 copyDatabase(target);
-                preferences.edit().putInt("db_asset_version", DB_VERSION).apply();
             }
             db = SQLiteDatabase.openDatabase(
                     target.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
             initializeLocalSchema();
+            if (legacy.isFile()) {
+                migrateLegacyDatabase(legacy);
+                if (!legacy.delete()) {
+                    legacy.deleteOnExit();
+                }
+            }
+            preferences.edit().putInt("db_asset_version", DB_VERSION).apply();
             mainHandler.post(this::showMainShell);
         } catch (Exception error) {
             mainHandler.post(() -> showFatalError(error));
@@ -200,6 +281,58 @@ public class MainActivity extends Activity {
         db.execSQL("CREATE TABLE IF NOT EXISTS local_deleted (" +
                 "document_id INTEGER PRIMARY KEY," +
                 "deleted_at TEXT NOT NULL)");
+        Cursor cursor = db.rawQuery("SELECT 1 FROM sqlite_master " +
+                "WHERE type='table' AND name='search_idx' LIMIT 1", null);
+        boolean hasSearchIndex;
+        try {
+            hasSearchIndex = cursor.moveToFirst();
+        } finally {
+            cursor.close();
+        }
+        if (!hasSearchIndex) {
+            buildLocalSearchIndex();
+        }
+    }
+
+    private void buildLocalSearchIndex() {
+        mainHandler.post(() -> updateLoadingStatus("正在生成本地搜索索引…"));
+        Cursor cursor = db.rawQuery(
+                "SELECT id,title,author,mentioned_books_json FROM documents", null);
+        int total = Math.max(1, (int) localDocumentCount());
+        int done = 0;
+        db.beginTransaction();
+        try {
+            db.execSQL("CREATE VIRTUAL TABLE search_idx USING fts4(" +
+                    "tokens, tokenize=simple)");
+            while (cursor.moveToNext()) {
+                long id = cursor.getLong(0);
+                String title = safe(cursor.getString(1));
+                String author = safe(cursor.getString(2));
+                String mentioned = safe(cursor.getString(3));
+                StringBuilder searchable = new StringBuilder(title).append(' ')
+                        .append(author);
+                try {
+                    JSONArray books = new JSONArray(mentioned);
+                    for (int i = 0; i < books.length(); i++) {
+                        searchable.append(' ').append(books.optString(i, ""));
+                    }
+                } catch (Exception ignored) {
+                }
+                db.execSQL("INSERT INTO search_idx(rowid,tokens) VALUES(?,?)",
+                        new Object[]{id, buildFtsQuery(searchable.toString())});
+                done++;
+                if (done % 2000 == 0) {
+                    final int percent = (int) Math.min(99, done * 100L / total);
+                    mainHandler.post(() -> updateLoadingStatus(
+                            "正在生成本地搜索索引 " + percent + "%"));
+                    db.yieldIfContendedSafely();
+                }
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            cursor.close();
+            db.endTransaction();
+        }
     }
 
     private void copyDatabase(File target) throws Exception {
@@ -208,6 +341,7 @@ public class MainActivity extends Activity {
             throw new IllegalStateException("无法清理上次未完成的数据库文件");
         }
         InputStream input = getAssets().open("saoshu.db");
+        long expectedBytes = Math.max(1, input.available());
         FileOutputStream output = new FileOutputStream(temporary);
         byte[] buffer = new byte[1024 * 1024];
         long copied = 0;
@@ -217,7 +351,7 @@ public class MainActivity extends Activity {
             while ((count = input.read(buffer)) != -1) {
                 output.write(buffer, 0, count);
                 copied += count;
-                int percent = (int) Math.min(99, copied * 100L / 177_451_008L);
+                int percent = (int) Math.min(99, copied * 100L / expectedBytes);
                 if (percent >= nextReport) {
                     final int shown = percent;
                     mainHandler.post(() -> updateLoadingStatus("正在解包资料库 " + shown + "%"));
@@ -240,6 +374,91 @@ public class MainActivity extends Activity {
             throw new IllegalStateException("数据库安装失败");
         }
         mainHandler.post(() -> updateLoadingStatus("正在校验资料库…"));
+    }
+
+    private void copyFile(File source, File destination) throws Exception {
+        if (destination.exists() && !destination.delete()) {
+            throw new IllegalStateException("无法清理旧版数据库备份");
+        }
+        try (FileInputStream input = new FileInputStream(source);
+             FileOutputStream output = new FileOutputStream(destination)) {
+            byte[] buffer = new byte[1024 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            output.getFD().sync();
+        }
+    }
+
+    private void migrateLegacyDatabase(File legacyFile) {
+        db.execSQL("ATTACH DATABASE ? AS legacy", new Object[]{legacyFile.getAbsolutePath()});
+        db.beginTransaction();
+        try {
+            Cursor missing = db.rawQuery(
+                    "SELECT d.* FROM legacy.documents d WHERE NOT EXISTS " +
+                            "(SELECT 1 FROM main.documents m " +
+                            "WHERE m.canonical_key=d.canonical_key)",
+                    null);
+            try {
+                while (missing.moveToNext()) {
+                    Document document = Document.fromCursor(missing);
+                    String key = safe(missing.getString(
+                            missing.getColumnIndexOrThrow("canonical_key")));
+                    db.execSQL("INSERT INTO main.documents(" +
+                                    "canonical_key,title,title_norm,author,author_norm," +
+                                    "content,category,source_type,forum,mname,zname," +
+                                    "published_at,source_url,word,hot_score," +
+                                    "mentioned_books_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            new Object[]{key, document.title, compact(document.title),
+                                    document.author, compact(document.author), document.content,
+                                    document.category, document.sourceType, document.forum,
+                                    safe(missing.getString(missing.getColumnIndexOrThrow("mname"))),
+                                    safe(missing.getString(missing.getColumnIndexOrThrow("zname"))),
+                                    document.date, document.sourceUrl, document.word,
+                                    missing.getLong(missing.getColumnIndexOrThrow("hot_score")),
+                                    document.mentionedJson});
+                    long id = db.compileStatement("SELECT last_insert_rowid()")
+                            .simpleQueryForLong();
+                    indexDocumentSearch(id, document.title, document.author,
+                            document.mentionedJson);
+                    adjustBookIndex(document.title, document.mentionedJson,
+                            document.sourceType, document.date, id, document.word, 1);
+                }
+            } finally {
+                missing.close();
+            }
+
+            db.execSQL("INSERT INTO main.document_sources(" +
+                    "document_id,source_kind,source_ref,source_url) " +
+                    "SELECT m.id,s.source_kind,s.source_ref,s.source_url " +
+                    "FROM legacy.document_sources s " +
+                    "JOIN legacy.documents d ON d.id=s.document_id " +
+                    "JOIN main.documents m ON m.canonical_key=d.canonical_key " +
+                    "WHERE NOT EXISTS (SELECT 1 FROM main.document_sources x " +
+                    "WHERE x.document_id=m.id AND x.source_kind=s.source_kind " +
+                    "AND x.source_ref=s.source_ref " +
+                    "AND coalesce(x.source_url,'')=coalesce(s.source_url,''))");
+
+            Cursor hasDeleted = db.rawQuery("SELECT 1 FROM legacy.sqlite_master " +
+                    "WHERE type='table' AND name='local_deleted' LIMIT 1", null);
+            boolean legacyHasDeleted;
+            try {
+                legacyHasDeleted = hasDeleted.moveToFirst();
+            } finally {
+                hasDeleted.close();
+            }
+            if (legacyHasDeleted) {
+                db.execSQL("INSERT OR IGNORE INTO main.local_deleted(document_id,deleted_at) " +
+                        "SELECT m.id,l.deleted_at FROM legacy.local_deleted l " +
+                        "JOIN legacy.documents d ON d.id=l.document_id " +
+                        "JOIN main.documents m ON m.canonical_key=d.canonical_key");
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+            db.execSQL("DETACH DATABASE legacy");
+        }
     }
 
     private void updateLoadingStatus(String message) {
@@ -300,7 +519,7 @@ public class MainActivity extends Activity {
 
             bottomBar = buildBottomBar();
             mainColumn.addView(bottomBar, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(68)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
             setContentView(root);
             switchTab(0);
         } catch (Exception error) {
@@ -312,18 +531,34 @@ public class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(6), dp(4), dp(6), dp(4));
+        bar.setPadding(dp(5), dp(6), dp(5), dp(6));
         bar.setBackgroundColor(PINK_DARK);
         bar.setElevation(dp(10));
         String[] icons = {"⌂", "⌕", "▤", "★", "⇅"};
         String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
         for (int i = 0; i < 5; i++) {
             final int tab = i;
-            TextView item = text(icons[i] + " " + labels[i], 12, Color.WHITE, Typeface.BOLD);
+            String content = icons[i] + "\n" + labels[i];
+            SpannableStringBuilder styled = new SpannableStringBuilder(content);
+            styled.setSpan(new AbsoluteSizeSpan(19, true), 0, icons[i].length(),
+                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+            styled.setSpan(new StyleSpan(Typeface.BOLD), 0, icons[i].length(),
+                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+            styled.setSpan(new AbsoluteSizeSpan(10, true), icons[i].length() + 1, content.length(),
+                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+            styled.setSpan(new AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER),
+                    0, content.length(), SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+            TextView item = text("", 11, Color.WHITE, Typeface.NORMAL);
+            item.setText(styled);
             item.setGravity(Gravity.CENTER);
+            item.setLineSpacing(0, 0.92f);
+            item.setContentDescription(labels[i]);
             item.setClickable(true);
             item.setFocusable(true);
-            item.setOnClickListener(v -> switchTab(tab));
+            item.setOnClickListener(v -> {
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                switchTab(tab);
+            });
             navItems[i] = item;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -343,8 +578,11 @@ public class MainActivity extends Activity {
             if (navItems[i] == null) {
                 continue;
             }
-            navItems[i].setTextColor(i == tab ? PINK_DARK : Color.argb(225, 255, 255, 255));
-            navItems[i].setBackground(round(i == tab ? Color.WHITE : Color.TRANSPARENT, 12));
+            navItems[i].setTextColor(i == tab
+                    ? Color.WHITE : Color.argb(178, 255, 255, 255));
+            navItems[i].setBackground(rippleRound(
+                    i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
+                    Color.TRANSPARENT, 14, Color.argb(55, 255, 255, 255)));
         }
         content.removeAllViews();
         if (tab == 0) {
@@ -375,7 +613,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.1", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.2", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -404,7 +642,8 @@ public class MainActivity extends Activity {
         LinearLayout searchCard = row();
         searchCard.setGravity(Gravity.CENTER_VERTICAL);
         searchCard.setPadding(dp(17), dp(14), dp(13), dp(14));
-        searchCard.setBackground(round(PINK, 15));
+        searchCard.setBackground(rippleRound(PINK, Color.TRANSPARENT, 15,
+                Color.argb(60, 255, 255, 255)));
         searchCard.setElevation(dp(3));
         TextView searchIcon = text("⌕", 25, Color.WHITE, Typeface.BOLD);
         searchCard.addView(searchIcon);
@@ -435,7 +674,8 @@ public class MainActivity extends Activity {
                         categoryTextColor(name), Typeface.BOLD);
                 chip.setGravity(Gravity.CENTER);
                 chip.setPadding(dp(15), dp(9), dp(15), dp(9));
-                chip.setBackground(round(categoryPaleColor(name), 18));
+                chip.setBackground(rippleRound(categoryPaleColor(name),
+                        Color.TRANSPARENT, 18, Color.argb(45, 0, 0, 0)));
                 chip.setOnClickListener(v -> {
                     searchQuery = "";
                     searchCategory = name;
@@ -523,7 +763,8 @@ public class MainActivity extends Activity {
                 0, dp(51), 1f));
         TextView searchButton = text("搜索", 14, Color.WHITE, Typeface.BOLD);
         searchButton.setGravity(Gravity.CENTER);
-        searchButton.setBackground(round(TEAL, 11));
+        searchButton.setBackground(rippleRound(TEAL, Color.TRANSPARENT, 11,
+                Color.argb(55, 255, 255, 255)));
         searchButton.setPadding(dp(17), dp(9), dp(17), dp(9));
         inputRow.addView(searchButton);
         addWithTop(header, inputRow, 13);
@@ -553,11 +794,13 @@ public class MainActivity extends Activity {
         toggle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         toggle.setTextColor(searchFullText ? Color.WHITE : TEAL_DARK);
         toggle.setPadding(dp(11), dp(6), dp(11), dp(6));
-        toggle.setBackground(round(searchFullText ? TEAL : TEAL_PALE, 12));
+        toggle.setBackground(rippleRound(searchFullText ? TEAL : TEAL_PALE,
+                Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
         resultHeader.addView(toggle);
         page.addView(resultHeader);
 
         searchList = new ListView(this);
+        configureListFeedback(searchList);
         searchList.setDivider(null);
         searchList.setDividerHeight(0);
         searchList.setClipToPadding(false);
@@ -571,7 +814,8 @@ public class MainActivity extends Activity {
             searchFullText = !searchFullText;
             toggle.setText(searchFullText ? "● 全文" : "○ 标题");
             toggle.setTextColor(searchFullText ? Color.WHITE : TEAL_DARK);
-            toggle.setBackground(round(searchFullText ? TEAL : TEAL_PALE, 12));
+            toggle.setBackground(rippleRound(searchFullText ? TEAL : TEAL_PALE,
+                    Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
             launchSearch();
         });
         searchField.setOnEditorActionListener((v, actionId, event) -> {
@@ -615,17 +859,20 @@ public class MainActivity extends Activity {
                     Typeface.BOLD);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(11), dp(6), dp(11), dp(6));
-            chip.setBackground(round(option.equals(active[0])
-                    ? PINK_DARK : Color.argb(210, 255, 255, 255), 12));
+            chip.setBackground(rippleRound(option.equals(active[0])
+                            ? PINK_DARK : Color.argb(210, 255, 255, 255),
+                    Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
             chip.setOnClickListener(v -> {
                 active[0] = option;
                 for (int i = 0; i < row.getChildCount(); i++) {
                     TextView child = (TextView) row.getChildAt(i);
                     boolean isActive = child.getText().toString().equals(active[0]);
                     child.setTextColor(isActive ? Color.WHITE : PINK_DARK);
-                    child.setBackground(round(isActive
-                            ? PINK_DARK : Color.argb(210, 255, 255, 255), 12));
+                    child.setBackground(rippleRound(isActive
+                                    ? PINK_DARK : Color.argb(210, 255, 255, 255),
+                            Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
                 }
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
                 listener.onSelected(option);
                 launchSearch();
             });
@@ -783,6 +1030,7 @@ public class MainActivity extends Activity {
         page.addView(header);
 
         bookList = new ListView(this);
+        configureListFeedback(bookList);
         bookList.setDivider(null);
         bookList.setDividerHeight(0);
         bookList.setClipToPadding(false);
@@ -918,6 +1166,7 @@ public class MainActivity extends Activity {
         status.setPadding(dp(17), dp(12), dp(17), dp(7));
         page.addView(status);
         ListView list = new ListView(this);
+        configureListFeedback(list);
         list.setDivider(null);
         list.setDividerHeight(0);
         list.setPadding(dp(10), 0, dp(10), dp(12));
@@ -993,13 +1242,15 @@ public class MainActivity extends Activity {
             TextView browse = text("去搜索", 14, Color.WHITE, Typeface.BOLD);
             browse.setGravity(Gravity.CENTER);
             browse.setPadding(dp(22), dp(10), dp(22), dp(10));
-            browse.setBackground(round(PINK, 14));
+            browse.setBackground(rippleRound(PINK, Color.TRANSPARENT, 14,
+                    Color.argb(55, 255, 255, 255)));
             browse.setOnClickListener(v -> switchTab(1));
             addWithTop(empty, browse, 18);
             page.addView(empty, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         } else {
             ListView list = new ListView(this);
+            configureListFeedback(list);
             list.setDivider(null);
             list.setDividerHeight(0);
             list.setPadding(dp(10), 0, dp(10), dp(12));
@@ -1041,6 +1292,28 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         header.addView(stats);
         page.addView(header);
+
+        TextView appearance = text("主题颜色", 17, TEXT, Typeface.BOLD);
+        appearance.setPadding(dp(16), dp(18), dp(16), dp(6));
+        page.addView(appearance);
+        HorizontalScrollView themeScroll = new HorizontalScrollView(this);
+        themeScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout themeRow = row();
+        themeRow.setPadding(dp(16), 0, dp(16), dp(0));
+        String currentTheme = preferences.getString("theme_id", "teal");
+        themeRow.addView(themeOption("teal", "松石绿", currentTheme,
+                Color.rgb(0, 150, 136)), themeOptionParams());
+        themeRow.addView(themeOption("ocean", "海盐蓝", currentTheme,
+                Color.rgb(30, 136, 229)), themeOptionParams());
+        themeRow.addView(themeOption("amber", "琥珀棕", currentTheme,
+                Color.rgb(166, 106, 46)), themeOptionParams());
+        themeRow.addView(themeOption("rose", "樱雾粉", currentTheme,
+                Color.rgb(199, 91, 122)), themeOptionParams());
+        themeRow.addView(themeOption("violet", "暮云紫", currentTheme,
+                Color.rgb(126, 87, 194)), themeOptionParams());
+        themeScroll.addView(themeRow);
+        page.addView(themeScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView section = text("备份与迁移", 17, TEXT, Typeface.BOLD);
         section.setPadding(dp(16), dp(18), dp(16), dp(2));
@@ -1084,14 +1357,57 @@ public class MainActivity extends Activity {
         addWithTop(statusCard, dataStatus, 6);
         addWithTop(page, statusCard, 16);
 
+        long cleanedDuplicates = metaLong("removed_duplicates", 0);
         TextView format = text(
                 "导入导出范围包含扫书、推书、排雷、讨论与求书记录。" +
-                        "本应用不下载小说正文，只管理已采集的评论与来源信息。",
+                        (cleanedDuplicates > 0
+                                ? " 内置资料库已清理 " + formatCompact(cleanedDuplicates) +
+                                " 条高相似重复内容。"
+                                : "") +
+                        " 本应用不下载小说正文，只管理已采集的评论与来源信息。",
                 11, MUTED, Typeface.NORMAL);
         format.setLineSpacing(0, 1.4f);
         format.setPadding(dp(18), dp(15), dp(18), 0);
         page.addView(format);
         return scroll;
+    }
+
+    private View themeOption(String id, String label, String currentTheme, int color) {
+        boolean selected = id.equals(currentTheme);
+        LinearLayout option = row();
+        option.setGravity(Gravity.CENTER_VERTICAL);
+        option.setPadding(dp(12), dp(9), dp(14), dp(9));
+        option.setBackground(rippleRound(
+                selected ? TEAL_PALE : Color.WHITE,
+                selected ? TEAL_DARK : LINE,
+                15,
+                Color.argb(35, 0, 0, 0)));
+        View swatch = new View(this);
+        swatch.setBackground(round(color, 9));
+        option.addView(swatch, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        TextView name = text(label, 13, selected ? TEAL_DARK : TEXT,
+                selected ? Typeface.BOLD : Typeface.NORMAL);
+        name.setPadding(dp(8), 0, 0, 0);
+        option.addView(name);
+        option.setClickable(true);
+        option.setFocusable(true);
+        option.setOnClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            preferences.edit().putString("theme_id", id).apply();
+            applySelectedTheme();
+            configureWindow();
+            showMainShell();
+            switchTab(4);
+            toast("已切换为「" + label + "」");
+        });
+        return option;
+    }
+
+    private LinearLayout.LayoutParams themeOptionParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.rightMargin = dp(8);
+        return params;
     }
 
     private View dataStat(String value, String label) {
@@ -1132,6 +1448,60 @@ public class MainActivity extends Activity {
                 setChildrenEnabled((ViewGroup) child, enabled);
             }
         }
+    }
+
+    private CharSequence formatScanContent(String content) {
+        String raw = safe(content)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replaceAll("看高清大图[，,]?\\s*打开贴吧App", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+        Pattern knownLabel = Pattern.compile(
+                "^(书名|作者|平台|状态|字数|时长|简介|评语|剧情|剧情方面|" +
+                        "男主|男主方面|女主|女主方面|看点|优点|雷点|毒点|郁闷|" +
+                        "郁闷点|防御|防御建议|文笔|情节|感情|评分|综合评价|" +
+                        "CC|FC|标签|推荐|推荐指数)[：:]\\s*(.*)$",
+                Pattern.CASE_INSENSITIVE);
+        SpannableStringBuilder formatted = new SpannableStringBuilder();
+        boolean previousBlank = true;
+        for (String sourceLine : raw.split("\n", -1)) {
+            String line = sourceLine.trim();
+            if (line.isEmpty()) {
+                if (formatted.length() > 0 && !previousBlank) {
+                    formatted.append("\n\n");
+                    previousBlank = true;
+                }
+                continue;
+            }
+            Matcher known = knownLabel.matcher(line);
+            if (known.matches()) {
+                if (formatted.length() > 0 && !previousBlank) {
+                    formatted.append("\n\n");
+                }
+                String label = known.group(1) + "：";
+                int start = formatted.length();
+                formatted.append(label);
+                formatted.setSpan(new StyleSpan(Typeface.BOLD), start, formatted.length(),
+                        SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+                formatted.setSpan(new ForegroundColorSpan(TEAL_DARK),
+                        start, formatted.length(),
+                        SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
+                formatted.append(known.group(2).trim());
+                previousBlank = false;
+            } else {
+                if (formatted.length() > 0) {
+                    formatted.append(previousBlank ? "" : "\n");
+                }
+                formatted.append(line);
+                previousBlank = false;
+            }
+        }
+        while (formatted.length() > 0 &&
+                formatted.charAt(formatted.length() - 1) == '\n') {
+            formatted.delete(formatted.length() - 1, formatted.length());
+        }
+        return formatted;
     }
 
     private void requestDataExport() {
@@ -1863,9 +2233,14 @@ public class MainActivity extends Activity {
         bodyCard.setPadding(dp(17), dp(17), dp(17), dp(18));
         bodyCard.setBackground(round(Color.WHITE, 15));
         bodyCard.setElevation(dp(1));
-        TextView body = text(document.content, 16, Color.rgb(71, 71, 71), Typeface.NORMAL);
+        TextView body = text("", 16, Color.rgb(65, 70, 69), Typeface.NORMAL);
+        body.setText(formatScanContent(document.content));
         body.setTextIsSelectable(true);
-        body.setLineSpacing(dp(5), 1.5f);
+        body.setLineSpacing(dp(6), 1.52f);
+        body.setPadding(0, dp(2), 0, dp(2));
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            body.setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY);
+        }
         bodyCard.addView(body);
         addWithTop(article, bodyCard, 10);
 
@@ -1953,7 +2328,8 @@ public class MainActivity extends Activity {
             boolean now = toggleFavorite(document.id);
             favorite.setText(now ? "★ 已收藏" : "☆ 收藏");
             favorite.setTextColor(now ? PINK_DARK : TEAL_DARK);
-            favorite.setBackground(round(now ? PINK_PALE : TEAL_PALE, 12));
+            favorite.setBackground(rippleRound(now ? PINK_PALE : TEAL_PALE,
+                    Color.TRANSPARENT, 12, Color.argb(42, 0, 0, 0)));
             toast(now ? "已加入收藏" : "已取消收藏");
         });
         copy.setOnClickListener(v -> copyText(document.content));
@@ -1977,7 +2353,9 @@ public class MainActivity extends Activity {
         TextView button = text(label, 13, foreground, Typeface.BOLD);
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(8), dp(10), dp(8), dp(10));
-        button.setBackground(round(background, 12));
+        button.setBackground(rippleRound(background, Color.TRANSPARENT, 12,
+                Color.argb(42, 0, 0, 0)));
+        bindHapticFeedback(button);
         return button;
     }
 
@@ -1989,7 +2367,12 @@ public class MainActivity extends Activity {
         TextView back = text("‹", 32, Color.WHITE, Typeface.NORMAL);
         back.setGravity(Gravity.CENTER);
         back.setPadding(dp(5), 0, dp(8), dp(2));
-        back.setOnClickListener(v -> backAction.run());
+        back.setBackground(rippleRound(Color.TRANSPARENT, Color.TRANSPARENT, 12,
+                Color.argb(55, 255, 255, 255)));
+        back.setOnClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            backAction.run();
+        });
         bar.addView(back, new LinearLayout.LayoutParams(dp(45), dp(48)));
         TextView title = text(label, 16, Color.WHITE, Typeface.BOLD);
         bar.addView(title, new LinearLayout.LayoutParams(
@@ -2102,6 +2485,7 @@ public class MainActivity extends Activity {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView actionView = text(action + "  ›", 12, PINK_DARK, Typeface.BOLD);
         actionView.setPadding(dp(9), dp(5), 0, dp(5));
+        attachPressFeedback(actionView, 10);
         actionView.setOnClickListener(listener);
         row.addView(actionView);
         return row;
@@ -2110,11 +2494,15 @@ public class MainActivity extends Activity {
     private View documentCard(Document d, int previewLimit, boolean compact) {
         LinearLayout card = column();
         card.setPadding(dp(15), dp(13), dp(15), dp(13));
-        card.setBackground(round(CARD, 15));
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 15,
+                Color.argb(35, 0, 0, 0)));
         card.setElevation(dp(2));
         card.setClickable(true);
         card.setFocusable(true);
-        card.setOnClickListener(v -> openDocument(d.id));
+        card.setOnClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            openDocument(d.id);
+        });
 
         LinearLayout meta = row();
         meta.setGravity(Gravity.CENTER_VERTICAL);
@@ -2319,6 +2707,44 @@ public class MainActivity extends Activity {
         return drawable;
     }
 
+    private RippleDrawable rippleRound(int fillColor, int strokeColor,
+                                       float radiusDp, int rippleColor) {
+        GradientDrawable content = round(fillColor, radiusDp);
+        if (strokeColor != Color.TRANSPARENT) {
+            content.setStroke(dp(1), strokeColor);
+        }
+        GradientDrawable mask = round(Color.WHITE, radiusDp);
+        return new RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask);
+    }
+
+    private void attachPressFeedback(View view, float radiusDp) {
+        Drawable content = view.getBackground();
+        GradientDrawable mask = round(Color.WHITE, radiusDp);
+        view.setBackground(new RippleDrawable(
+                ColorStateList.valueOf(Color.argb(42, 0, 0, 0)), content, mask));
+        view.setClickable(true);
+        view.setFocusable(true);
+        bindHapticFeedback(view);
+    }
+
+    private void bindHapticFeedback(View view) {
+        view.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            }
+            return false;
+        });
+    }
+
+    private void configureListFeedback(ListView list) {
+        StateListDrawable selector = new StateListDrawable();
+        selector.addState(new int[]{android.R.attr.state_pressed},
+                round((TEAL_DARK & 0x00ffffff) | 0x1c000000, 12));
+        selector.addState(new int[]{}, round(Color.TRANSPARENT, 12));
+        list.setSelector(selector);
+        list.setDrawSelectorOnTop(true);
+    }
+
     private GradientDrawable gradient(int start, int end, float radiusDp) {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR, new int[]{start, end});
@@ -2424,7 +2850,8 @@ public class MainActivity extends Activity {
             LinearLayout card = row();
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setPadding(dp(14), dp(13), dp(13), dp(13));
-            card.setBackground(round(Color.WHITE, 14));
+            card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+                    Color.argb(35, 0, 0, 0)));
             card.setElevation(dp(1));
 
             TextView rank = text(String.valueOf(position + 1), 13,
