@@ -618,7 +618,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.5", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.6", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -780,7 +780,8 @@ public class MainActivity extends Activity {
                 value -> searchCategory = value.equals("全部类型") ? "" : value);
         addWithTop(header, categoryChoices, 11);
         LinearLayout sourceChoices = choiceRow(
-                new String[]{"全部来源", "百度贴吧", "雪群推书", "资料库", "文本页面", "丫丫书屋"},
+                new String[]{"全部来源", "百度贴吧", "雪群推书", "资料库",
+                        "文本页面", "丫丫书屋", "剪贴板"},
                 searchSource.isEmpty() ? "全部来源" : searchSource,
                 value -> searchSource = value.equals("全部来源") ? "" : value);
         addWithTop(header, sourceChoices, 7);
@@ -1365,6 +1366,13 @@ public class MainActivity extends Activity {
                 v -> requestDataImport());
         addWithTop(page, importCard, 10);
 
+        LinearLayout clipboardCard = dataActionCard(
+                "从剪切板导入文本",
+                "识别书名、作者、平台、评分、看点、雷点等字段；包含多条扫书时会自动分段。",
+                "读取并识别剪切板",
+                v -> importFromClipboard());
+        addWithTop(page, clipboardCard, 10);
+
         int deleted = (int) localDeletedCount();
         LinearLayout restoreCard = dataActionCard(
                 "恢复本地删除",
@@ -1591,6 +1599,255 @@ public class MainActivity extends Activity {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(intent, REQUEST_IMPORT_DATA);
+    }
+
+    private void importFromClipboard() {
+        if (dataBusy) {
+            toast("请等待当前操作完成");
+            return;
+        }
+        ClipboardManager manager =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (manager == null || !manager.hasPrimaryClip()
+                || manager.getPrimaryClip() == null
+                || manager.getPrimaryClip().getItemCount() == 0) {
+            toast("剪切板中没有可导入的文本");
+            return;
+        }
+        ClipData clip = manager.getPrimaryClip();
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < clip.getItemCount(); i++) {
+            CharSequence value = clip.getItemAt(i).coerceToText(this);
+            if (value != null) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(value);
+            }
+        }
+        String text = builder.toString().trim();
+        if (text.isEmpty()) {
+            toast("剪切板内容为空");
+            return;
+        }
+        if (text.length() > 2_000_000) {
+            toast("剪切板文本过大，请控制在 200 万字符以内");
+            return;
+        }
+        List<ClipboardEntry> entries = parseClipboardEntries(text);
+        if (entries.isEmpty()) {
+            toast("没有识别到有效扫书内容");
+            return;
+        }
+        StringBuilder preview = new StringBuilder();
+        preview.append("识别到 ").append(entries.size()).append(" 条扫书：\n\n");
+        int shown = Math.min(entries.size(), 8);
+        for (int i = 0; i < shown; i++) {
+            ClipboardEntry entry = entries.get(i);
+            preview.append(i + 1).append(". ").append(entry.title);
+            if (!entry.author.isEmpty()) {
+                preview.append(" · ").append(entry.author);
+            }
+            preview.append('\n');
+        }
+        if (entries.size() > shown) {
+            preview.append("…另有 ").append(entries.size() - shown).append(" 条");
+        }
+        preview.append("\n\n导入时会自动按正文去重。");
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("确认导入剪切板")
+                .setMessage(preview.toString())
+                .setNegativeButton("取消", null)
+                .setPositiveButton("导入", (dialog, which) ->
+                        startClipboardImport(entries))
+                .show();
+    }
+
+    private void startClipboardImport(List<ClipboardEntry> entries) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在识别并写入剪切板扫书…");
+        executor.execute(() -> {
+            try {
+                ImportResult result = insertClipboardEntries(entries);
+                finishDataOperation("剪切板导入完成：新增 " + result.inserted +
+                        " 条，跳过重复 " + result.skipped + " 条。", false);
+            } catch (Exception error) {
+                finishDataOperation("剪切板导入失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private ImportResult insertClipboardEntries(List<ClipboardEntry> entries)
+            throws Exception {
+        int inserted = 0;
+        int skipped = 0;
+        int sources = 0;
+        String importedAt = isoNow();
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+                .format(new Date());
+        db.beginTransaction();
+        try {
+            int sequence = 0;
+            for (ClipboardEntry entry : entries) {
+                String content = entry.content.trim();
+                if (compact(content).length() < 20) {
+                    skipped++;
+                    continue;
+                }
+                String canonicalKey = deterministicKey(content, entry.title);
+                if (findDocumentByKey(canonicalKey) != null) {
+                    skipped++;
+                    continue;
+                }
+                String mentioned = mentionedBooksJson(content, entry.title);
+                long word = compact(content).length();
+                db.execSQL("INSERT INTO documents(" +
+                                "canonical_key,title,title_norm,author,author_norm," +
+                                "content,category,source_type,forum,mname,zname," +
+                                "published_at,source_url,word,hot_score," +
+                                "mentioned_books_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        new Object[]{canonicalKey, entry.title, compact(entry.title),
+                                entry.author, compact(entry.author), content, "扫书",
+                                "剪贴板", "", "剪切板文本导入", entry.title, today,
+                                "", word, 0, mentioned});
+                long id = db.compileStatement("SELECT last_insert_rowid()")
+                        .simpleQueryForLong();
+                indexDocumentSearch(id, entry.title, entry.author, mentioned);
+                adjustBookIndex(entry.title, mentioned, "剪贴板", today,
+                        id, word, 1);
+                insertSourceIfMissing(id, "clipboard",
+                        "clipboard:" + importedAt + ":" + sequence, "");
+                inserted++;
+                sources++;
+                sequence++;
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return new ImportResult(inserted, 0, skipped, sources);
+    }
+
+    private List<ClipboardEntry> parseClipboardEntries(String text) {
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n')
+                .replace("\u200b", "").trim();
+        String[] lines = normalized.split("\n", -1);
+        List<Integer> starts = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            boolean explicitTitle = line.matches("^(书名|作品名)\\s*[：:].+");
+            boolean standaloneBook = line.matches("^《[^》]{2,80}》\\s*$");
+            boolean numberedHeading = line.matches(
+                    "^(\\d{1,3}|[一二三四五六七八九十百]{1,4})[、.．]\\s*.+")
+                    && line.length() <= 80;
+            boolean hasBookMarker = line.contains("《") && line.contains("》");
+            boolean nearbyField = false;
+            if (numberedHeading) {
+                for (int j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+                    if (lines[j].matches("^(作者|平台|状态|字数|评分|简介|看点|雷点).*")) {
+                        nearbyField = true;
+                        break;
+                    }
+                }
+            }
+            if (explicitTitle || standaloneBook
+                    || (numberedHeading && (hasBookMarker || nearbyField))) {
+                starts.add(i);
+            }
+        }
+        List<ClipboardEntry> entries = new ArrayList<>();
+        if (starts.isEmpty()) {
+            ClipboardEntry entry = parseClipboardSegment(normalized);
+            if (entry != null) {
+                entries.add(entry);
+            }
+            return entries;
+        }
+        for (int index = 0; index < starts.size(); index++) {
+            int start = starts.get(index);
+            int end = index + 1 < starts.size() ? starts.get(index + 1) : lines.length;
+            StringBuilder segment = new StringBuilder();
+            for (int line = start; line < end; line++) {
+                if (segment.length() > 0) {
+                    segment.append('\n');
+                }
+                segment.append(lines[line]);
+            }
+            ClipboardEntry entry = parseClipboardSegment(segment.toString());
+            if (entry != null) {
+                entries.add(entry);
+            }
+        }
+        return entries;
+    }
+
+    private ClipboardEntry parseClipboardSegment(String segment) {
+        String content = segment.trim();
+        Matcher titleMatcher = Pattern.compile(
+                "(?m)^\\s*书名\\s*[：:]\\s*《?([^》\\n]{2,80})").matcher(content);
+        String title = "";
+        if (titleMatcher.find()) {
+            title = titleMatcher.group(1).trim();
+        }
+        if (title.isEmpty()) {
+            titleMatcher = Pattern.compile(
+                    "(?m)^\\s*(?:\\d{1,3}|[一二三四五六七八九十百]{1,4})[、.．]\\s*《([^》]{2,80})》")
+                    .matcher(content);
+            if (titleMatcher.find()) {
+                title = titleMatcher.group(1).trim();
+            }
+        }
+        if (title.isEmpty()) {
+            titleMatcher = Pattern.compile("(?m)^\\s*《([^》]{2,80})》\\s*$")
+                    .matcher(content);
+            if (titleMatcher.find()) {
+                title = titleMatcher.group(1).trim();
+            }
+        }
+        if (title.isEmpty()) {
+            String firstLine = content.split("\\n", 2)[0].trim();
+            firstLine = firstLine.replaceFirst(
+                    "^(?:\\d{1,3}|[一二三四五六七八九十百]{1,4})[、.．]\\s*", "");
+            firstLine = firstLine.replaceFirst("^(扫书|推书|排雷|简评|点评)\\s*[：:]?\\s*", "");
+            firstLine = firstLine.replaceAll("《([^》]+)》", "$1");
+            firstLine = firstLine.split("\\s*(?:作者|平台|状态|字数|评分)\\s*[：:]", 2)[0];
+            title = cleanDisplayTitle(firstLine);
+        }
+        if ("未命名内容".equals(title)) {
+            return null;
+        }
+        if (title.length() > 80) {
+            title = title.substring(0, 80).trim();
+        }
+        Matcher authorMatcher = Pattern.compile(
+                "(?m)^\\s*作者\\s*[：:]\\s*([^\\n|｜]{1,60})").matcher(content);
+        String author = "";
+        if (authorMatcher.find()) {
+            author = authorMatcher.group(1).split("[,，;；|｜]", 2)[0].trim();
+        }
+        return new ClipboardEntry(title, author, content);
+    }
+
+    private String mentionedBooksJson(String content, String title) {
+        LinkedHashSet<String> books = new LinkedHashSet<>();
+        Matcher matcher = Pattern.compile("《([^》\\n]{2,80})》").matcher(content);
+        while (matcher.find()) {
+            books.add(matcher.group(1).trim());
+        }
+        if (title != null && title.length() >= 2) {
+            books.add(title);
+        }
+        JSONArray array = new JSONArray();
+        for (String book : books) {
+            array.put(book);
+        }
+        return array.toString();
     }
 
     private void requestSingleExport(Document document) {
@@ -2335,8 +2592,10 @@ public class MainActivity extends Activity {
     private String deterministicKey(String content, String title) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest((compact(title) + "\n" + compact(content))
-                    .getBytes(StandardCharsets.UTF_8));
+            String body = compact(content);
+            String material = body.length() >= 20
+                    ? body : compact(title) + "\n" + body;
+            byte[] bytes = digest.digest(material.getBytes(StandardCharsets.UTF_8));
             StringBuilder result = new StringBuilder();
             for (byte value : bytes) {
                 result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
@@ -3405,6 +3664,18 @@ public class MainActivity extends Activity {
         ExportResult(int documents, int sources) {
             this.documents = documents;
             this.sources = sources;
+        }
+    }
+
+    private static class ClipboardEntry {
+        final String title;
+        final String author;
+        final String content;
+
+        ClipboardEntry(String title, String author, String content) {
+            this.title = title;
+            this.author = author;
+            this.content = content;
         }
     }
 
