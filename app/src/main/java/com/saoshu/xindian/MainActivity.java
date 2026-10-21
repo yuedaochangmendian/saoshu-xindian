@@ -123,7 +123,6 @@ public class MainActivity extends Activity {
     private boolean detailOpen = false;
     private long currentDetailId = -1;
     private long pendingSingleExportId = -1;
-    private boolean notesMode = false;
     private boolean noteEditorOpen = false;
     private boolean loadingNoteEditor = false;
     private String noteQuery = "";
@@ -132,6 +131,7 @@ public class MainActivity extends Activity {
     private EditText noteContentEditor;
     private TextView noteSaveStatus;
     private Runnable pendingNoteSave;
+    private LinearLayout notesContainer;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -640,7 +640,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.9", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v3.0", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1235,109 +1235,83 @@ public class MainActivity extends Activity {
     }
 
     private View buildFavorites() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         LinearLayout page = column();
+        page.setPadding(dp(12), 0, dp(12), dp(64));
         page.setBackgroundColor(BG);
+        scroll.addView(page);
+
         LinearLayout header = column();
-        header.setPadding(dp(17), dp(16), dp(17), dp(14));
-        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
-        TextView title = text(notesMode ? "简记" : "我的收藏", 23,
-                Color.WHITE, Typeface.BOLD);
+        header.setPadding(dp(5), dp(16), dp(5), dp(14));
+        TextView title = text("收藏与简记", 23, TEXT, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text(notesMode
-                        ? "本地优先的随笔与阅读笔记 · 自动保存"
-                        : "收藏状态仅保存在本机",
-                12,
-                Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+        TextView subtitle = text("收藏阅读内容，同时记录自己的书评与随笔", 12,
+                MUTED, Typeface.NORMAL);
         addWithTop(header, subtitle, 3);
         page.addView(header);
 
-        LinearLayout switcher = row();
-        switcher.setPadding(dp(12), dp(10), dp(12), dp(4));
-        TextView favoritesTab = text("收藏夹", 13,
-                notesMode ? MUTED : TEAL_DARK, Typeface.BOLD);
-        favoritesTab.setGravity(Gravity.CENTER);
-        favoritesTab.setPadding(dp(12), dp(8), dp(12), dp(8));
-        favoritesTab.setBackground(rippleRound(notesMode ? Color.TRANSPARENT : TEAL_PALE,
-                Color.TRANSPARENT, 12, Color.argb(30, 0, 0, 0)));
-        favoritesTab.setOnClickListener(v -> {
-            notesMode = false;
-            switchTab(3);
-        });
-        switcher.addView(favoritesTab, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView notesTab = text("简记", 13,
-                notesMode ? TEAL_DARK : MUTED, Typeface.BOLD);
-        notesTab.setGravity(Gravity.CENTER);
-        notesTab.setPadding(dp(12), dp(8), dp(12), dp(8));
-        notesTab.setBackground(rippleRound(notesMode ? TEAL_PALE : Color.TRANSPARENT,
-                Color.TRANSPARENT, 12, Color.argb(30, 0, 0, 0)));
-        notesTab.setOnClickListener(v -> {
-            notesMode = true;
-            switchTab(3);
-        });
-        LinearLayout.LayoutParams notesTabParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        notesTabParams.leftMargin = dp(8);
-        switcher.addView(notesTab, notesTabParams);
-        page.addView(switcher);
-
-        if (notesMode) {
-            addNotesPane(page);
-        } else {
-            addFavoritesPane(page);
-        }
-        return page;
-    }
-
-    private void addFavoritesPane(LinearLayout page) {
         List<Document> favorites = favoritesDocuments();
-        TextView count = text(favorites.size() + " 条收藏", 13, MUTED, Typeface.BOLD);
-        count.setPadding(dp(17), dp(12), dp(17), dp(5));
-        page.addView(count);
+        LinearLayout favoriteHeader = row();
+        favoriteHeader.setGravity(Gravity.CENTER_VERTICAL);
+        favoriteHeader.setPadding(dp(4), dp(12), dp(4), dp(8));
+        TextView favoriteTitle = text("收藏夹 · " + favorites.size(), 18,
+                TEXT, Typeface.BOLD);
+        favoriteHeader.addView(favoriteTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView searchMore = text("搜索更多 ›", 12, TEAL_DARK, Typeface.BOLD);
+        searchMore.setPadding(dp(8), dp(5), dp(4), dp(5));
+        searchMore.setOnClickListener(v -> switchTab(1));
+        favoriteHeader.addView(searchMore);
+        page.addView(favoriteHeader);
 
         if (favorites.isEmpty()) {
-            LinearLayout empty = column();
-            empty.setGravity(Gravity.CENTER_HORIZONTAL);
-            empty.setPadding(dp(24), dp(55), dp(24), dp(30));
-            TextView star = text("☆", 45, GOLD, Typeface.NORMAL);
-            star.setGravity(Gravity.CENTER);
+            LinearLayout empty = row();
+            empty.setGravity(Gravity.CENTER_VERTICAL);
+            empty.setPadding(dp(16), dp(15), dp(16), dp(15));
+            empty.setBackground(round(Color.WHITE, 14));
+            TextView star = text("☆", 26, GOLD, Typeface.NORMAL);
             empty.addView(star);
             TextView emptyTitle = text("还没有收藏内容", 18, TEXT, Typeface.BOLD);
-            emptyTitle.setGravity(Gravity.CENTER);
-            addWithTop(empty, emptyTitle, 10);
-            TextView emptyBody = text("阅读评论时点一下“收藏”，之后再回来慢慢看。", 13,
-                    MUTED, Typeface.NORMAL);
-            emptyBody.setGravity(Gravity.CENTER);
-            addWithTop(empty, emptyBody, 7);
-            TextView browse = text("去搜索", 14, Color.WHITE, Typeface.BOLD);
-            browse.setGravity(Gravity.CENTER);
-            browse.setPadding(dp(22), dp(10), dp(22), dp(10));
-            browse.setBackground(rippleRound(PINK, Color.TRANSPARENT, 14,
-                    Color.argb(55, 255, 255, 255)));
+            LinearLayout.LayoutParams emptyTitleParams = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            emptyTitleParams.leftMargin = dp(10);
+            empty.addView(emptyTitle, emptyTitleParams);
+            TextView browse = text("去搜索", 12, Color.WHITE, Typeface.BOLD);
+            browse.setPadding(dp(12), dp(7), dp(12), dp(7));
+            browse.setBackground(round(TEAL, 10));
             browse.setOnClickListener(v -> switchTab(1));
-            addWithTop(empty, browse, 18);
-            page.addView(empty, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            empty.addView(browse);
+            page.addView(empty);
         } else {
-            ListView list = new ListView(this);
-            configureListFeedback(list);
-            list.setDivider(null);
-            list.setDividerHeight(0);
-            list.setPadding(dp(10), 0, dp(10), dp(64));
-            list.setClipToPadding(false);
-            list.setBackgroundColor(BG);
-            list.setAdapter(new DocumentAdapter(favorites, ""));
-            list.setOnItemClickListener((parent, view, position, id) ->
-                    openDocument(favorites.get(position).id));
-            page.addView(list, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            for (Document favorite : favorites) {
+                addWithTop(page, documentCard(favorite, 90, false), dp(7));
+            }
         }
-    }
 
-    private void addNotesPane(LinearLayout page) {
+        LinearLayout noteHeader = row();
+        noteHeader.setGravity(Gravity.CENTER_VERTICAL);
+        noteHeader.setPadding(dp(4), dp(24), dp(4), dp(8));
+        TextView noteTitle = text("简记", 18, TEXT, Typeface.BOLD);
+        noteHeader.addView(noteTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView trash = text("回收站", 12, TEAL_DARK, Typeface.BOLD);
+        trash.setPadding(dp(8), dp(5), dp(8), dp(5));
+        trash.setOnClickListener(v -> showNoteTrashDialog());
+        noteHeader.addView(trash);
+        TextView add = text("＋ 新建", 12, Color.WHITE, Typeface.BOLD);
+        add.setPadding(dp(11), dp(6), dp(11), dp(6));
+        add.setBackground(round(TEAL, 10));
+        add.setOnClickListener(v -> showNoteEditor(0));
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        addParams.leftMargin = dp(5);
+        noteHeader.addView(add, addParams);
+        page.addView(noteHeader);
+
         LinearLayout tools = row();
         tools.setGravity(Gravity.CENTER_VERTICAL);
-        tools.setPadding(dp(12), dp(8), dp(12), dp(8));
+        tools.setPadding(dp(3), dp(2), dp(3), dp(6));
         EditText search = new EditText(this);
         search.setSingleLine(true);
         search.setText(noteQuery);
@@ -1348,35 +1322,15 @@ public class MainActivity extends Activity {
         search.setBackground(round(Color.WHITE, 12));
         search.setPadding(dp(12), 0, dp(12), 0);
         tools.addView(search, new LinearLayout.LayoutParams(
-                0, dp(46), 1f));
-        TextView add = actionButton("＋ 新建", TEAL_PALE, TEAL_DARK);
-        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
-        addParams.leftMargin = dp(8);
-        tools.addView(add, addParams);
-        TextView trash = actionButton("回收站", Color.WHITE, TEAL_DARK);
-        LinearLayout.LayoutParams trashParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
-        trashParams.leftMargin = dp(6);
-        tools.addView(trash, trashParams);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
         page.addView(tools);
 
         TextView countView = text("", 12, MUTED, Typeface.BOLD);
-        countView.setPadding(dp(17), dp(2), dp(17), dp(4));
+        countView.setPadding(dp(5), dp(2), dp(5), dp(7));
         page.addView(countView);
 
-        ListView list = new ListView(this);
-        configureListFeedback(list);
-        list.setDivider(null);
-        list.setDividerHeight(0);
-        list.setPadding(dp(10), 0, dp(10), dp(64));
-        list.setClipToPadding(false);
-        list.setBackgroundColor(BG);
-        page.addView(list, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        add.setOnClickListener(v -> showNoteEditor(0));
-        trash.setOnClickListener(v -> showNoteTrashDialog());
+        notesContainer = column();
+        page.addView(notesContainer);
         search.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -1385,24 +1339,27 @@ public class MainActivity extends Activity {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 noteQuery = s.toString().trim();
-                loadNotesInto(list, countView, noteQuery);
+                loadNotesInto(notesContainer, countView, noteQuery);
             }
 
             @Override
             public void afterTextChanged(Editable s) {
             }
         });
-        loadNotesInto(list, countView, noteQuery);
+        loadNotesInto(notesContainer, countView, noteQuery);
+        return scroll;
     }
 
-    private void loadNotesInto(ListView list, TextView count, String query) {
+    private void loadNotesInto(LinearLayout container, TextView count, String query) {
         List<Note> notes = queryNotes(query, false);
         count.setText(notes.size() + " 条简记"
                 + (deletedNoteCount() > 0 ? " · 回收站 " + deletedNoteCount() + " 条" : ""));
+        container.removeAllViews();
         if (notes.isEmpty()) {
             LinearLayout empty = column();
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(24), dp(45), dp(24), dp(24));
+            empty.setPadding(dp(16), dp(25), dp(16), dp(20));
+            empty.setBackground(round(Color.WHITE, 14));
             TextView hint = text(query.isEmpty() ? "还没有简记" : "没有匹配的简记",
                     17, TEXT, Typeface.BOLD);
             hint.setGravity(Gravity.CENTER);
@@ -1413,33 +1370,71 @@ public class MainActivity extends Activity {
                     12, MUTED, Typeface.NORMAL);
             sub.setGravity(Gravity.CENTER);
             addWithTop(empty, sub, 7);
-            list.setAdapter(new BaseAdapter() {
-                @Override
-                public int getCount() {
-                    return 1;
-                }
-
-                @Override
-                public Object getItem(int position) {
-                    return empty;
-                }
-
-                @Override
-                public long getItemId(int position) {
-                    return 0;
-                }
-
-                @Override
-                public View getView(int position, View convertView, ViewGroup parent) {
-                    return empty;
-                }
-            });
-            list.setOnItemClickListener(null);
+            container.addView(empty);
         } else {
-            list.setAdapter(new NoteAdapter(notes));
-            list.setOnItemClickListener((parent, view, position, id) ->
-                    showNoteEditor(notes.get(position).id));
+            for (Note note : notes) {
+                addWithTop(container, createNoteCard(note), dp(7));
+            }
         }
+    }
+
+    private View createNoteCard(Note note) {
+        LinearLayout card = column();
+        card.setPadding(dp(14), dp(12), dp(14), dp(10));
+        card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+                Color.argb(30, 0, 0, 0)));
+        card.setElevation(dp(1));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> showNoteEditor(note.id));
+
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text(note.displayTitle(), 16, TEXT, Typeface.BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (note.pinned) {
+            TextView pin = text("置顶", 10, TEAL_DARK, Typeface.BOLD);
+            pin.setPadding(dp(7), dp(3), dp(7), dp(3));
+            pin.setBackground(round(TEAL_PALE, 9));
+            titleRow.addView(pin);
+        }
+        card.addView(titleRow);
+
+        String snippet = note.content.replaceAll("\\s+", " ").trim();
+        if (snippet.length() > 110) {
+            snippet = snippet.substring(0, 110) + "…";
+        }
+        TextView preview = text(snippet.isEmpty() ? "空白简记" : snippet,
+                12, MUTED, Typeface.NORMAL);
+        preview.setLineSpacing(0, 1.25f);
+        preview.setMaxLines(2);
+        preview.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        addWithTop(card, preview, 6);
+
+        LinearLayout footer = row();
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.setPadding(0, dp(8), 0, 0);
+        String time = note.updatedAt.replace('T', ' ');
+        if (time.length() > 16) {
+            time = time.substring(0, 16);
+        }
+        TextView date = text(time, 10, MUTED, Typeface.NORMAL);
+        footer.addView(date, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView pinAction = text(note.pinned ? "取消置顶" : "置顶",
+                11, TEAL_DARK, Typeface.BOLD);
+        pinAction.setPadding(dp(8), dp(5), dp(8), dp(5));
+        pinAction.setOnClickListener(v -> toggleNotePin(note));
+        footer.addView(pinAction);
+        TextView delete = text("删除", 11, PINK_DARK, Typeface.BOLD);
+        delete.setPadding(dp(8), dp(5), dp(8), dp(5));
+        delete.setOnClickListener(v -> confirmDeleteNote(note));
+        footer.addView(delete);
+        card.addView(footer);
+        return card;
     }
 
     private List<Note> queryNotes(String query, boolean deleted) {
@@ -1610,7 +1605,6 @@ public class MainActivity extends Activity {
         noteContentEditor = null;
         noteSaveStatus = null;
         bottomBar.setVisibility(View.VISIBLE);
-        notesMode = true;
         switchTab(3);
     }
 
@@ -4181,95 +4175,6 @@ public class MainActivity extends Activity {
             TextView arrow = text("›", 24, TEAL, Typeface.NORMAL);
             arrow.setGravity(Gravity.CENTER);
             card.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(38)));
-            outer.addView(card, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-            return outer;
-        }
-    }
-
-    private class NoteAdapter extends BaseAdapter {
-        private final List<Note> items;
-
-        NoteAdapter(List<Note> items) {
-            this.items = items;
-        }
-
-        @Override
-        public int getCount() {
-            return items.size();
-        }
-
-        @Override
-        public Object getItem(int position) {
-            return items.get(position);
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return items.get(position).id;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            Note note = items.get(position);
-            LinearLayout outer = column();
-            outer.setPadding(dp(1), dp(4), dp(1), dp(4));
-            LinearLayout card = column();
-            card.setPadding(dp(14), dp(12), dp(14), dp(10));
-            card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
-                    Color.argb(30, 0, 0, 0)));
-            card.setElevation(dp(1));
-            card.setClickable(true);
-            card.setFocusable(true);
-            card.setOnClickListener(v -> showNoteEditor(note.id));
-
-            LinearLayout titleRow = row();
-            titleRow.setGravity(Gravity.CENTER_VERTICAL);
-            TextView title = text(note.displayTitle(), 16, TEXT, Typeface.BOLD);
-            title.setSingleLine(true);
-            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            titleRow.addView(title, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            if (note.pinned) {
-                TextView pin = text("置顶", 10, TEAL_DARK, Typeface.BOLD);
-                pin.setPadding(dp(7), dp(3), dp(7), dp(3));
-                pin.setBackground(round(TEAL_PALE, 9));
-                titleRow.addView(pin);
-            }
-            card.addView(titleRow);
-
-            String snippet = note.content.replaceAll("\\s+", " ").trim();
-            if (snippet.length() > 110) {
-                snippet = snippet.substring(0, 110) + "…";
-            }
-            TextView preview = text(snippet.isEmpty() ? "空白简记" : snippet,
-                    12, MUTED, Typeface.NORMAL);
-            preview.setLineSpacing(0, 1.25f);
-            preview.setMaxLines(2);
-            preview.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            addWithTop(card, preview, 6);
-
-            LinearLayout footer = row();
-            footer.setGravity(Gravity.CENTER_VERTICAL);
-            footer.setPadding(0, dp(8), 0, 0);
-            String time = note.updatedAt.replace('T', ' ');
-            if (time.length() > 16) {
-                time = time.substring(0, 16);
-            }
-            TextView date = text(time, 10, MUTED, Typeface.NORMAL);
-            footer.addView(date, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            TextView pinAction = text(note.pinned ? "取消置顶" : "置顶",
-                    11, TEAL_DARK, Typeface.BOLD);
-            pinAction.setPadding(dp(8), dp(5), dp(8), dp(5));
-            pinAction.setOnClickListener(v -> toggleNotePin(note));
-            footer.addView(pinAction);
-            TextView delete = text("删除", 11, PINK_DARK, Typeface.BOLD);
-            delete.setPadding(dp(8), dp(5), dp(8), dp(5));
-            delete.setOnClickListener(v -> confirmDeleteNote(note));
-            footer.addView(delete);
-            card.addView(footer);
             outer.addView(card, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT));
