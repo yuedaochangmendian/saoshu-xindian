@@ -9,7 +9,11 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -39,6 +43,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -107,7 +112,10 @@ public class MainActivity extends Activity {
     private SQLiteDatabase db;
     private SharedPreferences preferences;
     private FrameLayout content;
-    private LinearLayout bottomBar;
+    private FrameLayout bottomBar;
+    private ImageView bottomBlurView;
+    private Bitmap bottomBlurBitmap;
+    private Runnable pendingBlurRefresh;
     private final LinearLayout[] navItems = new LinearLayout[5];
     private int currentTab = 0;
     private int detailBackTab = 0;
@@ -525,13 +533,27 @@ public class MainActivity extends Activity {
         }
     }
 
-    private LinearLayout buildBottomBar() {
+    private FrameLayout buildBottomBar() {
+        FrameLayout shell = new FrameLayout(this);
+        shell.setBackground(round((PINK_DARK & 0x00ffffff) | 0xc6000000, 20));
+        shell.setClipToOutline(true);
+        shell.setElevation(dp(10));
+
+        bottomBlurView = new ImageView(this);
+        bottomBlurView.setScaleType(ImageView.ScaleType.FIT_XY);
+        bottomBlurView.setAlpha(0.82f);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            bottomBlurView.setRenderEffect(RenderEffect.createBlurEffect(
+                    dp(14), dp(14), Shader.TileMode.CLAMP));
+        }
+        shell.addView(bottomBlurView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(5), dp(2), dp(5), dp(2));
-        bar.setBackground(round(PINK_DARK, 20));
-        bar.setElevation(dp(10));
         String[] icons = {"⌂", "⌕", "▤", "★", "⇅"};
         String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
         for (int i = 0; i < 5; i++) {
@@ -554,7 +576,10 @@ public class MainActivity extends Activity {
             params.setMargins(dp(3), 0, dp(3), 0);
             bar.addView(item, params);
         }
-        return bar;
+        shell.addView(bar, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        return shell;
     }
 
     private void switchTab(int tab) {
@@ -588,6 +613,90 @@ public class MainActivity extends Activity {
         } else {
             content.addView(buildDataManager());
         }
+        content.postDelayed(this::refreshBottomBlur, 120);
+    }
+
+    private void attachBottomBlurRefresh(View target) {
+        target.getViewTreeObserver().addOnScrollChangedListener(
+                this::scheduleBottomBlurRefresh);
+    }
+
+    private void scheduleBottomBlurRefresh() {
+        if (pendingBlurRefresh != null) {
+            mainHandler.removeCallbacks(pendingBlurRefresh);
+        }
+        pendingBlurRefresh = this::refreshBottomBlur;
+        mainHandler.postDelayed(pendingBlurRefresh, 90);
+    }
+
+    private void refreshBottomBlur() {
+        if (bottomBar == null || bottomBlurView == null || content == null
+                || bottomBar.getWidth() <= 0 || bottomBar.getHeight() <= 0
+                || content.getWidth() <= 0 || content.getHeight() <= 0) {
+            return;
+        }
+        Bitmap sample;
+        Bitmap full = Bitmap.createBitmap(bottomBar.getWidth(),
+                bottomBar.getHeight(), Bitmap.Config.ARGB_8888);
+        try {
+            Canvas canvas = new Canvas(full);
+            canvas.translate(-bottomBar.getLeft(), -bottomBar.getTop());
+            content.draw(canvas);
+            int sampleWidth = Math.max(1, bottomBar.getWidth() / 7);
+            int sampleHeight = Math.max(1, bottomBar.getHeight() / 7);
+            sample = Bitmap.createScaledBitmap(full, sampleWidth, sampleHeight, true);
+        } finally {
+            full.recycle();
+        }
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            sample = boxBlur(sample);
+        }
+        Bitmap old = bottomBlurBitmap;
+        bottomBlurBitmap = sample;
+        bottomBlurView.setImageBitmap(sample);
+        if (old != null && old != sample) {
+            mainHandler.post(old::recycle);
+        }
+    }
+
+    private Bitmap boxBlur(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        if (width < 3 || height < 3) {
+            return source;
+        }
+        int[] input = new int[width * height];
+        int[] output = new int[width * height];
+        source.getPixels(input, 0, width, 0, 0, width, height);
+        for (int pass = 0; pass < 2; pass++) {
+            for (int y = 1; y < height - 1; y++) {
+                for (int x = 1; x < width - 1; x++) {
+                    int a = 0;
+                    int r = 0;
+                    int g = 0;
+                    int b = 0;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        int row = (y + dy) * width;
+                        for (int dx = -1; dx <= 1; dx++) {
+                            int color = input[row + x + dx];
+                            a += Color.alpha(color);
+                            r += Color.red(color);
+                            g += Color.green(color);
+                            b += Color.blue(color);
+                        }
+                    }
+                    output[y * width + x] = Color.argb(
+                            a / 9, r / 9, g / 9, b / 9);
+                }
+            }
+            int[] swap = input;
+            input = output;
+            output = swap;
+        }
+        Bitmap blurred = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        blurred.setPixels(input, 0, width, 0, 0, width, height);
+        source.recycle();
+        return blurred;
     }
 
     private View buildHome() {
@@ -605,7 +714,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.0", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.1", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -709,6 +818,7 @@ public class MainActivity extends Activity {
         noteBody.setLineSpacing(0, 1.35f);
         addWithTop(note, noteBody, 6);
         addWithTop(page, note, 16);
+        attachBottomBlurRefresh(scroll);
         return scroll;
     }
 
@@ -838,6 +948,7 @@ public class MainActivity extends Activity {
             }
         });
         mainHandler.post(this::launchSearch);
+        attachBottomBlurRefresh(searchList);
         return page;
     }
 
@@ -1070,6 +1181,7 @@ public class MainActivity extends Activity {
         bookOffset = 0;
         booksEnded = false;
         loadBooks(true);
+        attachBottomBlurRefresh(bookList);
         return page;
     }
 
@@ -1252,6 +1364,7 @@ public class MainActivity extends Activity {
                     openDocument(favorites.get(position).id));
             page.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            attachBottomBlurRefresh(list);
         }
         return page;
     }
@@ -1398,6 +1511,7 @@ public class MainActivity extends Activity {
         format.setLineSpacing(0, 1.4f);
         format.setPadding(dp(18), dp(15), dp(18), 0);
         page.addView(format);
+        attachBottomBlurRefresh(scroll);
         return scroll;
     }
 
@@ -2772,6 +2886,13 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (pendingSearch != null) {
             mainHandler.removeCallbacks(pendingSearch);
+        }
+        if (pendingBlurRefresh != null) {
+            mainHandler.removeCallbacks(pendingBlurRefresh);
+        }
+        if (bottomBlurBitmap != null && !bottomBlurBitmap.isRecycled()) {
+            bottomBlurBitmap.recycle();
+            bottomBlurBitmap = null;
         }
         executor.shutdownNow();
         if (db != null && db.isOpen()) {
