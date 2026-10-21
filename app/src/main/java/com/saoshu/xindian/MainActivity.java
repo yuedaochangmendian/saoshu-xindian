@@ -9,11 +9,7 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.RenderEffect;
-import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -43,7 +39,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -88,6 +83,9 @@ public class MainActivity extends Activity {
     private static final int DB_VERSION = 4;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
+    private static final int REQUEST_EXPORT_SINGLE = 2203;
+    private static final int REQUEST_EXPORT_USER_BACKUP = 2204;
+    private static final int REQUEST_IMPORT_USER_BACKUP = 2205;
     private int TEAL;
     private int TEAL_DARK;
     private int TEAL_DEEP;
@@ -113,14 +111,12 @@ public class MainActivity extends Activity {
     private SharedPreferences preferences;
     private FrameLayout content;
     private FrameLayout bottomBar;
-    private ImageView bottomBlurView;
-    private Bitmap bottomBlurBitmap;
-    private Runnable pendingBlurRefresh;
     private final LinearLayout[] navItems = new LinearLayout[5];
     private int currentTab = 0;
     private int detailBackTab = 0;
     private boolean detailOpen = false;
     private long currentDetailId = -1;
+    private long pendingSingleExportId = -1;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -535,20 +531,9 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackground(round((PINK_DARK & 0x00ffffff) | 0xc6000000, 20));
+        shell.setBackground(round((PINK_DARK & 0x00ffffff) | 0xf0000000, 20));
         shell.setClipToOutline(true);
         shell.setElevation(dp(10));
-
-        bottomBlurView = new ImageView(this);
-        bottomBlurView.setScaleType(ImageView.ScaleType.FIT_XY);
-        bottomBlurView.setAlpha(0.82f);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            bottomBlurView.setRenderEffect(RenderEffect.createBlurEffect(
-                    dp(14), dp(14), Shader.TileMode.CLAMP));
-        }
-        shell.addView(bottomBlurView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -613,90 +598,6 @@ public class MainActivity extends Activity {
         } else {
             content.addView(buildDataManager());
         }
-        content.postDelayed(this::refreshBottomBlur, 120);
-    }
-
-    private void attachBottomBlurRefresh(View target) {
-        target.getViewTreeObserver().addOnScrollChangedListener(
-                this::scheduleBottomBlurRefresh);
-    }
-
-    private void scheduleBottomBlurRefresh() {
-        if (pendingBlurRefresh != null) {
-            mainHandler.removeCallbacks(pendingBlurRefresh);
-        }
-        pendingBlurRefresh = this::refreshBottomBlur;
-        mainHandler.postDelayed(pendingBlurRefresh, 90);
-    }
-
-    private void refreshBottomBlur() {
-        if (bottomBar == null || bottomBlurView == null || content == null
-                || bottomBar.getWidth() <= 0 || bottomBar.getHeight() <= 0
-                || content.getWidth() <= 0 || content.getHeight() <= 0) {
-            return;
-        }
-        Bitmap sample;
-        Bitmap full = Bitmap.createBitmap(bottomBar.getWidth(),
-                bottomBar.getHeight(), Bitmap.Config.ARGB_8888);
-        try {
-            Canvas canvas = new Canvas(full);
-            canvas.translate(-bottomBar.getLeft(), -bottomBar.getTop());
-            content.draw(canvas);
-            int sampleWidth = Math.max(1, bottomBar.getWidth() / 7);
-            int sampleHeight = Math.max(1, bottomBar.getHeight() / 7);
-            sample = Bitmap.createScaledBitmap(full, sampleWidth, sampleHeight, true);
-        } finally {
-            full.recycle();
-        }
-        if (android.os.Build.VERSION.SDK_INT < 31) {
-            sample = boxBlur(sample);
-        }
-        Bitmap old = bottomBlurBitmap;
-        bottomBlurBitmap = sample;
-        bottomBlurView.setImageBitmap(sample);
-        if (old != null && old != sample) {
-            mainHandler.post(old::recycle);
-        }
-    }
-
-    private Bitmap boxBlur(Bitmap source) {
-        int width = source.getWidth();
-        int height = source.getHeight();
-        if (width < 3 || height < 3) {
-            return source;
-        }
-        int[] input = new int[width * height];
-        int[] output = new int[width * height];
-        source.getPixels(input, 0, width, 0, 0, width, height);
-        for (int pass = 0; pass < 2; pass++) {
-            for (int y = 1; y < height - 1; y++) {
-                for (int x = 1; x < width - 1; x++) {
-                    int a = 0;
-                    int r = 0;
-                    int g = 0;
-                    int b = 0;
-                    for (int dy = -1; dy <= 1; dy++) {
-                        int row = (y + dy) * width;
-                        for (int dx = -1; dx <= 1; dx++) {
-                            int color = input[row + x + dx];
-                            a += Color.alpha(color);
-                            r += Color.red(color);
-                            g += Color.green(color);
-                            b += Color.blue(color);
-                        }
-                    }
-                    output[y * width + x] = Color.argb(
-                            a / 9, r / 9, g / 9, b / 9);
-                }
-            }
-            int[] swap = input;
-            input = output;
-            output = swap;
-        }
-        Bitmap blurred = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        blurred.setPixels(input, 0, width, 0, 0, width, height);
-        source.recycle();
-        return blurred;
     }
 
     private View buildHome() {
@@ -714,7 +615,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.1", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.2", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -818,7 +719,6 @@ public class MainActivity extends Activity {
         noteBody.setLineSpacing(0, 1.35f);
         addWithTop(note, noteBody, 6);
         addWithTop(page, note, 16);
-        attachBottomBlurRefresh(scroll);
         return scroll;
     }
 
@@ -948,7 +848,6 @@ public class MainActivity extends Activity {
             }
         });
         mainHandler.post(this::launchSearch);
-        attachBottomBlurRefresh(searchList);
         return page;
     }
 
@@ -1181,7 +1080,6 @@ public class MainActivity extends Activity {
         bookOffset = 0;
         booksEnded = false;
         loadBooks(true);
-        attachBottomBlurRefresh(bookList);
         return page;
     }
 
@@ -1364,7 +1262,6 @@ public class MainActivity extends Activity {
                     openDocument(favorites.get(position).id));
             page.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-            attachBottomBlurRefresh(list);
         }
         return page;
     }
@@ -1380,9 +1277,9 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(17), dp(16), dp(17), dp(16));
         header.setBackground(gradient(TEAL_DEEP, TEAL, 0));
-        TextView title = text("本地数据管理", 23, Color.WHITE, Typeface.BOLD);
+        TextView title = text("数据库管理", 23, Color.WHITE, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text("备份、迁移或整理这台设备上的扫书资料", 12,
+        TextView subtitle = text("导入、导出、单条删除与用户数据备份", 12,
                 Color.argb(220, 255, 255, 255), Typeface.NORMAL);
         addWithTop(header, subtitle, 4);
 
@@ -1459,9 +1356,9 @@ public class MainActivity extends Activity {
         addWithTop(page, exportCard, 10);
 
         LinearLayout importCard = dataActionCard(
-                "导入扫书",
-                "选择由本应用导出的 JSONL 文件。按 canonical_key 自动查重，已有内容不会重复写入。",
-                "选择导入文件",
+                "导入扫书（单条或批量）",
+                "选择由本应用导出的 JSONL 文件。单条文件可直接导入，批量文件按 canonical_key 自动查重。",
+                "选择单条或批量文件",
                 v -> requestDataImport());
         addWithTop(page, importCard, 10);
 
@@ -1476,6 +1373,24 @@ public class MainActivity extends Activity {
             setChildrenEnabled(restoreCard, false);
         }
         addWithTop(page, restoreCard, 10);
+
+        TextView userSection = text("用户数据备份", 17, TEXT, Typeface.BOLD);
+        userSection.setPadding(dp(16), dp(20), dp(16), dp(2));
+        page.addView(userSection);
+
+        LinearLayout userBackupCard = dataActionCard(
+                "备份用户数据",
+                "导出收藏、主题颜色和震动开关设置。不会重复打包离线正文数据库。",
+                "导出用户备份",
+                v -> requestUserBackupExport());
+        addWithTop(page, userBackupCard, 10);
+
+        LinearLayout userRestoreCard = dataActionCard(
+                "恢复用户数据",
+                "从 JSON 备份恢复收藏与界面设置；无效或已不存在的收藏会安全跳过。",
+                "选择用户备份",
+                v -> requestUserBackupImport());
+        addWithTop(page, userRestoreCard, 10);
 
         LinearLayout statusCard = column();
         statusCard.setPadding(dp(15), dp(14), dp(15), dp(14));
@@ -1506,12 +1421,12 @@ public class MainActivity extends Activity {
                                 ? " 近期不足 50 字的内容已清理 " +
                                 formatCompact(cleanedRecentShort) + " 条。"
                                 : "") +
+                        " 单条删除可在阅读页执行；单条导出也在阅读页操作。" +
                         " 本应用不下载小说正文，只管理已采集的评论与来源信息。",
                 11, MUTED, Typeface.NORMAL);
         format.setLineSpacing(0, 1.4f);
         format.setPadding(dp(18), dp(15), dp(18), 0);
         page.addView(format);
-        attachBottomBlurRefresh(scroll);
         return scroll;
     }
 
@@ -1675,6 +1590,50 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, REQUEST_IMPORT_DATA);
     }
 
+    private void requestSingleExport(Document document) {
+        if (dataBusy) {
+            toast("请等待当前操作完成");
+            return;
+        }
+        pendingSingleExportId = document.id;
+        String safeName = document.title.replaceAll("[\\\\/:*?\"<>|]+", "-")
+                .replaceAll("\\s+", " ").trim();
+        if (safeName.isEmpty()) {
+            safeName = "单条扫书";
+        }
+        if (safeName.length() > 48) {
+            safeName = safeName.substring(0, 48);
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/x-ndjson");
+        intent.putExtra(Intent.EXTRA_TITLE, safeName + ".jsonl");
+        startActivityForResult(intent, REQUEST_EXPORT_SINGLE);
+    }
+
+    private void requestUserBackupExport() {
+        if (dataBusy) {
+            return;
+        }
+        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT)
+                .format(new Date());
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, "扫书新典用户备份-" + stamp + ".json");
+        startActivityForResult(intent, REQUEST_EXPORT_USER_BACKUP);
+    }
+
+    private void requestUserBackupImport() {
+        if (dataBusy) {
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        startActivityForResult(intent, REQUEST_IMPORT_USER_BACKUP);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -1686,6 +1645,13 @@ public class MainActivity extends Activity {
             startDataExport(uri);
         } else if (requestCode == REQUEST_IMPORT_DATA) {
             startDataImport(uri);
+        } else if (requestCode == REQUEST_EXPORT_SINGLE) {
+            startSingleDocumentExport(uri, pendingSingleExportId);
+            pendingSingleExportId = -1;
+        } else if (requestCode == REQUEST_EXPORT_USER_BACKUP) {
+            startUserBackupExport(uri);
+        } else if (requestCode == REQUEST_IMPORT_USER_BACKUP) {
+            startUserBackupImport(uri);
         }
     }
 
@@ -1790,6 +1756,257 @@ public class MainActivity extends Activity {
             writer.flush();
         }
         return new ExportResult(documents, sources);
+    }
+
+    private void startSingleDocumentExport(Uri uri, long documentId) {
+        if (documentId <= 0 || dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在导出单条扫书…");
+        executor.execute(() -> {
+            try {
+                ExportResult result = exportSingleDocument(uri, documentId);
+                finishDataOperation("单条扫书导出完成，包含 " + result.sources +
+                        " 条来源关系。", false);
+            } catch (Exception error) {
+                finishDataOperation("单条导出失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private ExportResult exportSingleDocument(Uri uri, long documentId) throws Exception {
+        Cursor cursor = db.rawQuery(
+                "SELECT d.* FROM documents d WHERE d.id=? " +
+                        "AND d.id NOT IN (SELECT document_id FROM local_deleted)",
+                new String[]{String.valueOf(documentId)});
+        try {
+            if (!cursor.moveToFirst()) {
+                throw new IllegalStateException("这条扫书已不存在");
+            }
+            OutputStream raw = getContentResolver().openOutputStream(uri);
+            if (raw == null) {
+                throw new IllegalStateException("无法创建单条导出文件");
+            }
+            Document document = Document.fromCursor(cursor);
+            String canonicalKey = safe(cursor.getString(
+                    cursor.getColumnIndexOrThrow("canonical_key")));
+            int sources = 0;
+            try (BufferedWriter writer = new BufferedWriter(
+                    new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
+                JSONObject meta = new JSONObject();
+                meta.put("kind", "meta");
+                meta.put("format", "saoshu-xindian-single-jsonl");
+                meta.put("version", 1);
+                meta.put("exported_at", isoNow());
+                writer.write(meta.toString());
+                writer.newLine();
+
+                JSONObject item = new JSONObject();
+                item.put("kind", "document");
+                item.put("canonical_key", canonicalKey);
+                item.put("title", document.title);
+                item.put("author", document.author);
+                item.put("content", document.content);
+                item.put("category", document.category);
+                item.put("source_type", document.sourceType);
+                item.put("forum", document.forum);
+                item.put("mname", safe(cursor.getString(
+                        cursor.getColumnIndexOrThrow("mname"))));
+                item.put("zname", safe(cursor.getString(
+                        cursor.getColumnIndexOrThrow("zname"))));
+                item.put("published_at", document.date);
+                item.put("source_url", document.sourceUrl);
+                item.put("word", document.word);
+                item.put("hot_score", cursor.getLong(
+                        cursor.getColumnIndexOrThrow("hot_score")));
+                item.put("mentioned_books_json", document.mentionedJson);
+                writer.write(item.toString());
+                writer.newLine();
+
+                Cursor sourceCursor = db.rawQuery(
+                        "SELECT source_kind,source_ref,source_url " +
+                                "FROM document_sources WHERE document_id=? ORDER BY id",
+                        new String[]{String.valueOf(documentId)});
+                try {
+                    while (sourceCursor.moveToNext()) {
+                        JSONObject source = new JSONObject();
+                        source.put("kind", "source");
+                        source.put("document_key", canonicalKey);
+                        source.put("source_kind", safe(sourceCursor.getString(0)));
+                        source.put("source_ref", safe(sourceCursor.getString(1)));
+                        source.put("source_url", safe(sourceCursor.getString(2)));
+                        writer.write(source.toString());
+                        writer.newLine();
+                        sources++;
+                    }
+                } finally {
+                    sourceCursor.close();
+                }
+                JSONObject end = new JSONObject();
+                end.put("kind", "end");
+                end.put("documents", 1);
+                end.put("sources", sources);
+                writer.write(end.toString());
+                writer.newLine();
+                writer.flush();
+            }
+            return new ExportResult(1, sources);
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private void startUserBackupExport(Uri uri) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在导出收藏和界面设置…");
+        executor.execute(() -> {
+            try {
+                UserBackupResult result = exportUserBackup(uri);
+                finishDataOperation("用户数据备份完成：收藏 " + result.favorites +
+                        " 条，主题与震动设置已保存。", false);
+            } catch (Exception error) {
+                finishDataOperation("用户备份失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private UserBackupResult exportUserBackup(Uri uri) throws Exception {
+        OutputStream raw = getContentResolver().openOutputStream(uri);
+        if (raw == null) {
+            throw new IllegalStateException("无法创建用户备份文件");
+        }
+        Set<String> favoriteIds = preferences.getStringSet(
+                "favorite_ids", new LinkedHashSet<>());
+        JSONArray ids = new JSONArray();
+        JSONArray keys = new JSONArray();
+        if (favoriteIds != null) {
+            for (String id : new LinkedHashSet<>(favoriteIds)) {
+                ids.put(id);
+                try (Cursor cursor = db.rawQuery(
+                        "SELECT canonical_key FROM documents WHERE id=?",
+                        new String[]{id})) {
+                    if (cursor.moveToFirst()) {
+                        keys.put(safe(cursor.getString(0)));
+                    }
+                }
+            }
+        }
+        JSONObject backup = new JSONObject();
+        backup.put("kind", "saoshu-xindian-user-backup");
+        backup.put("version", 1);
+        backup.put("created_at", isoNow());
+        JSONObject settings = new JSONObject();
+        settings.put("theme_id", preferences.getString("theme_id", "teal"));
+        settings.put("haptic_enabled", preferences.getBoolean("haptic_enabled", false));
+        settings.put("favorite_ids", ids);
+        settings.put("favorite_keys", keys);
+        backup.put("settings", settings);
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
+            writer.write(backup.toString(2));
+            writer.newLine();
+        }
+        return new UserBackupResult(keys.length());
+    }
+
+    private void startUserBackupImport(Uri uri) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在恢复用户收藏与设置…");
+        executor.execute(() -> {
+            try {
+                UserBackupResult result = importUserBackup(uri);
+                mainHandler.post(() -> {
+                    dataBusy = false;
+                    applySelectedTheme();
+                    configureWindow();
+                    showMainShell();
+                    switchTab(4);
+                    String message = "用户数据恢复完成：收藏 " + result.favorites +
+                            " 条，主题与震动设置已应用。";
+                    preferences.edit().putString("last_data_message", message).apply();
+                    toast(message);
+                });
+            } catch (Exception error) {
+                finishDataOperation("用户恢复失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private UserBackupResult importUserBackup(Uri uri) throws Exception {
+        InputStream raw = getContentResolver().openInputStream(uri);
+        if (raw == null) {
+            throw new IllegalStateException("无法读取用户备份文件");
+        }
+        String content;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(raw, StandardCharsets.UTF_8))) {
+            StringBuilder builder = new StringBuilder();
+            char[] buffer = new char[4096];
+            int count;
+            while ((count = reader.read(buffer)) != -1) {
+                builder.append(buffer, 0, count);
+            }
+            content = builder.toString();
+        }
+        JSONObject backup = new JSONObject(content);
+        if (!"saoshu-xindian-user-backup".equals(
+                backup.optString("kind", ""))) {
+            throw new IllegalArgumentException("不是扫书新典用户备份文件");
+        }
+        JSONObject settings = backup.optJSONObject("settings");
+        if (settings == null) {
+            throw new IllegalArgumentException("备份中缺少 settings");
+        }
+        String theme = settings.optString("theme_id", "teal");
+        if (!theme.matches("teal|ocean|amber|rose|violet")) {
+            theme = "teal";
+        }
+        boolean haptic = settings.optBoolean("haptic_enabled", false);
+        Set<String> restoredIds = new LinkedHashSet<>();
+        JSONArray keys = settings.optJSONArray("favorite_keys");
+        if (keys != null) {
+            for (int i = 0; i < keys.length(); i++) {
+                String key = keys.optString(i, "");
+                if (key.isEmpty()) {
+                    continue;
+                }
+                try (Cursor cursor = db.rawQuery(
+                        "SELECT id FROM documents WHERE canonical_key=? " +
+                                "AND id NOT IN (SELECT document_id FROM local_deleted)",
+                        new String[]{key})) {
+                    if (cursor.moveToFirst()) {
+                        restoredIds.add(String.valueOf(cursor.getLong(0)));
+                    }
+                }
+            }
+        }
+        JSONArray ids = settings.optJSONArray("favorite_ids");
+        if (ids != null) {
+            for (int i = 0; i < ids.length(); i++) {
+                String id = ids.optString(i, "");
+                try (Cursor cursor = db.rawQuery(
+                        "SELECT 1 FROM documents WHERE id=? " +
+                                "AND id NOT IN (SELECT document_id FROM local_deleted)",
+                        new String[]{id})) {
+                    if (cursor.moveToFirst()) {
+                        restoredIds.add(id);
+                    }
+                }
+            }
+        }
+        preferences.edit()
+                .putString("theme_id", theme)
+                .putBoolean("haptic_enabled", haptic)
+                .putStringSet("favorite_ids", restoredIds)
+                .apply();
+        return new UserBackupResult(restoredIds.size());
     }
 
     private void startDataImport(Uri uri) {
@@ -1915,7 +2132,7 @@ public class MainActivity extends Activity {
             return;
         }
         new android.app.AlertDialog.Builder(this)
-                .setTitle("从本地删除？")
+                .setTitle("删除单条扫书？")
                 .setMessage("这条内容将从搜索、书库和收藏中隐藏。内置原始数据不会被修改，" +
                         "之后可在“数据”页恢复。")
                 .setNegativeButton("取消", null)
@@ -2435,9 +2652,14 @@ public class MainActivity extends Activity {
         pager.addView(next, weightedAction());
         addWithTop(article, pager, 10);
 
-        TextView deleteLocal = actionButton("本地删除此条", Color.WHITE, TEAL_DARK);
+        LinearLayout dataActions = row();
+        TextView exportSingle = actionButton("导出此条", Color.WHITE, TEAL_DARK);
+        exportSingle.setOnClickListener(v -> requestSingleExport(document));
+        dataActions.addView(exportSingle, weightedAction());
+        TextView deleteLocal = actionButton("删除此条扫书", Color.WHITE, TEAL_DARK);
         deleteLocal.setOnClickListener(v -> confirmLocalDelete(document));
-        addWithTop(article, deleteLocal, 9);
+        dataActions.addView(deleteLocal, weightedAction());
+        addWithTop(article, dataActions, 9);
 
         favorite.setOnClickListener(v -> {
             boolean now = toggleFavorite(document.id);
@@ -2887,13 +3109,6 @@ public class MainActivity extends Activity {
         if (pendingSearch != null) {
             mainHandler.removeCallbacks(pendingSearch);
         }
-        if (pendingBlurRefresh != null) {
-            mainHandler.removeCallbacks(pendingBlurRefresh);
-        }
-        if (bottomBlurBitmap != null && !bottomBlurBitmap.isRecycled()) {
-            bottomBlurBitmap.recycle();
-            bottomBlurBitmap = null;
-        }
         executor.shutdownNow();
         if (db != null && db.isOpen()) {
             db.close();
@@ -3187,6 +3402,14 @@ public class MainActivity extends Activity {
             this.restored = restored;
             this.skipped = skipped;
             this.sources = sources;
+        }
+    }
+
+    private static class UserBackupResult {
+        final int favorites;
+
+        UserBackupResult(int favorites) {
+            this.favorites = favorites;
         }
     }
 
