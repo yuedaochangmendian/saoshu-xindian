@@ -44,6 +44,17 @@ def compact(value):
     return re.sub(r"[\W_]+", "", normalized(value))
 
 
+def similarity(left, right, threshold):
+    a = left["normalized"]
+    b = right["normalized"]
+    if len(a) < len(b) * 0.50 or len(b) < len(a) * 0.50:
+        return 0.0
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    if matcher.quick_ratio() < threshold:
+        return 0.0
+    return matcher.ratio()
+
+
 def find_duplicate_groups(db, threshold):
     rows = db.execute(
         """
@@ -92,14 +103,7 @@ def find_duplicate_groups(db, threshold):
                 key = (left_id, right_id)
                 if key in pairs:
                     continue
-                a = left["normalized"]
-                b = right["normalized"]
-                if len(a) < len(b) * 0.50 or len(b) < len(a) * 0.50:
-                    continue
-                matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
-                if matcher.quick_ratio() < threshold:
-                    continue
-                ratio = matcher.ratio()
+                ratio = similarity(left, right, threshold)
                 if ratio >= threshold:
                     pairs[key] = round(ratio, 6)
 
@@ -227,6 +231,9 @@ def main():
             for duplicate in sorted(eligible, key=lambda item: item["id"]):
                 if duplicate["id"] == keeper["id"]:
                     continue
+                ratio = similarity(duplicate, keeper, threshold)
+                if ratio < threshold:
+                    continue
                 merge_sources(db, duplicate["id"], keeper["id"])
                 db.execute("DELETE FROM document_sources WHERE document_id=?", (duplicate["id"],))
                 if has_search_index:
@@ -237,9 +244,7 @@ def main():
                         "removed_id": duplicate["id"],
                         "kept_id": keeper["id"],
                         "title": duplicate["title"],
-                        "similarity": pairs.get(
-                            tuple(sorted((duplicate["id"], keeper["id"]))), 1.0
-                        ),
+                        "similarity": round(ratio, 6),
                     }
                 )
         rebuild_books(db)

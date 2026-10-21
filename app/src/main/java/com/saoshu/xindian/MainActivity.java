@@ -1,5 +1,6 @@
 package com.saoshu.xindian;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -15,6 +16,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.graphics.text.LineBreaker;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -72,6 +74,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -80,7 +83,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -258,7 +261,7 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 65_536L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v5.db");
+            File legacy = new File(getFilesDir(), "saoshu.pre-v6.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -615,7 +618,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.4", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.5", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1971,6 +1974,7 @@ public class MainActivity extends Activity {
         boolean haptic = settings.optBoolean("haptic_enabled", false);
         Set<String> restoredIds = new LinkedHashSet<>();
         JSONArray keys = settings.optJSONArray("favorite_keys");
+        boolean hasCanonicalFavorites = keys != null;
         if (keys != null) {
             for (int i = 0; i < keys.length(); i++) {
                 String key = keys.optString(i, "");
@@ -1988,7 +1992,7 @@ public class MainActivity extends Activity {
             }
         }
         JSONArray ids = settings.optJSONArray("favorite_ids");
-        if (ids != null) {
+        if (!hasCanonicalFavorites && ids != null) {
             for (int i = 0; i < ids.length(); i++) {
                 String id = ids.optString(i, "");
                 try (Cursor cursor = db.rawQuery(
@@ -2312,8 +2316,15 @@ public class MainActivity extends Activity {
     }
 
     private String isoNow() {
-        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT)
-                .format(new Date());
+        SimpleDateFormat format = new SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return format.format(new Date());
+    }
+
+    @SuppressLint("WrongConstant")
+    private void applyLegacyBreakStrategy(TextView view) {
+        view.setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY);
     }
 
     private String normalizedTitle(String value) {
@@ -2603,8 +2614,10 @@ public class MainActivity extends Activity {
         body.setTextIsSelectable(true);
         body.setLineSpacing(dp(6), 1.52f);
         body.setPadding(0, dp(2), 0, dp(2));
-        if (android.os.Build.VERSION.SDK_INT >= 23) {
-            body.setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY);
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            body.setBreakStrategy(LineBreaker.BREAK_STRATEGY_HIGH_QUALITY);
+        } else {
+            applyLegacyBreakStrategy(body);
         }
         bodyCard.addView(body);
         addWithTop(article, bodyCard, 10);
@@ -3211,7 +3224,8 @@ public class MainActivity extends Activity {
             arrow.setGravity(Gravity.CENTER);
             card.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(38)));
             outer.addView(card, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(70)));
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
             return outer;
         }
     }
