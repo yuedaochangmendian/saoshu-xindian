@@ -615,7 +615,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.3", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.4", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -3175,8 +3175,10 @@ public class MainActivity extends Activity {
         public View getView(int position, View convertView, ViewGroup parent) {
             Book book = books.get(position);
             LinearLayout outer = new LinearLayout(MainActivity.this);
+            outer.setOrientation(LinearLayout.VERTICAL);
             outer.setPadding(dp(1), dp(5), dp(1), dp(5));
             LinearLayout card = row();
+            card.setMinimumHeight(dp(70));
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setPadding(dp(14), dp(13), dp(13), dp(13));
             card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
@@ -3208,7 +3210,8 @@ public class MainActivity extends Activity {
             TextView arrow = text("›", 24, TEAL, Typeface.NORMAL);
             arrow.setGravity(Gravity.CENTER);
             card.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(38)));
-            outer.addView(card);
+            outer.addView(card, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(70)));
             return outer;
         }
     }
