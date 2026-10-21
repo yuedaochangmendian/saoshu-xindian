@@ -19,6 +19,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.SpannableStringBuilder;
@@ -115,7 +116,8 @@ public class MainActivity extends Activity {
     private boolean detailOpen = false;
     private long currentDetailId = -1;
     private boolean bottomHidden = false;
-    private Runnable pendingBottomShow;
+    private long suppressBottomTrackingUntil = 0;
+    private long lastListScrollSignature = -1;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -559,10 +561,7 @@ public class MainActivity extends Activity {
             item.setContentDescription(labels[i]);
             item.setClickable(true);
             item.setFocusable(true);
-            item.setOnClickListener(v -> {
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-                switchTab(tab);
-            });
+            item.setOnClickListener(v -> switchTab(tab));
             navItems[i] = item;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -575,6 +574,7 @@ public class MainActivity extends Activity {
     private void switchTab(int tab) {
         currentTab = tab;
         detailOpen = false;
+        lastListScrollSignature = -1;
         if (bottomBar != null) {
             bottomBar.setVisibility(View.VISIBLE);
         }
@@ -604,46 +604,53 @@ public class MainActivity extends Activity {
     }
 
     private void attachAutoHideBottom(View target) {
-        final float[] lastY = {Float.NaN};
-        target.setOnTouchListener((view, event) -> {
-            if (bottomBar == null || detailOpen) {
-                return false;
+        if (target instanceof ScrollView) {
+            ((ScrollView) target).setOnScrollChangeListener(
+                    (view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                        if (scrollY > oldScrollY + dp(2)) {
+                            showBottomBar();
+                        } else if (scrollY < oldScrollY - dp(2)) {
+                            hideBottomBar();
+                        }
+                    });
+        } else if (target instanceof ListView) {
+            ((ListView) target).setOnScrollListener(new AbsListView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(AbsListView view, int scrollState) {
+                }
+
+                @Override
+                public void onScroll(AbsListView view, int firstVisibleItem,
+                                     int visibleItemCount, int totalItemCount) {
+                    trackListScroll(view);
+                }
+            });
+        }
+    }
+
+    private void trackListScroll(AbsListView view) {
+        if (SystemClock.uptimeMillis() < suppressBottomTrackingUntil) {
+            return;
+        }
+        View first = view.getChildAt(0);
+        int top = first == null ? 0 : first.getTop();
+        long signature = view.getFirstVisiblePosition() * 100000L + top;
+        if (lastListScrollSignature >= 0) {
+            long delta = signature - lastListScrollSignature;
+            if (delta > dp(2)) {
+                showBottomBar();
+            } else if (delta < -dp(2)) {
+                hideBottomBar();
             }
-            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
-                lastY[0] = event.getRawY();
-                if (pendingBottomShow != null) {
-                    mainHandler.removeCallbacks(pendingBottomShow);
-                    pendingBottomShow = null;
-                }
-            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) {
-                if (Float.isNaN(lastY[0])) {
-                    lastY[0] = event.getRawY();
-                } else {
-                    float delta = lastY[0] - event.getRawY();
-                    if (delta > dp(2)) {
-                        hideBottomBar();
-                    } else if (delta < -dp(2)) {
-                        showBottomBar();
-                    }
-                    lastY[0] = event.getRawY();
-                }
-            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP
-                    || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
-                lastY[0] = Float.NaN;
-                if (pendingBottomShow != null) {
-                    mainHandler.removeCallbacks(pendingBottomShow);
-                }
-                pendingBottomShow = this::showBottomBar;
-                mainHandler.postDelayed(pendingBottomShow, 520);
-            }
-            return false;
-        });
+        }
+        lastListScrollSignature = signature;
     }
 
     private void hideBottomBar() {
         if (bottomBar == null || detailOpen || bottomHidden) {
             return;
         }
+        suppressBottomTrackingUntil = SystemClock.uptimeMillis() + 280;
         bottomHidden = true;
         bottomBar.animate()
                 .translationY(bottomBar.getHeight() + dp(8))
@@ -661,6 +668,7 @@ public class MainActivity extends Activity {
         if (bottomBar == null || detailOpen || !bottomHidden) {
             return;
         }
+        suppressBottomTrackingUntil = SystemClock.uptimeMillis() + 280;
         bottomHidden = false;
         bottomBar.animate().cancel();
         bottomBar.setVisibility(View.VISIBLE);
@@ -689,7 +697,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.4", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.5", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -864,7 +872,7 @@ public class MainActivity extends Activity {
         searchStatus = text("最近收录的内容", 13, MUTED, Typeface.BOLD);
         resultHeader.addView(searchStatus, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView toggle = new TextView(this);
+        TextView toggle = new FeedbackTextView(this);
         toggle.setText(searchFullText ? "● 全文" : "○ 标题");
         toggle.setTextSize(12);
         toggle.setGravity(Gravity.CENTER);
@@ -950,7 +958,6 @@ public class MainActivity extends Activity {
                                     ? PINK_DARK : Color.argb(210, 255, 255, 255),
                             Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
                 }
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
                 listener.onSelected(option);
                 launchSearch();
             });
@@ -1127,6 +1134,7 @@ public class MainActivity extends Activity {
             @Override
             public void onScroll(AbsListView view, int firstVisibleItem,
                                  int visibleItemCount, int totalItemCount) {
+                trackListScroll(view);
                 if (!booksLoading && !booksEnded && totalItemCount > 0
                         && firstVisibleItem + visibleItemCount >= totalItemCount - 7) {
                     loadBooks(false);
@@ -1157,7 +1165,6 @@ public class MainActivity extends Activity {
         bookOffset = 0;
         booksEnded = false;
         loadBooks(true);
-        attachAutoHideBottom(bookList);
         return page;
     }
 
@@ -1484,7 +1491,6 @@ public class MainActivity extends Activity {
         option.setClickable(true);
         option.setFocusable(true);
         option.setOnClickListener(v -> {
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
             preferences.edit().putString("theme_id", id).apply();
             applySelectedTheme();
             configureWindow();
@@ -1523,7 +1529,6 @@ public class MainActivity extends Activity {
         card.setElevation(dp(2));
         card.setClickable(true);
         card.setFocusable(true);
-        bindHapticFeedback(card);
         TextView heading = text(title, 17, TEXT, Typeface.BOLD);
         card.addView(heading);
         TextView body = text(description, 12, MUTED, Typeface.NORMAL);
@@ -2421,7 +2426,6 @@ public class MainActivity extends Activity {
         button.setPadding(dp(8), dp(10), dp(8), dp(10));
         button.setBackground(rippleRound(background, Color.TRANSPARENT, 12,
                 Color.argb(42, 0, 0, 0)));
-        bindHapticFeedback(button);
         return button;
     }
 
@@ -2435,10 +2439,7 @@ public class MainActivity extends Activity {
         back.setPadding(dp(5), 0, dp(8), dp(2));
         back.setBackground(rippleRound(Color.TRANSPARENT, Color.TRANSPARENT, 12,
                 Color.argb(55, 255, 255, 255)));
-        back.setOnClickListener(v -> {
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-            backAction.run();
-        });
+        back.setOnClickListener(v -> backAction.run());
         bar.addView(back, new LinearLayout.LayoutParams(dp(45), dp(48)));
         TextView title = text(label, 16, Color.WHITE, Typeface.BOLD);
         bar.addView(title, new LinearLayout.LayoutParams(
@@ -2722,24 +2723,23 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout column() {
-        LinearLayout view = new LinearLayout(this);
+        FeedbackLinearLayout view = new FeedbackLinearLayout(this);
         view.setOrientation(LinearLayout.VERTICAL);
         return view;
     }
 
     private LinearLayout row() {
-        LinearLayout view = new LinearLayout(this);
+        FeedbackLinearLayout view = new FeedbackLinearLayout(this);
         view.setOrientation(LinearLayout.HORIZONTAL);
         return view;
     }
 
     private TextView text(String value, float size, int color, int style) {
-        TextView view = new TextView(this);
+        FeedbackTextView view = new FeedbackTextView(this);
         view.setText(value == null ? "" : value);
         view.setTextSize(size);
         view.setTextColor(color);
         view.setTypeface(Typeface.create("sans", style));
-        view.setOnClickListener(null);
         return view;
     }
 
@@ -2774,40 +2774,27 @@ public class MainActivity extends Activity {
                 ColorStateList.valueOf(Color.argb(42, 0, 0, 0)), content, mask));
         view.setClickable(true);
         view.setFocusable(true);
-        bindHapticFeedback(view);
     }
 
-    private void bindHapticFeedback(View view) {
-        view.setOnTouchListener((v, event) -> {
-            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-            }
-            return false;
-        });
+    private void applyPressFeedback(View view, android.view.MotionEvent event) {
+        if (!view.isClickable()) {
+            return;
+        }
+        int action = event.getActionMasked();
+        if (action == android.view.MotionEvent.ACTION_DOWN) {
+            view.setPressed(true);
+            view.performHapticFeedback(
+                    android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+        } else if (action == android.view.MotionEvent.ACTION_UP
+                || action == android.view.MotionEvent.ACTION_CANCEL) {
+            view.setPressed(false);
+        }
     }
 
     private void bindWholeCardClick(View root, View.OnClickListener listener) {
-        View.OnClickListener wrapped = v -> {
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-            listener.onClick(root);
-        };
-        root.setOnClickListener(wrapped);
+        root.setOnClickListener(listener);
         root.setClickable(true);
-        bindCardChildren(root, wrapped);
-    }
-
-    private void bindCardChildren(View view, View.OnClickListener listener) {
-        if (!(view instanceof ViewGroup)) {
-            return;
-        }
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            child.setOnClickListener(listener);
-            child.setClickable(true);
-            child.setFocusable(false);
-            bindCardChildren(child, listener);
-        }
+        root.setFocusable(true);
     }
 
     private void configureListFeedback(ListView list) {
@@ -3009,6 +2996,30 @@ public class MainActivity extends Activity {
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("source_url"))),
                     safe(cursor.getString(cursor.getColumnIndexOrThrow("mentioned_books_json"))),
                     cursor.getLong(cursor.getColumnIndexOrThrow("word")));
+        }
+    }
+
+    private class FeedbackTextView extends TextView {
+        FeedbackTextView(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            applyPressFeedback(this, event);
+            return super.onTouchEvent(event);
+        }
+    }
+
+    private class FeedbackLinearLayout extends LinearLayout {
+        FeedbackLinearLayout(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            applyPressFeedback(this, event);
+            return super.onTouchEvent(event);
         }
     }
 
