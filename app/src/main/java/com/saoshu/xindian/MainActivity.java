@@ -640,7 +640,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.8", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.9", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -806,6 +806,7 @@ public class MainActivity extends Activity {
     }
 
     private void showGlossary() {
+        glossaryQuery = "";
         detailOpen = true;
         detailBackTab = 1;
         bottomBar.setVisibility(View.GONE);
