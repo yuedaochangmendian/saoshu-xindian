@@ -139,6 +139,10 @@ public class MainActivity extends Activity {
     private TextView searchStatus;
     private ListView searchList;
     private Runnable pendingSearch;
+    private String glossaryQuery = "";
+    private LinearLayout glossaryContainer;
+    private TextView glossaryCount;
+    private List<GlossaryTerm> glossaryTerms;
 
     private EditText bookField;
     private ListView bookList;
@@ -636,7 +640,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.7", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.8", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -691,8 +695,21 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(gradient(PINK_DARK, PINK, 0));
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
-        header.addView(title);
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView glossaryButton = text("名词解释", 12, Color.WHITE, Typeface.BOLD);
+        glossaryButton.setGravity(Gravity.CENTER);
+        glossaryButton.setContentDescription("查看扫书常用名词解释");
+        glossaryButton.setPadding(dp(11), dp(5), dp(11), dp(5));
+        glossaryButton.setBackground(rippleRound(
+                Color.argb(28, 255, 255, 255), Color.argb(90, 255, 255, 255),
+                11, Color.argb(55, 255, 255, 255)));
+        glossaryButton.setOnClickListener(v -> showGlossary());
+        titleRow.addView(glossaryButton);
+        header.addView(titleRow);
 
         LinearLayout inputRow = row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -786,6 +803,174 @@ public class MainActivity extends Activity {
         });
         mainHandler.post(this::launchSearch);
         return page;
+    }
+
+    private void showGlossary() {
+        detailOpen = true;
+        detailBackTab = 1;
+        bottomBar.setVisibility(View.GONE);
+        content.removeAllViews();
+
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+        page.addView(simpleToolbar("名词解释", this::returnFromDetail));
+
+        LinearLayout intro = column();
+        intro.setPadding(dp(16), dp(13), dp(16), dp(13));
+        intro.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        TextView title = text("扫书常用词", 18, Color.WHITE, Typeface.BOLD);
+        intro.addView(title);
+        TextView subtitle = text("来自《扫书宝典》3.10.250109 · 原文顺序",
+                11, Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+        addWithTop(intro, subtitle, 3);
+        page.addView(intro);
+
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setText(glossaryQuery);
+        search.setHint("搜索词条或解释，例如：雷、全初、FC");
+        search.setTextSize(14);
+        search.setTextColor(TEXT);
+        search.setHintTextColor(MUTED);
+        search.setBackground(round(Color.WHITE, 12));
+        search.setPadding(dp(12), 0, dp(12), 0);
+        LinearLayout searchWrapper = row();
+        searchWrapper.setPadding(dp(12), dp(10), dp(12), 0);
+        searchWrapper.addView(search, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
+        page.addView(searchWrapper);
+
+        glossaryCount = text("", 12, MUTED, Typeface.BOLD);
+        glossaryCount.setPadding(dp(17), dp(6), dp(17), dp(5));
+        page.addView(glossaryCount);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        glossaryContainer = column();
+        glossaryContainer.setPadding(dp(12), 0, dp(12), dp(28));
+        scroll.addView(glossaryContainer);
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        content.addView(page);
+
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                glossaryQuery = s.toString().trim();
+                renderGlossary();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        renderGlossary();
+    }
+
+    private void renderGlossary() {
+        if (glossaryContainer == null || glossaryCount == null) {
+            return;
+        }
+        List<GlossaryTerm> all = loadGlossaryTerms();
+        String needle = safe(glossaryQuery).toLowerCase(Locale.ROOT);
+        List<GlossaryTerm> shown = new ArrayList<>();
+        for (GlossaryTerm term : all) {
+            if (needle.isEmpty()
+                    || term.term.toLowerCase(Locale.ROOT).contains(needle)
+                    || term.explanation.toLowerCase(Locale.ROOT).contains(needle)) {
+                shown.add(term);
+            }
+        }
+        glossaryCount.setText(needle.isEmpty()
+                ? all.size() + " 个词条 · 点击复制释义"
+                : "找到 " + shown.size() + " 个词条");
+        glossaryContainer.removeAllViews();
+        if (shown.isEmpty()) {
+            LinearLayout empty = column();
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(16), dp(28), dp(16), dp(24));
+            empty.setBackground(round(Color.WHITE, 14));
+            TextView hint = text("没有匹配的词条", 17, TEXT, Typeface.BOLD);
+            hint.setGravity(Gravity.CENTER);
+            empty.addView(hint);
+            TextView sub = text("尝试搜索简称、书名现象或雷点名称。",
+                    12, MUTED, Typeface.NORMAL);
+            sub.setGravity(Gravity.CENTER);
+            addWithTop(empty, sub, 7);
+            glossaryContainer.addView(empty);
+            return;
+        }
+        for (int i = 0; i < shown.size(); i++) {
+            addWithTop(glossaryContainer, createGlossaryCard(shown.get(i), i), dp(7));
+        }
+    }
+
+    private View createGlossaryCard(GlossaryTerm glossary, int index) {
+        LinearLayout card = column();
+        card.setPadding(dp(15), dp(13), dp(15), dp(12));
+        card.setBackground(round(Color.WHITE, 14));
+        card.setElevation(dp(1));
+
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView number = text(String.format(Locale.ROOT, "%02d", index + 1),
+                10, TEAL_DARK, Typeface.BOLD);
+        number.setGravity(Gravity.CENTER);
+        number.setBackground(round(TEAL_PALE, 9));
+        titleRow.addView(number, new LinearLayout.LayoutParams(dp(30), dp(24)));
+        TextView title = text(glossary.term, 17, TEXT, Typeface.BOLD);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        titleParams.leftMargin = dp(9);
+        titleRow.addView(title, titleParams);
+        TextView copy = text("复制", 11, TEAL_DARK, Typeface.BOLD);
+        copy.setPadding(dp(9), dp(5), dp(9), dp(5));
+        copy.setBackground(rippleRound(TEAL_PALE, Color.TRANSPARENT, 10,
+                Color.argb(40, 0, 0, 0)));
+        copy.setOnClickListener(v -> copyText(glossary.term + " 名词解释",
+                glossary.explanation));
+        titleRow.addView(copy);
+        card.addView(titleRow);
+
+        TextView body = text(glossary.explanation, 13,
+                Color.rgb(72, 82, 80), Typeface.NORMAL);
+        body.setLineSpacing(dp(2), 1.42f);
+        addWithTop(card, body, 8);
+        return card;
+    }
+
+    private List<GlossaryTerm> loadGlossaryTerms() {
+        if (glossaryTerms != null) {
+            return glossaryTerms;
+        }
+        List<GlossaryTerm> loaded = new ArrayList<>();
+        try (InputStream input = getAssets().open("glossary_terms.json");
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append('\n');
+            }
+            JSONObject root = new JSONObject(content.toString());
+            JSONArray terms = root.getJSONArray("terms");
+            for (int i = 0; i < terms.length(); i++) {
+                JSONObject item = terms.getJSONObject(i);
+                String term = safe(item.optString("term")).trim();
+                String explanation = safe(item.optString("explanation")).trim();
+                if (!term.isEmpty() && !explanation.isEmpty()) {
+                    loaded.add(new GlossaryTerm(term, explanation));
+                }
+            }
+        } catch (Exception error) {
+            toast("名词解释加载失败");
+        }
+        glossaryTerms = loaded;
+        return glossaryTerms;
     }
 
     private void launchSearch() {
@@ -4079,6 +4264,16 @@ public class MainActivity extends Activity {
         static CollectionEntry forNote(Note note) {
             return new CollectionEntry(null, note, note.pinned,
                     note.updatedAt, note.id);
+        }
+    }
+
+    private static class GlossaryTerm {
+        final String term;
+        final String explanation;
+
+        GlossaryTerm(String term, String explanation) {
+            this.term = term;
+            this.explanation = explanation;
         }
     }
 
