@@ -80,7 +80,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private int TEAL;
@@ -257,7 +257,7 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 150_000_000L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v3.db");
+            File legacy = new File(getFilesDir(), "saoshu.pre-v4.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -689,7 +689,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.3", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.4", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1440,6 +1440,7 @@ public class MainActivity extends Activity {
 
         long cleanedDuplicates = metaLong("removed_duplicates", 0);
         long cleanedReplies = metaLong("removed_meaningless", 0);
+        long cleanedRecentShort = metaLong("removed_recent_short", 0);
         TextView format = text(
                 "导入导出范围包含扫书、推书、排雷、讨论与求书记录。" +
                         (cleanedDuplicates > 0
@@ -1449,6 +1450,10 @@ public class MainActivity extends Activity {
                         (cleanedReplies > 0
                                 ? " 另过滤 " + formatCompact(cleanedReplies) +
                                 " 条无意义短回复。"
+                                : "") +
+                        (cleanedRecentShort > 0
+                                ? " 近期不足 50 字的内容已清理 " +
+                                formatCompact(cleanedRecentShort) + " 条。"
                                 : "") +
                         " 本应用不下载小说正文，只管理已采集的评论与来源信息。",
                 11, MUTED, Typeface.NORMAL);
@@ -2536,12 +2541,7 @@ public class MainActivity extends Activity {
         card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 15,
                 Color.argb(35, 0, 0, 0)));
         card.setElevation(dp(2));
-        card.setClickable(true);
-        card.setFocusable(true);
-        card.setOnClickListener(v -> {
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-            openDocument(d.id);
-        });
+        bindWholeCardClick(card, v -> openDocument(d.id));
 
         LinearLayout meta = row();
         meta.setGravity(Gravity.CENTER_VERTICAL);
@@ -2786,6 +2786,30 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void bindWholeCardClick(View root, View.OnClickListener listener) {
+        View.OnClickListener wrapped = v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            listener.onClick(root);
+        };
+        root.setOnClickListener(wrapped);
+        root.setClickable(true);
+        bindCardChildren(root, wrapped);
+    }
+
+    private void bindCardChildren(View view, View.OnClickListener listener) {
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            child.setOnClickListener(listener);
+            child.setClickable(true);
+            child.setFocusable(false);
+            bindCardChildren(child, listener);
+        }
+    }
+
     private void configureListFeedback(ListView list) {
         StateListDrawable selector = new StateListDrawable();
         selector.addState(new int[]{android.R.attr.state_pressed},
@@ -2903,12 +2927,7 @@ public class MainActivity extends Activity {
             card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
                     Color.argb(35, 0, 0, 0)));
             card.setElevation(dp(1));
-            card.setClickable(true);
-            card.setFocusable(true);
-            card.setOnClickListener(v -> {
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
-                showBookDetail(book);
-            });
+            bindWholeCardClick(card, v -> showBookDetail(book));
 
             TextView rank = text(String.valueOf(position + 1), 13,
                     position < 3 ? PINK_DARK : MUTED, Typeface.BOLD);

@@ -1,29 +1,30 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 150474752,
+  "bytes": 149700608,
   "integrity": "ok",
-  "documents": 73027,
-  "books": 27149,
-  "source_rows": 75317,
+  "documents": 72061,
+  "books": 27123,
+  "source_rows": 74306,
   "removed_duplicates": 1719,
   "removed_meaningless": 430,
+  "removed_recent_short": 966,
   "search_index": "built locally on first launch",
   "categories": {
     "卷首": 6,
-    "扫书": 41782,
-    "推书": 5377,
-    "讨论": 19727,
-    "排雷": 4695,
-    "求书": 1368,
-    "书评": 72
+    "扫书": 41609,
+    "推书": 5214,
+    "讨论": 19149,
+    "排雷": 4666,
+    "求书": 1349,
+    "书评": 68
   },
   "sources": {
     "无": 6,
-    "百度贴吧": 31503,
+    "百度贴吧": 30619,
     "雪群推书": 10890,
     "丫丫书屋": 322,
     "龙空论坛": 51,
     "资料库": 29904,
-    "文本页面": 351
+    "文本页面": 269
   }
 }

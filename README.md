@@ -11,11 +11,12 @@ GitHub Release 提供：
 
 ## 数据
 
-- `app/src/main/assets/saoshu.db`：73,027 条内容、27,149 个书名聚合、75,317 次来源关系
+- `app/src/main/assets/saoshu.db`：72,061 条内容、27,123 个书名聚合、74,306 次来源关系
 - 数据截止：2026-10-20
 - 正文完整保留；标题、作者、书名建立本地索引，正文检索在需要时执行
 - 已清理 1,719 条相似度不低于 99.5% 的重复正文，重复记录的来源关系会合并到保留版本
 - 已过滤 430 条纯表情、占楼、催更、致谢和无信息短回复
+- 已删除 2026-09-20 之后、有效正文不足 50 字的 966 条近期内容
 - 安装包不携带 FTS 索引，首次启动时在设备本地生成，以减小 APK 并支持单文件发布
 
 数据库文件约 169 MB，超过 GitHub 对单个普通仓库文件 100 MB 的限制，因此不提交到 Git 历史，而是放在 Release 的完整源码压缩包中。克隆源码后，将 `saoshu.db` 放入 `app/src/main/assets/` 即可构建。
@@ -56,6 +57,7 @@ GitHub Release 提供：
 
 - `tools/dedupe_app_content.py`：重建候选桶、复核相似度、合并来源并重建书名聚合
 - `tools/filter_meaningless_replies.py`：过滤纯表情、占楼、催更、致谢和低信息短回复
+- `tools/filter_recent_short.py`：删除近期有效正文不足 50 字的内容
 - `tools/strip_app_search_index.py`：从随包数据库移除 FTS 索引，改由首次启动时生成
 
 ## 构建
