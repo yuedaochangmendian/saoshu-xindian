@@ -134,8 +134,6 @@ public class MainActivity extends Activity {
     private LinearLayout notesContainer;
 
     private String searchQuery = "";
-    private String searchCategory = "";
-    private String searchSource = "";
     private boolean searchFullText = false;
     private EditText searchField;
     private TextView searchStatus;
@@ -638,7 +636,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.5", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.6", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -674,7 +672,6 @@ public class MainActivity extends Activity {
         addWithTop(page, searchCard, 10);
 
         page.addView(sectionTitle("最近扫书", "查看全部", v -> {
-            searchCategory = "";
             switchTab(1);
         }));
         List<Document> recent = queryDocuments(
@@ -721,17 +718,6 @@ public class MainActivity extends Activity {
         inputRow.addView(searchButton);
         addWithTop(header, inputRow, 7);
 
-        LinearLayout categoryChoices = choiceRow(
-                new String[]{"全部类型", "扫书", "推书", "排雷", "讨论", "求书"},
-                searchCategory.isEmpty() ? "全部类型" : searchCategory,
-                value -> searchCategory = value.equals("全部类型") ? "" : value);
-        addWithTop(header, categoryChoices, 7);
-        LinearLayout sourceChoices = choiceRow(
-                new String[]{"全部来源", "百度贴吧", "雪群推书", "资料库",
-                        "文本页面", "丫丫书屋", "剪贴板"},
-                searchSource.isEmpty() ? "全部来源" : searchSource,
-                value -> searchSource = value.equals("全部来源") ? "" : value);
-        addWithTop(header, sourceChoices, 5);
         page.addView(header);
 
         LinearLayout resultHeader = row();
@@ -802,49 +788,6 @@ public class MainActivity extends Activity {
         return page;
     }
 
-    private LinearLayout choiceRow(String[] options, String selected, ChoiceListener listener) {
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout row = row();
-        final String[] active = {selected};
-        for (String option : options) {
-            TextView chip = text(option, 12, option.equals(active[0]) ? Color.WHITE : PINK_DARK,
-                    Typeface.BOLD);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(9), dp(4), dp(9), dp(4));
-            chip.setBackground(rippleRound(option.equals(active[0])
-                            ? PINK_DARK : Color.argb(210, 255, 255, 255),
-                    Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
-            chip.setOnClickListener(v -> {
-                active[0] = option;
-                for (int i = 0; i < row.getChildCount(); i++) {
-                    TextView child = (TextView) row.getChildAt(i);
-                    boolean isActive = child.getText().toString().equals(active[0]);
-                    child.setTextColor(isActive ? Color.WHITE : PINK_DARK);
-                    child.setBackground(rippleRound(isActive
-                                    ? PINK_DARK : Color.argb(210, 255, 255, 255),
-                            Color.TRANSPARENT, 12, Color.argb(48, 0, 0, 0)));
-                }
-                listener.onSelected(option);
-                launchSearch();
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.rightMargin = dp(5);
-            row.addView(chip, params);
-        }
-        scroll.addView(row);
-        return wrapHorizontal(scroll);
-    }
-
-    private LinearLayout wrapHorizontal(View child) {
-        LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setOrientation(LinearLayout.HORIZONTAL);
-        wrapper.addView(child, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return wrapper;
-    }
-
     private void launchSearch() {
         if (searchField == null || searchList == null || searchStatus == null) {
             return;
@@ -852,13 +795,11 @@ public class MainActivity extends Activity {
         searchQuery = searchField.getText().toString().trim();
         final int version = searchVersion.incrementAndGet();
         final String query = searchQuery;
-        final String category = searchCategory;
-        final String source = searchSource;
         final boolean fullText = searchFullText;
         searchStatus.setText("搜索中…");
         executor.execute(() -> {
             try {
-                List<Document> results = searchDocuments(query, category, source, fullText);
+                List<Document> results = searchDocuments(query, fullText);
                 mainHandler.post(() -> {
                     if (version != searchVersion.get() || searchList == null) {
                         return;
@@ -882,8 +823,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private List<Document> searchDocuments(String query, String category,
-                                           String source, boolean fullText) {
+    private List<Document> searchDocuments(String query, boolean fullText) {
         StringBuilder sql = new StringBuilder("SELECT d.* FROM documents d");
         List<String> args = new ArrayList<>();
         boolean hasQuery = !query.isEmpty();
@@ -894,14 +834,6 @@ public class MainActivity extends Activity {
             }
         }
         sql.append(" WHERE d.id NOT IN (SELECT document_id FROM local_deleted)");
-        if (!category.isEmpty()) {
-            sql.append(" AND d.category=?");
-            args.add(category);
-        }
-        if (!source.isEmpty()) {
-            sql.append(" AND d.source_type=?");
-            args.add(source);
-        }
         if (hasQuery) {
             String tokens = buildFtsQuery(query);
             if (fullText) {
@@ -938,14 +870,6 @@ public class MainActivity extends Activity {
         List<String> fallbackArgs = new ArrayList<>();
         String like = "%" + query + "%";
         Collections.addAll(fallbackArgs, like, like, like);
-        if (!category.isEmpty()) {
-            fallback.append(" AND category=?");
-            fallbackArgs.add(category);
-        }
-        if (!source.isEmpty()) {
-            fallback.append(" AND source_type=?");
-            fallbackArgs.add(source);
-        }
         fallback.append(" ORDER BY published_at DESC,hot_score DESC,id DESC LIMIT 250");
         return queryDocuments(fallback.toString(), fallbackArgs.toArray(new String[0]));
     }
@@ -4000,10 +3924,6 @@ public class MainActivity extends Activity {
             saveCurrentNote();
         }
         super.onPause();
-    }
-
-    private interface ChoiceListener {
-        void onSelected(String value);
     }
 
     private class DocumentAdapter extends BaseAdapter {
