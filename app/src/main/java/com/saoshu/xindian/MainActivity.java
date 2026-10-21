@@ -80,7 +80,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -257,8 +257,8 @@ public class MainActivity extends Activity {
         try {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
-            boolean available = target.isFile() && target.length() > 150_000_000L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v4.db");
+            boolean available = target.isFile() && target.length() > 65_536L;
+            File legacy = new File(getFilesDir(), "saoshu.pre-v5.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -615,7 +615,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.2", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.3", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));

@@ -1,3 +1,4 @@
+import argparse
 import difflib
 import html
 import json
@@ -8,9 +9,9 @@ from collections import defaultdict
 from pathlib import Path
 
 
-ROOT = Path(r"C:\Users\ljlgg\Documents\Codex\2026-10-20\hu")
-DB_PATH = ROOT / "work" / "app" / "app" / "src" / "main" / "assets" / "saoshu.db"
-REPORT_PATH = ROOT / "outputs" / "content_dedupe_report.json"
+ROOT = Path(__file__).resolve().parents[1]
+DB_PATH = ROOT / "app" / "src" / "main" / "assets" / "saoshu.db"
+REPORT_PATH = ROOT / "build" / "reports" / "content_dedupe_report.json"
 
 
 def normalized(value):
@@ -43,10 +44,10 @@ def compact(value):
     return re.sub(r"[\W_]+", "", normalized(value))
 
 
-def find_duplicate_groups(db):
+def find_duplicate_groups(db, threshold):
     rows = db.execute(
         """
-        SELECT d.id, d.title, d.content, d.word, d.published_at, d.hot_score,
+        SELECT d.id, d.title, d.title_norm, d.content, d.word, d.published_at, d.hot_score,
                d.source_type, d.mentioned_books_json,
                (SELECT count(*) FROM document_sources s
                  WHERE s.document_id=d.id) AS source_count
@@ -61,19 +62,21 @@ def find_duplicate_groups(db):
         record = {
             "id": row[0],
             "title": row[1],
-            "content": row[2],
-            "word": row[3],
-            "published_at": row[4] or "",
-            "hot_score": row[5] or 0,
-            "source_type": row[6] or "",
-            "mentioned_books_json": row[7] or "[]",
-            "source_count": row[8] or 0,
+            "title_norm": row[2],
+            "content": row[3],
+            "word": row[4],
+            "published_at": row[5] or "",
+            "hot_score": row[6] or 0,
+            "source_type": row[7] or "",
+            "mentioned_books_json": row[8] or "[]",
+            "source_count": row[9] or 0,
         }
         text = normalized(record["content"])
         record["normalized"] = text
         records[record["id"]] = record
         if len(text) >= 100:
             signature_buckets[("head", text[:160])].add(record["id"])
+            signature_buckets[("title", record["title_norm"])].add(record["id"])
             if len(text) >= 300:
                 signature_buckets[("tail", text[-160:])].add(record["id"])
 
@@ -91,10 +94,13 @@ def find_duplicate_groups(db):
                     continue
                 a = left["normalized"]
                 b = right["normalized"]
-                if len(a) < len(b) * 0.90 or len(b) < len(a) * 0.90:
+                if len(a) < len(b) * 0.50 or len(b) < len(a) * 0.50:
                     continue
-                ratio = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
-                if ratio >= 0.995:
+                matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+                if matcher.quick_ratio() < threshold:
+                    continue
+                ratio = matcher.ratio()
+                if ratio >= threshold:
                     pairs[key] = round(ratio, 6)
 
     dsu = DisjointSet(records)
@@ -179,9 +185,31 @@ def rebuild_books(db):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--threshold", type=float, default=0.995)
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    threshold = max(0.0, min(1.0, args.threshold))
     db = sqlite3.connect(DB_PATH)
-    records, pairs, groups = find_duplicate_groups(db)
+    records, pairs, groups = find_duplicate_groups(db, threshold)
     removed = []
+    has_search_index = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_idx' LIMIT 1"
+    ).fetchone() is not None
+    if not args.apply:
+        report = {
+            "similarity_threshold": threshold,
+            "duplicate_groups": len(groups),
+            "removed_documents": sum(len(group) - 1 for group in groups),
+            "applied": False,
+        }
+        REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        REPORT_PATH.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        db.close()
+        return
     db.execute("BEGIN")
     try:
         for members in groups:
@@ -201,7 +229,8 @@ def main():
                     continue
                 merge_sources(db, duplicate["id"], keeper["id"])
                 db.execute("DELETE FROM document_sources WHERE document_id=?", (duplicate["id"],))
-                db.execute("DELETE FROM search_idx WHERE rowid=?", (duplicate["id"],))
+                if has_search_index:
+                    db.execute("DELETE FROM search_idx WHERE rowid=?", (duplicate["id"],))
                 db.execute("DELETE FROM documents WHERE id=?", (duplicate["id"],))
                 removed.append(
                     {
@@ -241,13 +270,14 @@ def main():
     db.execute("VACUUM")
     db.close()
     report = {
-        "similarity_threshold": 0.995,
+        "similarity_threshold": threshold,
         "duplicate_groups": len(groups),
         "removed_documents": len(removed),
         "remaining_documents": document_count,
         "remaining_books": book_count,
         "remaining_sources": source_count,
         "integrity": integrity,
+        "applied": True,
         "removed": removed,
     }
     REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

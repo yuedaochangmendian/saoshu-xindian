@@ -8,14 +8,9 @@ from pathlib import Path
 from dedupe_app_content import rebuild_books
 
 
-DB_PATH = Path(
-    r"C:\Users\ljlgg\Documents\Codex\2026-10-20\hu"
-    r"\work\app\app\src\main\assets\saoshu.db"
-)
-REPORT_PATH = Path(
-    r"C:\Users\ljlgg\Documents\Codex\2026-10-20\hu"
-    r"\outputs\meaningless_reply_filter_report.json"
-)
+ROOT = Path(__file__).resolve().parents[1]
+DB_PATH = ROOT / "app" / "src" / "main" / "assets" / "saoshu.db"
+REPORT_PATH = ROOT / "build" / "reports" / "meaningless_reply_filter_report.json"
 
 SHORT_FILLERS = {
     "不多", "好的", "我顶", "插眼", "马克", "刘明", "留名", "加油",

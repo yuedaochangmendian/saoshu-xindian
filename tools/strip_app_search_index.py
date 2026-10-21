@@ -3,10 +3,7 @@ import sqlite3
 from pathlib import Path
 
 
-DB_PATH = Path(
-    r"C:\Users\ljlgg\Documents\Codex\2026-10-20\hu"
-    r"\work\app\app\src\main\assets\saoshu.db"
-)
+DB_PATH = Path(__file__).resolve().parents[1] / "app" / "src" / "main" / "assets" / "saoshu.db"
 
 
 def main():

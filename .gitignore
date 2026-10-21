@@ -13,6 +13,10 @@ app/src/main/assets/saoshu.db
 *.zip
 __pycache__/
 *.pyc
+content_dedupe_report.json
+meaningless_reply_filter_report.json
+recent_short_filter_report.json
+noise_content_filter_report.json
 
 # OS/editor files
 .DS_Store
