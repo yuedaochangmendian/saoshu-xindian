@@ -638,7 +638,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.4", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.5", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -1657,30 +1657,20 @@ public class MainActivity extends Activity {
         hapticParams.setMargins(dp(16), dp(10), dp(16), 0);
         page.addView(hapticCard, hapticParams);
 
-        TextView section = text("备份与迁移", 17, TEXT, Typeface.BOLD);
-        section.setPadding(dp(16), dp(18), dp(16), dp(2));
+        TextView section = text("扫书数据", 17, TEXT, Typeface.BOLD);
+        section.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(section);
 
-        LinearLayout exportCard = dataActionCard(
-                "导出扫书",
-                "将全部未删除内容、正文和来源关系导出为 UTF-8 JSONL 文件，可在其他设备重新导入。",
-                "选择导出位置",
-                v -> requestDataExport());
-        addWithTop(page, exportCard, 10);
-
-        LinearLayout importCard = dataActionCard(
-                "导入扫书（单条或批量）",
-                "选择由本应用导出的 JSONL 文件。单条文件可直接导入，批量文件按 canonical_key 自动查重。",
-                "选择单条或批量文件",
-                v -> requestDataImport());
-        addWithTop(page, importCard, 10);
-
-        LinearLayout clipboardCard = dataActionCard(
-                "从剪切板导入文本",
-                "识别书名、作者、平台、评分、看点、雷点等字段；包含多条扫书时会自动分段。",
-                "读取并识别剪切板",
-                v -> importFromClipboard());
-        addWithTop(page, clipboardCard, 10);
+        LinearLayout scanDataCard = multiActionCard(
+                "导入与导出",
+                "导出全部扫书，或从 JSONL 文件、剪切板导入。导入内容会自动去重。",
+                new String[]{"导出全部", "文件导入", "剪切板"},
+                new View.OnClickListener[]{
+                        v -> requestDataExport(),
+                        v -> requestDataImport(),
+                        v -> importFromClipboard()
+                });
+        addWithTop(page, scanDataCard, 8);
 
         int deleted = (int) localDeletedCount();
         LinearLayout restoreCard = dataActionCard(
@@ -1692,28 +1682,24 @@ public class MainActivity extends Activity {
         if (deleted == 0) {
             setChildrenEnabled(restoreCard, false);
         }
-        addWithTop(page, restoreCard, 10);
+        addWithTop(page, restoreCard, 8);
 
         TextView userSection = text("用户数据备份", 17, TEXT, Typeface.BOLD);
-        userSection.setPadding(dp(16), dp(20), dp(16), dp(2));
+        userSection.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(userSection);
 
-        LinearLayout userBackupCard = dataActionCard(
-                "备份用户数据",
-                "导出收藏、简记、主题颜色和震动设置。不会重复打包离线正文数据库。",
-                "导出用户备份",
-                v -> requestUserBackupExport());
-        addWithTop(page, userBackupCard, 10);
-
-        LinearLayout userRestoreCard = dataActionCard(
-                "恢复用户数据",
-                "从 JSON 备份恢复收藏与界面设置；无效或已不存在的收藏会安全跳过。",
-                "选择用户备份",
-                v -> requestUserBackupImport());
-        addWithTop(page, userRestoreCard, 10);
+        LinearLayout userDataCard = multiActionCard(
+                "收藏、简记与设置",
+                "备份或恢复收藏、简记、主题颜色和震动设置，不重复打包正文数据库。",
+                new String[]{"备份用户数据", "恢复用户数据"},
+                new View.OnClickListener[]{
+                        v -> requestUserBackupExport(),
+                        v -> requestUserBackupImport()
+                });
+        addWithTop(page, userDataCard, 8);
 
         TextView updateSection = text("应用更新", 17, TEXT, Typeface.BOLD);
-        updateSection.setPadding(dp(16), dp(20), dp(16), dp(2));
+        updateSection.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(updateSection);
 
         LinearLayout updateCard = dataActionCard(
@@ -1721,7 +1707,7 @@ public class MainActivity extends Activity {
                 "当前版本 " + currentVersionName() + "。从 GitHub 获取最新正式版信息。",
                 "检查最新版本",
                 v -> checkForUpdates());
-        addWithTop(page, updateCard, 10);
+        addWithTop(page, updateCard, 8);
 
         LinearLayout statusCard = column();
         statusCard.setPadding(dp(15), dp(14), dp(15), dp(14));
@@ -1823,6 +1809,34 @@ public class MainActivity extends Activity {
                 ? v -> toast("请等待当前操作完成")
                 : v -> listener.onClick(v));
         addWithTop(card, button, 11);
+        return card;
+    }
+
+    private LinearLayout multiActionCard(String title, String description,
+                                         String[] labels,
+                                         View.OnClickListener[] listeners) {
+        LinearLayout card = column();
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(Color.WHITE, 14));
+        card.setElevation(dp(1));
+        TextView heading = text(title, 16, TEXT, Typeface.BOLD);
+        card.addView(heading);
+        TextView body = text(description, 11, MUTED, Typeface.NORMAL);
+        body.setLineSpacing(0, 1.3f);
+        addWithTop(card, body, 5);
+        LinearLayout actions = row();
+        actions.setPadding(0, dp(9), 0, 0);
+        for (int i = 0; i < labels.length; i++) {
+            TextView button = actionButton(labels[i], TEAL_PALE, TEAL_DARK);
+            button.setTextSize(12);
+            button.setOnClickListener(dataBusy
+                    ? v -> toast("请等待当前操作完成") : listeners[i]);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            params.setMargins(i == 0 ? 0 : dp(4), 0, 0, 0);
+            actions.addView(button, params);
+        }
+        card.addView(actions);
         return card;
     }
 
