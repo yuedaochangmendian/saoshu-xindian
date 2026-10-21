@@ -109,7 +109,6 @@ public class MainActivity extends Activity {
     private final AtomicInteger searchVersion = new AtomicInteger();
     private SQLiteDatabase db;
     private SharedPreferences preferences;
-    private LinearLayout mainColumn;
     private FrameLayout content;
     private LinearLayout bottomBar;
     private final LinearLayout[] navItems = new LinearLayout[5];
@@ -510,23 +509,20 @@ public class MainActivity extends Activity {
             if (db == null || !db.isOpen()) {
                 throw new IllegalStateException("数据库未打开");
             }
-            LinearLayout root = new LinearLayout(this);
-            root.setOrientation(LinearLayout.VERTICAL);
+            FrameLayout root = new FrameLayout(this);
             root.setBackgroundColor(BG);
-
-            mainColumn = new LinearLayout(this);
-            mainColumn.setOrientation(LinearLayout.VERTICAL);
-            root.addView(mainColumn, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
             content = new FrameLayout(this);
             content.setBackgroundColor(BG);
-            mainColumn.addView(content, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            root.addView(content, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
 
             bottomBar = buildBottomBar();
-            mainColumn.addView(bottomBar, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
+            bottomBar.setElevation(dp(12));
+            FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72), Gravity.BOTTOM);
+            root.addView(bottomBar, bottomParams);
             bottomHidden = false;
             setContentView(root);
             switchTab(0);
@@ -696,7 +692,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout page = column();
-        page.setPadding(dp(16), dp(16), dp(16), dp(26));
+        page.setPadding(dp(16), dp(16), dp(16), dp(98));
         scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -707,7 +703,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.8", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.9", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -899,7 +895,7 @@ public class MainActivity extends Activity {
         searchList.setDivider(null);
         searchList.setDividerHeight(0);
         searchList.setClipToPadding(false);
-        searchList.setPadding(dp(10), dp(4), dp(10), dp(12));
+        searchList.setPadding(dp(10), dp(4), dp(10), dp(84));
         searchList.setBackgroundColor(BG);
         page.addView(searchList, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -1129,7 +1125,7 @@ public class MainActivity extends Activity {
         bookList.setDivider(null);
         bookList.setDividerHeight(0);
         bookList.setClipToPadding(false);
-        bookList.setPadding(dp(11), dp(8), dp(11), dp(12));
+        bookList.setPadding(dp(11), dp(8), dp(11), dp(84));
         bookList.setBackgroundColor(BG);
         bookAdapter = new BookAdapter();
         bookList.setAdapter(bookAdapter);
@@ -1350,7 +1346,7 @@ public class MainActivity extends Activity {
             configureListFeedback(list);
             list.setDivider(null);
             list.setDividerHeight(0);
-            list.setPadding(dp(10), 0, dp(10), dp(12));
+            list.setPadding(dp(10), 0, dp(10), dp(84));
             list.setClipToPadding(false);
             list.setBackgroundColor(BG);
             list.setAdapter(new DocumentAdapter(favorites, ""));
@@ -1368,7 +1364,7 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true);
         LinearLayout page = column();
         page.setBackgroundColor(BG);
-        page.setPadding(0, 0, 0, dp(24));
+        page.setPadding(0, 0, 0, dp(96));
         scroll.addView(page);
 
         LinearLayout header = column();
