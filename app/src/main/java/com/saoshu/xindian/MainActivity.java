@@ -646,7 +646,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.11", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.10", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -885,15 +885,13 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
-        android.app.AlertDialog detailDialog = new android.app.AlertDialog.Builder(this)
+        new android.app.AlertDialog.Builder(this)
                 .setTitle(glossary.term)
                 .setView(scroll)
                 .setNegativeButton("关闭", null)
                 .setPositiveButton("复制释义", (dialog, which) ->
                         copyText(glossary.term + " 名词解释", glossary.explanation))
-                .create();
-        detailDialog.setOnDismissListener(ignored -> scrollGlossaryToTop());
-        detailDialog.show();
+                .show();
     }
 
     private List<GlossaryTerm> loadGlossaryTerms() {
@@ -1029,9 +1027,9 @@ public class MainActivity extends Activity {
         bookModeButton = libraryModeButton("书名聚合");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
-                0, dp(44), 1f));
+                0, dp(36), 1f));
         LinearLayout.LayoutParams glossaryModeParams = new LinearLayout.LayoutParams(
-                0, dp(44), 1f);
+                0, dp(36), 1f);
         glossaryModeParams.leftMargin = dp(4);
         switcher.addView(glossaryModeButton, glossaryModeParams);
         addWithTop(header, switcher, 7);
@@ -1164,18 +1162,10 @@ public class MainActivity extends Activity {
         updateLibraryMode(showGlossary);
         if (showGlossary) {
             renderGlossary();
-            scrollGlossaryToTop();
         } else if (books.isEmpty() && !booksLoading) {
             loadBooks(true);
         }
         hideKeyboard();
-    }
-
-    private void scrollGlossaryToTop() {
-        if (glossaryScroll == null) {
-            return;
-        }
-        glossaryScroll.post(() -> glossaryScroll.fullScroll(View.FOCUS_UP));
     }
 
     private void updateLibraryMode(boolean showGlossary) {
@@ -4131,11 +4121,8 @@ public class MainActivity extends Activity {
             return;
         }
         int action = event.getActionMasked();
-        view.animate().cancel();
         if (action == android.view.MotionEvent.ACTION_DOWN) {
             view.setPressed(true);
-            view.animate().alpha(0.72f).scaleX(0.97f).scaleY(0.97f)
-                    .setDuration(70).start();
             if (preferences.getBoolean("haptic_enabled", false)) {
                 view.performHapticFeedback(
                         android.view.HapticFeedbackConstants.CLOCK_TICK);
@@ -4143,8 +4130,6 @@ public class MainActivity extends Activity {
         } else if (action == android.view.MotionEvent.ACTION_UP
                 || action == android.view.MotionEvent.ACTION_CANCEL) {
             view.setPressed(false);
-            view.animate().alpha(1f).scaleX(1f).scaleY(1f)
-                    .setDuration(120).start();
         }
     }
 
@@ -4449,11 +4434,6 @@ public class MainActivity extends Activity {
             applyPressFeedback(this, event);
             return super.onTouchEvent(event);
         }
-
-        @Override
-        public boolean performClick() {
-            return super.performClick();
-        }
     }
 
     private class FeedbackLinearLayout extends LinearLayout {
@@ -4465,11 +4445,6 @@ public class MainActivity extends Activity {
         public boolean onTouchEvent(android.view.MotionEvent event) {
             applyPressFeedback(this, event);
             return super.onTouchEvent(event);
-        }
-
-        @Override
-        public boolean performClick() {
-            return super.performClick();
         }
     }
 
