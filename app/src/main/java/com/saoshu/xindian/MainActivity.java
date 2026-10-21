@@ -618,7 +618,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.6", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.7", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1606,13 +1606,16 @@ public class MainActivity extends Activity {
             toast("请等待当前操作完成");
             return;
         }
+        showClipboardInputDialog(readClipboardText());
+    }
+
+    private String readClipboardText() {
         ClipboardManager manager =
                 (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (manager == null || !manager.hasPrimaryClip()
                 || manager.getPrimaryClip() == null
                 || manager.getPrimaryClip().getItemCount() == 0) {
-            toast("剪切板中没有可导入的文本");
-            return;
+            return "";
         }
         ClipData clip = manager.getPrimaryClip();
         StringBuilder builder = new StringBuilder();
@@ -1625,20 +1628,54 @@ public class MainActivity extends Activity {
                 builder.append(value);
             }
         }
-        String text = builder.toString().trim();
-        if (text.isEmpty()) {
-            toast("剪切板内容为空");
-            return;
-        }
-        if (text.length() > 2_000_000) {
-            toast("剪切板文本过大，请控制在 200 万字符以内");
-            return;
-        }
-        List<ClipboardEntry> entries = parseClipboardEntries(text);
-        if (entries.isEmpty()) {
-            toast("没有识别到有效扫书内容");
-            return;
-        }
+        return builder.toString().trim();
+    }
+
+    private void showClipboardInputDialog(String initialText) {
+        EditText input = new EditText(this);
+        input.setText(initialText);
+        input.setHint("可在此粘贴或手动输入扫书文本…");
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setTextSize(14);
+        input.setTextColor(TEXT);
+        input.setHintTextColor(MUTED);
+        input.setSingleLine(false);
+        input.setMinLines(10);
+        input.setMaxLines(16);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setBackground(rippleRound(TEAL_SOFT, LINE, 12,
+                Color.argb(25, 0, 0, 0)));
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("从剪切板导入文本")
+                .setMessage("已预填剪切板内容，可直接修改、补充或手动输入。")
+                .setView(input)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("识别", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(
+                        android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    String text = input.getText().toString().trim();
+                    if (text.isEmpty()) {
+                        toast("请输入或粘贴扫书文本");
+                        return;
+                    }
+                    if (text.length() > 2_000_000) {
+                        toast("文本过大，请控制在 200 万字符以内");
+                        return;
+                    }
+                    List<ClipboardEntry> entries = parseClipboardEntries(text);
+                    if (entries.isEmpty()) {
+                        toast("没有识别到有效扫书内容");
+                        return;
+                    }
+                    dialog.dismiss();
+                    showClipboardPreview(entries);
+                }));
+        dialog.show();
+    }
+
+    private void showClipboardPreview(List<ClipboardEntry> entries) {
         StringBuilder preview = new StringBuilder();
         preview.append("识别到 ").append(entries.size()).append(" 条扫书：\n\n");
         int shown = Math.min(entries.size(), 8);
