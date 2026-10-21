@@ -19,14 +19,11 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.SpannableStringBuilder;
-import android.text.style.AbsoluteSizeSpan;
 import android.text.style.StyleSpan;
 import android.text.Layout;
-import android.text.style.AlignmentSpan;
 import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
@@ -116,9 +113,6 @@ public class MainActivity extends Activity {
     private int detailBackTab = 0;
     private boolean detailOpen = false;
     private long currentDetailId = -1;
-    private boolean bottomHidden = false;
-    private long suppressBottomTrackingUntil = 0;
-    private long lastListScrollSignature = -1;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -521,9 +515,9 @@ public class MainActivity extends Activity {
             bottomBar = buildBottomBar();
             bottomBar.setElevation(dp(12));
             FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72), Gravity.BOTTOM);
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52), Gravity.BOTTOM);
+            bottomParams.setMargins(dp(12), 0, dp(12), dp(8));
             root.addView(bottomBar, bottomParams);
-            bottomHidden = false;
             setContentView(root);
             switchTab(0);
         } catch (Exception error) {
@@ -535,15 +529,14 @@ public class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(5), dp(6), dp(5), dp(6));
-        bar.setBackgroundColor(PINK_DARK);
+        bar.setPadding(dp(5), dp(2), dp(5), dp(2));
+        bar.setBackground(round(PINK_DARK, 20));
         bar.setElevation(dp(10));
         String[] icons = {"⌂", "⌕", "▤", "★", "⇅"};
         String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
         for (int i = 0; i < 5; i++) {
             final int tab = i;
             NavTabView item = new NavTabView(this);
-            item.setOrientation(LinearLayout.VERTICAL);
             item.setGravity(Gravity.CENTER);
             item.setContentDescription(labels[i]);
             item.setClickable(true);
@@ -554,13 +547,7 @@ public class MainActivity extends Activity {
             icon.setTag("nav_icon");
             icon.setClickable(false);
             item.addView(icon, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(24)));
-            TextView label = text(labels[i], 10, Color.WHITE, Typeface.NORMAL);
-            label.setGravity(Gravity.CENTER);
-            label.setTag("nav_text");
-            label.setClickable(false);
-            item.addView(label, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(18)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
             navItems[i] = item;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -573,7 +560,6 @@ public class MainActivity extends Activity {
     private void switchTab(int tab) {
         currentTab = tab;
         detailOpen = false;
-        lastListScrollSignature = -1;
         if (bottomBar != null) {
             bottomBar.setVisibility(View.VISIBLE);
         }
@@ -583,18 +569,13 @@ public class MainActivity extends Activity {
             }
             int color = i == tab ? Color.WHITE : Color.argb(178, 255, 255, 255);
             View icon = navItems[i].findViewWithTag("nav_icon");
-            View label = navItems[i].findViewWithTag("nav_text");
             if (icon instanceof TextView) {
                 ((TextView) icon).setTextColor(color);
             }
-            if (label instanceof TextView) {
-                ((TextView) label).setTextColor(color);
-            }
             navItems[i].setBackground(rippleRound(
                     i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
-                    Color.TRANSPARENT, 14, Color.argb(55, 255, 255, 255)));
+                    Color.TRANSPARENT, 17, Color.argb(55, 255, 255, 255)));
         }
-        showBottomBar();
         content.removeAllViews();
         if (tab == 0) {
             content.addView(buildHome());
@@ -609,90 +590,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void attachAutoHideBottom(View target) {
-        if (target instanceof ScrollView) {
-            ((ScrollView) target).setOnScrollChangeListener(
-                    (view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
-                        if (scrollY > oldScrollY + dp(2)) {
-                            hideBottomBar();
-                        } else if (scrollY < oldScrollY - dp(2)) {
-                            showBottomBar();
-                        }
-                    });
-        } else if (target instanceof ListView) {
-            ((ListView) target).setOnScrollListener(new AbsListView.OnScrollListener() {
-                @Override
-                public void onScrollStateChanged(AbsListView view, int scrollState) {
-                }
-
-                @Override
-                public void onScroll(AbsListView view, int firstVisibleItem,
-                                     int visibleItemCount, int totalItemCount) {
-                    trackListScroll(view);
-                }
-            });
-        }
-    }
-
-    private void trackListScroll(AbsListView view) {
-        if (SystemClock.uptimeMillis() < suppressBottomTrackingUntil) {
-            return;
-        }
-        View first = view.getChildAt(0);
-        int top = first == null ? 0 : first.getTop();
-        long signature = view.getFirstVisiblePosition() * 100000L + top;
-        if (lastListScrollSignature >= 0) {
-            long delta = signature - lastListScrollSignature;
-            if (delta > dp(2)) {
-                hideBottomBar();
-            } else if (delta < -dp(2)) {
-                showBottomBar();
-            }
-        }
-        lastListScrollSignature = signature;
-    }
-
-    private void hideBottomBar() {
-        if (bottomBar == null || detailOpen || bottomHidden) {
-            return;
-        }
-        suppressBottomTrackingUntil = SystemClock.uptimeMillis() + 280;
-        bottomHidden = true;
-        bottomBar.animate()
-                .translationY(bottomBar.getHeight() + dp(8))
-                .alpha(0f)
-                .setDuration(170)
-                .withEndAction(() -> {
-                    if (bottomHidden && bottomBar != null) {
-                        bottomBar.setVisibility(View.GONE);
-                    }
-                })
-                .start();
-    }
-
-    private void showBottomBar() {
-        if (bottomBar == null || detailOpen || !bottomHidden) {
-            return;
-        }
-        suppressBottomTrackingUntil = SystemClock.uptimeMillis() + 280;
-        bottomHidden = false;
-        bottomBar.animate().cancel();
-        bottomBar.setVisibility(View.VISIBLE);
-        bottomBar.setTranslationY(bottomBar.getHeight() > 0
-                ? bottomBar.getHeight() + dp(8) : dp(72));
-        bottomBar.setAlpha(0f);
-        bottomBar.animate()
-                .translationY(0f)
-                .alpha(1f)
-                .setDuration(190)
-                .start();
-    }
-
     private View buildHome() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout page = column();
-        page.setPadding(dp(16), dp(16), dp(16), dp(98));
+        page.setPadding(dp(16), dp(16), dp(16), dp(74));
         scroll.addView(page, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -703,7 +605,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.9", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.0", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -807,7 +709,6 @@ public class MainActivity extends Activity {
         noteBody.setLineSpacing(0, 1.35f);
         addWithTop(note, noteBody, 6);
         addWithTop(page, note, 16);
-        attachAutoHideBottom(scroll);
         return scroll;
     }
 
@@ -895,7 +796,7 @@ public class MainActivity extends Activity {
         searchList.setDivider(null);
         searchList.setDividerHeight(0);
         searchList.setClipToPadding(false);
-        searchList.setPadding(dp(10), dp(4), dp(10), dp(84));
+        searchList.setPadding(dp(10), dp(4), dp(10), dp(64));
         searchList.setBackgroundColor(BG);
         page.addView(searchList, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -937,7 +838,6 @@ public class MainActivity extends Activity {
             }
         });
         mainHandler.post(this::launchSearch);
-        attachAutoHideBottom(searchList);
         return page;
     }
 
@@ -1125,7 +1025,7 @@ public class MainActivity extends Activity {
         bookList.setDivider(null);
         bookList.setDividerHeight(0);
         bookList.setClipToPadding(false);
-        bookList.setPadding(dp(11), dp(8), dp(11), dp(84));
+        bookList.setPadding(dp(11), dp(8), dp(11), dp(64));
         bookList.setBackgroundColor(BG);
         bookAdapter = new BookAdapter();
         bookList.setAdapter(bookAdapter);
@@ -1140,7 +1040,6 @@ public class MainActivity extends Activity {
             @Override
             public void onScroll(AbsListView view, int firstVisibleItem,
                                  int visibleItemCount, int totalItemCount) {
-                trackListScroll(view);
                 if (!booksLoading && !booksEnded && totalItemCount > 0
                         && firstVisibleItem + visibleItemCount >= totalItemCount - 7) {
                     loadBooks(false);
@@ -1266,7 +1165,6 @@ public class MainActivity extends Activity {
         list.setBackgroundColor(BG);
         page.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        attachAutoHideBottom(list);
         content.addView(page);
 
         executor.execute(() -> {
@@ -1346,7 +1244,7 @@ public class MainActivity extends Activity {
             configureListFeedback(list);
             list.setDivider(null);
             list.setDividerHeight(0);
-            list.setPadding(dp(10), 0, dp(10), dp(84));
+            list.setPadding(dp(10), 0, dp(10), dp(64));
             list.setClipToPadding(false);
             list.setBackgroundColor(BG);
             list.setAdapter(new DocumentAdapter(favorites, ""));
@@ -1354,7 +1252,6 @@ public class MainActivity extends Activity {
                     openDocument(favorites.get(position).id));
             page.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-            attachAutoHideBottom(list);
         }
         return page;
     }
@@ -1364,7 +1261,7 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true);
         LinearLayout page = column();
         page.setBackgroundColor(BG);
-        page.setPadding(0, 0, 0, dp(96));
+        page.setPadding(0, 0, 0, dp(72));
         scroll.addView(page);
 
         LinearLayout header = column();
@@ -1501,7 +1398,6 @@ public class MainActivity extends Activity {
         format.setLineSpacing(0, 1.4f);
         format.setPadding(dp(18), dp(15), dp(18), 0);
         page.addView(format);
-        attachAutoHideBottom(scroll);
         return scroll;
     }
 
