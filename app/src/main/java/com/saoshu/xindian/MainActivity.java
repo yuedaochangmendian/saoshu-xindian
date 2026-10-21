@@ -31,6 +31,7 @@ import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -545,7 +546,7 @@ public class MainActivity extends Activity {
         String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
         for (int i = 0; i < 5; i++) {
             final int tab = i;
-            LinearLayout item = column();
+            NavTabView item = new NavTabView(this);
             item.setOrientation(LinearLayout.VERTICAL);
             item.setGravity(Gravity.CENTER);
             item.setContentDescription(labels[i]);
@@ -706,7 +707,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.7", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.8", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -3059,6 +3060,55 @@ public class MainActivity extends Activity {
         public boolean onTouchEvent(android.view.MotionEvent event) {
             applyPressFeedback(this, event);
             return super.onTouchEvent(event);
+        }
+    }
+
+    private class NavTabView extends LinearLayout {
+        private final int touchSlop;
+        private float downX;
+        private float downY;
+        private boolean moved;
+
+        NavTabView(Context context) {
+            super(context);
+            touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+            if (!isEnabled()) {
+                return false;
+            }
+            int action = event.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) {
+                downX = event.getX();
+                downY = event.getY();
+                moved = false;
+                applyPressFeedback(this, event);
+                return true;
+            }
+            if (action == android.view.MotionEvent.ACTION_MOVE) {
+                if (Math.abs(event.getX() - downX) > touchSlop
+                        || Math.abs(event.getY() - downY) > touchSlop) {
+                    moved = true;
+                    setPressed(false);
+                }
+                return true;
+            }
+            if (action == android.view.MotionEvent.ACTION_UP) {
+                setPressed(false);
+                if (!moved && event.getX() >= 0 && event.getX() <= getWidth()
+                        && event.getY() >= 0 && event.getY() <= getHeight()) {
+                    performClick();
+                }
+                return true;
+            }
+            if (action == android.view.MotionEvent.ACTION_CANCEL) {
+                moved = true;
+                setPressed(false);
+                return true;
+            }
+            return true;
         }
     }
 
