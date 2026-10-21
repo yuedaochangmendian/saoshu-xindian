@@ -45,6 +45,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -110,7 +111,7 @@ public class MainActivity extends Activity {
     private LinearLayout mainColumn;
     private FrameLayout content;
     private LinearLayout bottomBar;
-    private final TextView[] navItems = new TextView[5];
+    private final LinearLayout[] navItems = new LinearLayout[5];
     private int currentTab = 0;
     private int detailBackTab = 0;
     private boolean detailOpen = false;
@@ -544,24 +545,25 @@ public class MainActivity extends Activity {
         String[] labels = {"首页", "搜索", "书库", "收藏", "数据"};
         for (int i = 0; i < 5; i++) {
             final int tab = i;
-            String content = icons[i] + "\n" + labels[i];
-            SpannableStringBuilder styled = new SpannableStringBuilder(content);
-            styled.setSpan(new AbsoluteSizeSpan(19, true), 0, icons[i].length(),
-                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
-            styled.setSpan(new StyleSpan(Typeface.BOLD), 0, icons[i].length(),
-                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
-            styled.setSpan(new AbsoluteSizeSpan(10, true), icons[i].length() + 1, content.length(),
-                    SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
-            styled.setSpan(new AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER),
-                    0, content.length(), SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE);
-            TextView item = text("", 11, Color.WHITE, Typeface.NORMAL);
-            item.setText(styled);
+            LinearLayout item = column();
+            item.setOrientation(LinearLayout.VERTICAL);
             item.setGravity(Gravity.CENTER);
-            item.setLineSpacing(0, 0.92f);
             item.setContentDescription(labels[i]);
             item.setClickable(true);
             item.setFocusable(true);
             item.setOnClickListener(v -> switchTab(tab));
+            TextView icon = text(icons[i], 18, Color.WHITE, Typeface.BOLD);
+            icon.setGravity(Gravity.CENTER);
+            icon.setTag("nav_icon");
+            icon.setClickable(false);
+            item.addView(icon, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(24)));
+            TextView label = text(labels[i], 10, Color.WHITE, Typeface.NORMAL);
+            label.setGravity(Gravity.CENTER);
+            label.setTag("nav_text");
+            label.setClickable(false);
+            item.addView(label, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(18)));
             navItems[i] = item;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -582,8 +584,15 @@ public class MainActivity extends Activity {
             if (navItems[i] == null) {
                 continue;
             }
-            navItems[i].setTextColor(i == tab
-                    ? Color.WHITE : Color.argb(178, 255, 255, 255));
+            int color = i == tab ? Color.WHITE : Color.argb(178, 255, 255, 255);
+            View icon = navItems[i].findViewWithTag("nav_icon");
+            View label = navItems[i].findViewWithTag("nav_text");
+            if (icon instanceof TextView) {
+                ((TextView) icon).setTextColor(color);
+            }
+            if (label instanceof TextView) {
+                ((TextView) label).setTextColor(color);
+            }
             navItems[i].setBackground(rippleRound(
                     i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
                     Color.TRANSPARENT, 14, Color.argb(55, 255, 255, 255)));
@@ -697,7 +706,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v1.6", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v1.7", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1402,6 +1411,34 @@ public class MainActivity extends Activity {
         themeScroll.addView(themeRow);
         page.addView(themeScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout hapticCard = row();
+        hapticCard.setGravity(Gravity.CENTER_VERTICAL);
+        hapticCard.setPadding(dp(16), dp(12), dp(12), dp(12));
+        hapticCard.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+                Color.argb(28, 0, 0, 0)));
+        LinearLayout hapticText = column();
+        TextView hapticTitle = text("点击震动", 14, TEXT, Typeface.BOLD);
+        hapticText.addView(hapticTitle);
+        TextView hapticHint = text("默认关闭；开启后仅提供轻微触感", 11, MUTED,
+                Typeface.NORMAL);
+        addWithTop(hapticText, hapticHint, 3);
+        hapticCard.addView(hapticText, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Switch hapticSwitch = new Switch(this);
+        hapticSwitch.setChecked(preferences.getBoolean("haptic_enabled", false));
+        hapticSwitch.setButtonTintList(ColorStateList.valueOf(TEAL));
+        hapticSwitch.setOnCheckedChangeListener((button, checked) -> {
+            preferences.edit().putBoolean("haptic_enabled", checked).apply();
+            toast(checked ? "已开启轻微点击震动" : "已关闭点击震动");
+        });
+        hapticCard.addView(hapticSwitch, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)));
+        hapticCard.setOnClickListener(v -> hapticSwitch.toggle());
+        LinearLayout.LayoutParams hapticParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hapticParams.setMargins(dp(16), dp(10), dp(16), 0);
+        page.addView(hapticCard, hapticParams);
 
         TextView section = text("备份与迁移", 17, TEXT, Typeface.BOLD);
         section.setPadding(dp(16), dp(18), dp(16), dp(2));
@@ -2783,8 +2820,10 @@ public class MainActivity extends Activity {
         int action = event.getActionMasked();
         if (action == android.view.MotionEvent.ACTION_DOWN) {
             view.setPressed(true);
-            view.performHapticFeedback(
-                    android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            if (preferences.getBoolean("haptic_enabled", false)) {
+                view.performHapticFeedback(
+                        android.view.HapticFeedbackConstants.CLOCK_TICK);
+            }
         } else if (action == android.view.MotionEvent.ACTION_UP
                 || action == android.view.MotionEvent.ACTION_CANCEL) {
             view.setPressed(false);
