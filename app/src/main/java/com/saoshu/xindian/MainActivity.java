@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -61,6 +62,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.Normalizer;
@@ -618,7 +621,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.7", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.8", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1403,6 +1406,17 @@ public class MainActivity extends Activity {
                 v -> requestUserBackupImport());
         addWithTop(page, userRestoreCard, 10);
 
+        TextView updateSection = text("应用更新", 17, TEXT, Typeface.BOLD);
+        updateSection.setPadding(dp(16), dp(20), dp(16), dp(2));
+        page.addView(updateSection);
+
+        LinearLayout updateCard = dataActionCard(
+                "检查更新",
+                "当前版本 " + currentVersionName() + "。从 GitHub 获取最新正式版信息。",
+                "检查最新版本",
+                v -> checkForUpdates());
+        addWithTop(page, updateCard, 10);
+
         LinearLayout statusCard = column();
         statusCard.setPadding(dp(15), dp(14), dp(15), dp(14));
         statusCard.setBackground(round(TEAL_SOFT, 14));
@@ -1589,6 +1603,160 @@ public class MainActivity extends Activity {
         intent.setType("application/x-ndjson");
         intent.putExtra(Intent.EXTRA_TITLE, "扫书导出-" + stamp + ".jsonl");
         startActivityForResult(intent, REQUEST_EXPORT_DATA);
+    }
+
+    private void checkForUpdates() {
+        if (dataBusy) {
+            toast("请等待当前操作完成");
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在检查 GitHub 最新版本…");
+        executor.execute(() -> {
+            try {
+                UpdateInfo update = fetchLatestRelease();
+                mainHandler.post(() -> {
+                    dataBusy = false;
+                    if (dataStatus != null) {
+                        dataStatus.setText("已检查最新正式版本：" + update.tag);
+                    }
+                    String current = currentVersionName();
+                    if (compareVersions(update.tag, current) > 0) {
+                        new android.app.AlertDialog.Builder(this)
+                                .setTitle("发现新版本 " + update.tag)
+                                .setMessage("当前版本：" + current +
+                                        "\n最新版本：" + update.tag +
+                                        (update.notes.isEmpty() ? "" :
+                                                "\n\n" + trimForDialog(update.notes, 1400)))
+                                .setNegativeButton("稍后", null)
+                                .setPositiveButton("前往下载", (dialog, which) ->
+                                        openUrl(update.apkUrl.isEmpty()
+                                                ? update.releaseUrl : update.apkUrl))
+                                .show();
+                    } else {
+                        new android.app.AlertDialog.Builder(this)
+                                .setTitle("已是最新版本")
+                                .setMessage("当前版本：" + current +
+                                        "\n最新正式版本：" + update.tag)
+                                .setPositiveButton("关闭", null)
+                                .show();
+                    }
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    dataBusy = false;
+                    String message = "检查更新失败，请稍后重试";
+                    if (dataStatus != null) {
+                        dataStatus.setText(message);
+                    }
+                    toast(message);
+                });
+            }
+        });
+    }
+
+    private UpdateInfo fetchLatestRelease() throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL("https://api.github.com/repos/" +
+                    "yuedaochangmendian/saoshu-xindian/releases/latest");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(10_000);
+            connection.setReadTimeout(15_000);
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Accept", "application/vnd.github+json");
+            connection.setRequestProperty("User-Agent",
+                    "SaoshuXindian/" + currentVersionName());
+            int status = connection.getResponseCode();
+            if (status != HttpURLConnection.HTTP_OK) {
+                throw new IllegalStateException("GitHub API HTTP " + status);
+            }
+            String body;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connection.getInputStream(),
+                            StandardCharsets.UTF_8))) {
+                StringBuilder builder = new StringBuilder();
+                char[] buffer = new char[4096];
+                int count;
+                while ((count = reader.read(buffer)) != -1) {
+                    builder.append(buffer, 0, count);
+                    if (builder.length() > 1_000_000) {
+                        throw new IllegalStateException("更新信息响应过大");
+                    }
+                }
+                body = builder.toString();
+            }
+            JSONObject release = new JSONObject(body);
+            String tag = release.optString("tag_name", "").trim();
+            if (tag.isEmpty()) {
+                throw new IllegalStateException("最新版本缺少 tag");
+            }
+            String releaseUrl = release.optString("html_url", "");
+            String apkUrl = "";
+            JSONArray assets = release.optJSONArray("assets");
+            if (assets != null) {
+                for (int i = 0; i < assets.length(); i++) {
+                    JSONObject asset = assets.optJSONObject(i);
+                    if (asset == null) {
+                        continue;
+                    }
+                    String name = asset.optString("name", "");
+                    String downloadUrl = asset.optString("browser_download_url", "");
+                    if (name.toLowerCase(Locale.ROOT).endsWith(".apk")
+                            && !downloadUrl.isEmpty()) {
+                        apkUrl = downloadUrl;
+                        break;
+                    }
+                }
+            }
+            return new UpdateInfo(tag, releaseUrl, apkUrl,
+                    release.optString("body", ""));
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String currentVersionName() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return safe(info.versionName);
+        } catch (Exception ignored) {
+            return "未知";
+        }
+    }
+
+    private int compareVersions(String latest, String current) {
+        String[] latestParts = latest.replaceFirst("^[vV]", "")
+                .split("[^0-9]+");
+        String[] currentParts = current.replaceFirst("^[vV]", "")
+                .split("[^0-9]+");
+        int count = Math.max(latestParts.length, currentParts.length);
+        for (int i = 0; i < count; i++) {
+            int left = parseVersionPart(latestParts, i);
+            int right = parseVersionPart(currentParts, i);
+            if (left != right) {
+                return Integer.compare(left, right);
+            }
+        }
+        return 0;
+    }
+
+    private int parseVersionPart(String[] parts, int index) {
+        if (index >= parts.length || parts[index].isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(parts[index]);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private String trimForDialog(String value, int limit) {
+        String clean = safe(value).trim();
+        return clean.length() <= limit ? clean : clean.substring(0, limit) + "…";
     }
 
     private void requestDataImport() {
@@ -3701,6 +3869,20 @@ public class MainActivity extends Activity {
         ExportResult(int documents, int sources) {
             this.documents = documents;
             this.sources = sources;
+        }
+    }
+
+    private static class UpdateInfo {
+        final String tag;
+        final String releaseUrl;
+        final String apkUrl;
+        final String notes;
+
+        UpdateInfo(String tag, String releaseUrl, String apkUrl, String notes) {
+            this.tag = tag;
+            this.releaseUrl = releaseUrl;
+            this.apkUrl = apkUrl;
+            this.notes = notes;
         }
     }
 
