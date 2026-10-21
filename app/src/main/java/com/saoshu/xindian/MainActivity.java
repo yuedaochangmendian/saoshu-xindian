@@ -92,6 +92,11 @@ public class MainActivity extends Activity {
     private static final int REQUEST_EXPORT_SINGLE = 2203;
     private static final int REQUEST_EXPORT_USER_BACKUP = 2204;
     private static final int REQUEST_IMPORT_USER_BACKUP = 2205;
+    private static final int TAB_HOME = 0;
+    private static final int TAB_BOOKS = 1;
+    private static final int TAB_COLLECTION = 2;
+    private static final int TAB_DATA = 3;
+    private static final int TAB_SEARCH = 4;
     private int TEAL;
     private int TEAL_DARK;
     private int TEAL_DEEP;
@@ -117,9 +122,9 @@ public class MainActivity extends Activity {
     private SharedPreferences preferences;
     private FrameLayout content;
     private FrameLayout bottomBar;
-    private final LinearLayout[] navItems = new LinearLayout[5];
-    private int currentTab = 0;
-    private int detailBackTab = 0;
+    private final LinearLayout[] navItems = new LinearLayout[4];
+    private int currentTab = TAB_HOME;
+    private int detailBackTab = TAB_HOME;
     private boolean detailOpen = false;
     private long currentDetailId = -1;
     private long pendingSingleExportId = -1;
@@ -149,6 +154,9 @@ public class MainActivity extends Activity {
     private TextView glossaryModeButton;
     private ScrollView glossaryScroll;
     private View glossaryPanel;
+    private FrameLayout libraryBody;
+    private int glossaryReturnScrollY;
+    private int searchBackTab = TAB_HOME;
 
     private EditText bookField;
     private ListView bookList;
@@ -556,7 +564,7 @@ public class MainActivity extends Activity {
             bottomParams.setMargins(dp(12), 0, dp(12), dp(8));
             root.addView(bottomBar, bottomParams);
             setContentView(root);
-            switchTab(0);
+            switchTab(TAB_HOME);
         } catch (Exception error) {
             showFatalError(error);
         }
@@ -572,9 +580,9 @@ public class MainActivity extends Activity {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(5), dp(2), dp(5), dp(2));
-        String[] icons = {"⌂", "⌕", "▤", "★", "⇅"};
-        String[] labels = {"首页", "搜索", "书库", "收藏与简记", "数据"};
-        for (int i = 0; i < 5; i++) {
+        String[] icons = {"⌂", "▤", "★", "⇅"};
+        String[] labels = {"首页", "书库", "收藏与简记", "数据"};
+        for (int i = 0; i < icons.length; i++) {
             final int tab = i;
             NavTabView item = new NavTabView(this);
             item.setGravity(Gravity.CENTER);
@@ -604,7 +612,7 @@ public class MainActivity extends Activity {
         currentTab = tab;
         detailOpen = false;
         if (bottomBar != null) {
-            bottomBar.setVisibility(View.VISIBLE);
+            bottomBar.setVisibility(tab == TAB_SEARCH ? View.GONE : View.VISIBLE);
         }
         for (int i = 0; i < navItems.length; i++) {
             if (navItems[i] == null) {
@@ -620,17 +628,24 @@ public class MainActivity extends Activity {
                     Color.TRANSPARENT, 17, Color.argb(55, 255, 255, 255)));
         }
         content.removeAllViews();
-        if (tab == 0) {
+        if (tab == TAB_HOME) {
             content.addView(buildHome());
-        } else if (tab == 1) {
-            content.addView(buildSearch());
-        } else if (tab == 2) {
+        } else if (tab == TAB_BOOKS) {
             content.addView(buildBooks());
-        } else if (tab == 3) {
+        } else if (tab == TAB_COLLECTION) {
             content.addView(buildCollection());
-        } else {
+        } else if (tab == TAB_DATA) {
             content.addView(buildDataManager());
+        } else {
+            content.addView(buildSearch());
         }
+    }
+
+    private void openSearchPage() {
+        if (currentTab != TAB_SEARCH) {
+            searchBackTab = currentTab;
+        }
+        switchTab(TAB_SEARCH);
     }
 
     private View buildHome() {
@@ -646,7 +661,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.10", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.12", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -678,11 +693,11 @@ public class MainActivity extends Activity {
         go.setPadding(dp(10), dp(5), dp(10), dp(5));
         go.setBackground(round(TEAL, 10));
         searchCard.addView(go);
-        searchCard.setOnClickListener(v -> switchTab(1));
+        searchCard.setOnClickListener(v -> openSearchPage());
         addWithTop(page, searchCard, 10);
 
         page.addView(sectionTitle("最近扫书", "查看全部", v -> {
-            switchTab(1);
+            openSearchPage();
         }));
         List<Document> recent = queryDocuments(
                 "SELECT d.* FROM documents d WHERE d.published_at<>'' " +
@@ -701,8 +716,17 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(gradient(PINK_DARK, PINK, 0));
+        LinearLayout titleRow = row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = text("‹", 30, Color.WHITE, Typeface.NORMAL);
+        back.setGravity(Gravity.CENTER);
+        back.setPadding(0, 0, dp(8), dp(2));
+        back.setOnClickListener(v -> switchTab(searchBackTab));
+        titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
         TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
-        header.addView(title);
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(titleRow);
 
         LinearLayout inputRow = row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -872,6 +896,7 @@ public class MainActivity extends Activity {
     }
 
     private void showGlossaryDetail(GlossaryTerm glossary) {
+        glossaryReturnScrollY = glossaryScroll == null ? 0 : glossaryScroll.getScrollY();
         LinearLayout content = column();
         content.setPadding(dp(20), dp(8), dp(20), dp(12));
         TextView body = text(glossary.explanation, 14,
@@ -885,13 +910,20 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
-        new android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog detailDialog = new android.app.AlertDialog.Builder(this)
                 .setTitle(glossary.term)
                 .setView(scroll)
                 .setNegativeButton("关闭", null)
                 .setPositiveButton("复制释义", (dialog, which) ->
                         copyText(glossary.term + " 名词解释", glossary.explanation))
-                .show();
+                .create();
+        detailDialog.setOnDismissListener(ignored -> {
+            if (glossaryScroll != null) {
+                glossaryScroll.post(() ->
+                        glossaryScroll.scrollTo(0, glossaryReturnScrollY));
+            }
+        });
+        detailDialog.show();
     }
 
     private List<GlossaryTerm> loadGlossaryTerms() {
@@ -1027,9 +1059,9 @@ public class MainActivity extends Activity {
         bookModeButton = libraryModeButton("书名聚合");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
-                0, dp(36), 1f));
+                0, dp(44), 1f));
         LinearLayout.LayoutParams glossaryModeParams = new LinearLayout.LayoutParams(
-                0, dp(36), 1f);
+                0, dp(44), 1f);
         glossaryModeParams.leftMargin = dp(4);
         switcher.addView(glossaryModeButton, glossaryModeParams);
         addWithTop(header, switcher, 7);
@@ -1053,7 +1085,7 @@ public class MainActivity extends Activity {
         addWithTop(header, input, 7);
         page.addView(header);
 
-        FrameLayout libraryBody = new FrameLayout(this);
+        libraryBody = new FrameLayout(this);
         libraryBody.setBackgroundColor(BG);
 
         bookList = new ListView(this);
@@ -1176,6 +1208,15 @@ public class MainActivity extends Activity {
         if (glossaryPanel != null) {
             glossaryPanel.setVisibility(showGlossary ? View.VISIBLE : View.GONE);
         }
+        if (libraryBody != null) {
+            View shown = showGlossary ? glossaryPanel : bookList;
+            libraryBody.removeAllViews();
+            if (shown != null) {
+                libraryBody.addView(shown, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+        }
         styleLibraryModeButton(bookModeButton, !showGlossary);
         styleLibraryModeButton(glossaryModeButton, showGlossary);
         if (bookField != null) {
@@ -1256,7 +1297,7 @@ public class MainActivity extends Activity {
 
     private void showBookDetail(Book book) {
         detailOpen = true;
-        detailBackTab = 2;
+        detailBackTab = TAB_BOOKS;
         bottomBar.setVisibility(View.GONE);
         content.removeAllViews();
 
@@ -1456,7 +1497,7 @@ public class MainActivity extends Activity {
                 TextView browse = text("去搜索并收藏", 12, Color.WHITE, Typeface.BOLD);
                 browse.setPadding(dp(12), dp(7), dp(12), dp(7));
                 browse.setBackground(round(TEAL, 10));
-                browse.setOnClickListener(v -> switchTab(1));
+                browse.setOnClickListener(v -> openSearchPage());
                 addWithTop(empty, browse, 11);
             }
             container.addView(empty);
@@ -1728,13 +1769,13 @@ public class MainActivity extends Activity {
         noteContentEditor = null;
         noteSaveStatus = null;
         bottomBar.setVisibility(View.VISIBLE);
-        switchTab(3);
+        switchTab(TAB_COLLECTION);
     }
 
     private void toggleNotePin(Note note) {
         db.execSQL("UPDATE user_notes SET pinned=?,updated_at=? WHERE id=?",
                 new Object[]{note.pinned ? 0 : 1, isoNow(), note.id});
-        switchTab(3);
+        switchTab(TAB_COLLECTION);
     }
 
     private void confirmDeleteNote(Note note) {
@@ -1746,7 +1787,7 @@ public class MainActivity extends Activity {
                     String now = isoNow();
                     db.execSQL("UPDATE user_notes SET deleted_at=?,updated_at=? WHERE id=?",
                             new Object[]{now, now, note.id});
-                    switchTab(3);
+                    switchTab(TAB_COLLECTION);
                 })
                 .show();
     }
@@ -1767,7 +1808,7 @@ public class MainActivity extends Activity {
                     Note note = notes.get(which);
                     db.execSQL("UPDATE user_notes SET deleted_at=NULL,updated_at=? WHERE id=?",
                             new Object[]{isoNow(), note.id});
-                    switchTab(3);
+                    switchTab(TAB_COLLECTION);
                     toast("已恢复简记");
                 })
                 .setNegativeButton("关闭", null)
@@ -1782,7 +1823,7 @@ public class MainActivity extends Activity {
                                 .setPositiveButton("永久删除", (d, which) -> {
                                     db.execSQL("DELETE FROM user_notes WHERE deleted_at IS NOT NULL");
                                     dialog.dismiss();
-                                    switchTab(3);
+                                    switchTab(TAB_COLLECTION);
                                 })
                                 .show()));
         dialog.show();
@@ -1977,7 +2018,7 @@ public class MainActivity extends Activity {
             applySelectedTheme();
             configureWindow();
             showMainShell();
-            switchTab(4);
+            switchTab(TAB_DATA);
             toast("已切换为「" + label + "」");
         });
         return option;
@@ -2953,7 +2994,7 @@ public class MainActivity extends Activity {
                     applySelectedTheme();
                     configureWindow();
                     showMainShell();
-                    switchTab(4);
+                    switchTab(TAB_DATA);
                     String message = "用户数据恢复完成：收藏 " + result.favorites +
                             " 条，简记 " + result.notes +
                             " 条，主题与震动设置已应用。";
@@ -3316,8 +3357,8 @@ public class MainActivity extends Activity {
         mainHandler.post(() -> {
             dataBusy = false;
             preferences.edit().putString("last_data_message", message).apply();
-            if (currentTab == 4 && !detailOpen) {
-                switchTab(4);
+            if (currentTab == TAB_DATA && !detailOpen) {
+                switchTab(TAB_DATA);
             } else if (!error) {
                 toast(message);
             }
@@ -4173,8 +4214,10 @@ public class MainActivity extends Activity {
             closeNoteEditor();
         } else if (detailOpen) {
             returnFromDetail();
-        } else if (currentTab != 0) {
-            switchTab(0);
+        } else if (currentTab == TAB_SEARCH) {
+            switchTab(searchBackTab);
+        } else if (currentTab != TAB_HOME) {
+            switchTab(TAB_HOME);
         } else {
             super.onBackPressed();
         }
