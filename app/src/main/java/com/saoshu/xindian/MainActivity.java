@@ -123,6 +123,15 @@ public class MainActivity extends Activity {
     private boolean detailOpen = false;
     private long currentDetailId = -1;
     private long pendingSingleExportId = -1;
+    private boolean notesMode = false;
+    private boolean noteEditorOpen = false;
+    private boolean loadingNoteEditor = false;
+    private String noteQuery = "";
+    private long activeNoteId = -1;
+    private EditText noteTitleEditor;
+    private EditText noteContentEditor;
+    private TextView noteSaveStatus;
+    private Runnable pendingNoteSave;
 
     private String searchQuery = "";
     private String searchCategory = "";
@@ -291,6 +300,16 @@ public class MainActivity extends Activity {
         db.execSQL("CREATE TABLE IF NOT EXISTS local_deleted (" +
                 "document_id INTEGER PRIMARY KEY," +
                 "deleted_at TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS user_notes (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "title TEXT NOT NULL," +
+                "content TEXT NOT NULL," +
+                "created_at TEXT NOT NULL," +
+                "updated_at TEXT NOT NULL," +
+                "pinned INTEGER NOT NULL DEFAULT 0," +
+                "deleted_at TEXT)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS user_notes_updated_idx " +
+                "ON user_notes(updated_at DESC)");
         Cursor cursor = db.rawQuery("SELECT 1 FROM sqlite_master " +
                 "WHERE type='table' AND name='search_idx' LIMIT 1", null);
         boolean hasSearchIndex;
@@ -621,7 +640,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 28, Color.WHITE, Typeface.BOLD);
         brandRow.addView(brand, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("离线版  v2.8", 12, Color.WHITE, Typeface.BOLD);
+        TextView edition = text("离线版  v2.9", 12, Color.WHITE, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(10), dp(5), dp(10), dp(5));
         edition.setBackground(round(Color.argb(35, 255, 255, 255), 12));
@@ -1221,13 +1240,56 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(17), dp(16), dp(17), dp(14));
         header.setBackground(gradient(TEAL_DARK, TEAL, 0));
-        TextView title = text("我的收藏", 23, Color.WHITE, Typeface.BOLD);
+        TextView title = text(notesMode ? "简记" : "我的收藏", 23,
+                Color.WHITE, Typeface.BOLD);
         header.addView(title);
-        TextView subtitle = text("收藏状态仅保存在本机", 12,
+        TextView subtitle = text(notesMode
+                        ? "本地优先的随笔与阅读笔记 · 自动保存"
+                        : "收藏状态仅保存在本机",
+                12,
                 Color.argb(220, 255, 255, 255), Typeface.NORMAL);
         addWithTop(header, subtitle, 3);
         page.addView(header);
 
+        LinearLayout switcher = row();
+        switcher.setPadding(dp(12), dp(10), dp(12), dp(4));
+        TextView favoritesTab = text("收藏夹", 13,
+                notesMode ? MUTED : TEAL_DARK, Typeface.BOLD);
+        favoritesTab.setGravity(Gravity.CENTER);
+        favoritesTab.setPadding(dp(12), dp(8), dp(12), dp(8));
+        favoritesTab.setBackground(rippleRound(notesMode ? Color.TRANSPARENT : TEAL_PALE,
+                Color.TRANSPARENT, 12, Color.argb(30, 0, 0, 0)));
+        favoritesTab.setOnClickListener(v -> {
+            notesMode = false;
+            switchTab(3);
+        });
+        switcher.addView(favoritesTab, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView notesTab = text("简记", 13,
+                notesMode ? TEAL_DARK : MUTED, Typeface.BOLD);
+        notesTab.setGravity(Gravity.CENTER);
+        notesTab.setPadding(dp(12), dp(8), dp(12), dp(8));
+        notesTab.setBackground(rippleRound(notesMode ? TEAL_PALE : Color.TRANSPARENT,
+                Color.TRANSPARENT, 12, Color.argb(30, 0, 0, 0)));
+        notesTab.setOnClickListener(v -> {
+            notesMode = true;
+            switchTab(3);
+        });
+        LinearLayout.LayoutParams notesTabParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        notesTabParams.leftMargin = dp(8);
+        switcher.addView(notesTab, notesTabParams);
+        page.addView(switcher);
+
+        if (notesMode) {
+            addNotesPane(page);
+        } else {
+            addFavoritesPane(page);
+        }
+        return page;
+    }
+
+    private void addFavoritesPane(LinearLayout page) {
         List<Document> favorites = favoritesDocuments();
         TextView count = text(favorites.size() + " 条收藏", 13, MUTED, Typeface.BOLD);
         count.setPadding(dp(17), dp(12), dp(17), dp(5));
@@ -1270,7 +1332,343 @@ public class MainActivity extends Activity {
             page.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         }
-        return page;
+    }
+
+    private void addNotesPane(LinearLayout page) {
+        LinearLayout tools = row();
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        tools.setPadding(dp(12), dp(8), dp(12), dp(8));
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setText(noteQuery);
+        search.setHint("搜索简记");
+        search.setTextSize(14);
+        search.setTextColor(TEXT);
+        search.setHintTextColor(MUTED);
+        search.setBackground(round(Color.WHITE, 12));
+        search.setPadding(dp(12), 0, dp(12), 0);
+        tools.addView(search, new LinearLayout.LayoutParams(
+                0, dp(46), 1f));
+        TextView add = actionButton("＋ 新建", TEAL_PALE, TEAL_DARK);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
+        addParams.leftMargin = dp(8);
+        tools.addView(add, addParams);
+        TextView trash = actionButton("回收站", Color.WHITE, TEAL_DARK);
+        LinearLayout.LayoutParams trashParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
+        trashParams.leftMargin = dp(6);
+        tools.addView(trash, trashParams);
+        page.addView(tools);
+
+        TextView countView = text("", 12, MUTED, Typeface.BOLD);
+        countView.setPadding(dp(17), dp(2), dp(17), dp(4));
+        page.addView(countView);
+
+        ListView list = new ListView(this);
+        configureListFeedback(list);
+        list.setDivider(null);
+        list.setDividerHeight(0);
+        list.setPadding(dp(10), 0, dp(10), dp(64));
+        list.setClipToPadding(false);
+        list.setBackgroundColor(BG);
+        page.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        add.setOnClickListener(v -> showNoteEditor(0));
+        trash.setOnClickListener(v -> showNoteTrashDialog());
+        search.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                noteQuery = s.toString().trim();
+                loadNotesInto(list, countView, noteQuery);
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        loadNotesInto(list, countView, noteQuery);
+    }
+
+    private void loadNotesInto(ListView list, TextView count, String query) {
+        List<Note> notes = queryNotes(query, false);
+        count.setText(notes.size() + " 条简记"
+                + (deletedNoteCount() > 0 ? " · 回收站 " + deletedNoteCount() + " 条" : ""));
+        if (notes.isEmpty()) {
+            LinearLayout empty = column();
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(24), dp(45), dp(24), dp(24));
+            TextView hint = text(query.isEmpty() ? "还没有简记" : "没有匹配的简记",
+                    17, TEXT, Typeface.BOLD);
+            hint.setGravity(Gravity.CENTER);
+            empty.addView(hint);
+            TextView sub = text(query.isEmpty()
+                            ? "点“新建”记录想法、书评或阅读摘录，输入后自动保存。"
+                            : "尝试换一个关键词。",
+                    12, MUTED, Typeface.NORMAL);
+            sub.setGravity(Gravity.CENTER);
+            addWithTop(empty, sub, 7);
+            list.setAdapter(new BaseAdapter() {
+                @Override
+                public int getCount() {
+                    return 1;
+                }
+
+                @Override
+                public Object getItem(int position) {
+                    return empty;
+                }
+
+                @Override
+                public long getItemId(int position) {
+                    return 0;
+                }
+
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    return empty;
+                }
+            });
+            list.setOnItemClickListener(null);
+        } else {
+            list.setAdapter(new NoteAdapter(notes));
+            list.setOnItemClickListener((parent, view, position, id) ->
+                    showNoteEditor(notes.get(position).id));
+        }
+    }
+
+    private List<Note> queryNotes(String query, boolean deleted) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT * FROM user_notes WHERE ");
+        sql.append(deleted ? "deleted_at IS NOT NULL" : "deleted_at IS NULL");
+        List<String> args = new ArrayList<>();
+        if (query != null && !query.isEmpty()) {
+            sql.append(" AND (title LIKE ? OR content LIKE ?)");
+            String like = "%" + query + "%";
+            args.add(like);
+            args.add(like);
+        }
+        sql.append(deleted ? " ORDER BY deleted_at DESC,id DESC"
+                : " ORDER BY pinned DESC,updated_at DESC,id DESC");
+        List<Note> notes = new ArrayList<>();
+        try (Cursor cursor = db.rawQuery(sql.toString(), args.toArray(new String[0]))) {
+            while (cursor.moveToNext()) {
+                notes.add(Note.fromCursor(cursor));
+            }
+        }
+        return notes;
+    }
+
+    private int deletedNoteCount() {
+        return (int) scalarLong(
+                "SELECT count(*) FROM user_notes WHERE deleted_at IS NOT NULL", 0);
+    }
+
+    private Note loadNote(long id) {
+        try (Cursor cursor = db.rawQuery(
+                "SELECT * FROM user_notes WHERE id=? AND deleted_at IS NULL",
+                new String[]{String.valueOf(id)})) {
+            return cursor.moveToFirst() ? Note.fromCursor(cursor) : null;
+        }
+    }
+
+    private void showNoteEditor(long noteId) {
+        Note note = noteId > 0 ? loadNote(noteId) : null;
+        if (noteId > 0 && note == null) {
+            toast("这条简记已不存在");
+            return;
+        }
+        noteEditorOpen = true;
+        activeNoteId = noteId;
+        bottomBar.setVisibility(View.GONE);
+        content.removeAllViews();
+
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+        page.addView(simpleToolbar("简记", this::closeNoteEditor));
+
+        LinearLayout editor = column();
+        editor.setPadding(dp(14), dp(12), dp(14), dp(12));
+        noteTitleEditor = new EditText(this);
+        noteTitleEditor.setSingleLine(true);
+        noteTitleEditor.setHint("标题");
+        noteTitleEditor.setTextSize(20);
+        noteTitleEditor.setTextColor(TEXT);
+        noteTitleEditor.setHintTextColor(MUTED);
+        noteTitleEditor.setPadding(dp(12), dp(8), dp(12), dp(8));
+        noteTitleEditor.setBackground(round(Color.WHITE, 12));
+        editor.addView(noteTitleEditor, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+
+        LinearLayout statusRow = row();
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setPadding(dp(4), dp(7), dp(4), dp(5));
+        noteSaveStatus = text("输入后自动保存", 11, MUTED, Typeface.NORMAL);
+        statusRow.addView(noteSaveStatus, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView save = text("立即保存", 12, TEAL_DARK, Typeface.BOLD);
+        save.setPadding(dp(8), dp(5), dp(8), dp(5));
+        save.setOnClickListener(v -> saveCurrentNote());
+        statusRow.addView(save);
+        editor.addView(statusRow);
+
+        noteContentEditor = new EditText(this);
+        noteContentEditor.setGravity(Gravity.TOP | Gravity.START);
+        noteContentEditor.setHint("记录阅读感想、书单或摘录…");
+        noteContentEditor.setTextSize(16);
+        noteContentEditor.setTextColor(TEXT);
+        noteContentEditor.setHintTextColor(MUTED);
+        noteContentEditor.setSingleLine(false);
+        noteContentEditor.setPadding(dp(12), dp(12), dp(12), dp(12));
+        noteContentEditor.setBackground(round(Color.WHITE, 12));
+        editor.addView(noteContentEditor, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        page.addView(editor, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        content.addView(page);
+
+        loadingNoteEditor = true;
+        if (note != null) {
+            noteTitleEditor.setText(note.title);
+            noteContentEditor.setText(note.content);
+        }
+        loadingNoteEditor = false;
+        TextWatcher watcher = new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (!loadingNoteEditor) {
+                    scheduleNoteSave();
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        };
+        noteTitleEditor.addTextChangedListener(watcher);
+        noteContentEditor.addTextChangedListener(watcher);
+        noteContentEditor.requestFocus();
+    }
+
+    private void scheduleNoteSave() {
+        if (pendingNoteSave != null) {
+            mainHandler.removeCallbacks(pendingNoteSave);
+        }
+        pendingNoteSave = this::saveCurrentNote;
+        mainHandler.postDelayed(pendingNoteSave, 800);
+        if (noteSaveStatus != null) {
+            noteSaveStatus.setText("等待自动保存…");
+        }
+    }
+
+    private void saveCurrentNote() {
+        if (!noteEditorOpen || noteTitleEditor == null || noteContentEditor == null) {
+            return;
+        }
+        String title = noteTitleEditor.getText().toString().trim();
+        String content = noteContentEditor.getText().toString();
+        if (activeNoteId <= 0 && title.isEmpty() && content.trim().isEmpty()) {
+            return;
+        }
+        String now = isoNow();
+        if (title.isEmpty()) {
+            title = "无标题简记";
+        }
+        if (activeNoteId > 0) {
+            db.execSQL("UPDATE user_notes SET title=?,content=?,updated_at=? WHERE id=?",
+                    new Object[]{title, content, now, activeNoteId});
+        } else {
+            db.execSQL("INSERT INTO user_notes(title,content,created_at,updated_at," +
+                            "pinned,deleted_at) VALUES(?,?,?,?,0,NULL)",
+                    new Object[]{title, content, now, now});
+            activeNoteId = db.compileStatement("SELECT last_insert_rowid()")
+                    .simpleQueryForLong();
+        }
+        if (noteSaveStatus != null) {
+            noteSaveStatus.setText("已自动保存");
+        }
+    }
+
+    private void closeNoteEditor() {
+        if (pendingNoteSave != null) {
+            mainHandler.removeCallbacks(pendingNoteSave);
+            pendingNoteSave = null;
+        }
+        saveCurrentNote();
+        noteEditorOpen = false;
+        activeNoteId = -1;
+        noteTitleEditor = null;
+        noteContentEditor = null;
+        noteSaveStatus = null;
+        bottomBar.setVisibility(View.VISIBLE);
+        notesMode = true;
+        switchTab(3);
+    }
+
+    private void toggleNotePin(Note note) {
+        db.execSQL("UPDATE user_notes SET pinned=?,updated_at=? WHERE id=?",
+                new Object[]{note.pinned ? 0 : 1, isoNow(), note.id});
+        switchTab(3);
+    }
+
+    private void confirmDeleteNote(Note note) {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("移入回收站？")
+                .setMessage("简记“" + note.displayTitle() + "”可在回收站中恢复。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", (dialog, which) -> {
+                    String now = isoNow();
+                    db.execSQL("UPDATE user_notes SET deleted_at=?,updated_at=? WHERE id=?",
+                            new Object[]{now, now, note.id});
+                    switchTab(3);
+                })
+                .show();
+    }
+
+    private void showNoteTrashDialog() {
+        List<Note> notes = queryNotes("", true);
+        if (notes.isEmpty()) {
+            toast("回收站为空");
+            return;
+        }
+        String[] titles = new String[notes.size()];
+        for (int i = 0; i < notes.size(); i++) {
+            titles[i] = notes.get(i).displayTitle();
+        }
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("简记回收站")
+                .setItems(titles, (d, which) -> {
+                    Note note = notes.get(which);
+                    db.execSQL("UPDATE user_notes SET deleted_at=NULL,updated_at=? WHERE id=?",
+                            new Object[]{isoNow(), note.id});
+                    switchTab(3);
+                    toast("已恢复简记");
+                })
+                .setNegativeButton("关闭", null)
+                .setPositiveButton("清空", null)
+                .create();
+        dialog.setOnShowListener(ignored ->
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                                .setTitle("清空回收站？")
+                                .setMessage("将永久删除 " + notes.size() + " 条简记。")
+                                .setNegativeButton("取消", null)
+                                .setPositiveButton("永久删除", (d, which) -> {
+                                    db.execSQL("DELETE FROM user_notes WHERE deleted_at IS NOT NULL");
+                                    dialog.dismiss();
+                                    switchTab(3);
+                                })
+                                .show()));
+        dialog.show();
     }
 
     private View buildDataManager() {
@@ -1394,7 +1792,7 @@ public class MainActivity extends Activity {
 
         LinearLayout userBackupCard = dataActionCard(
                 "备份用户数据",
-                "导出收藏、主题颜色和震动开关设置。不会重复打包离线正文数据库。",
+                "导出收藏、简记、主题颜色和震动设置。不会重复打包离线正文数据库。",
                 "导出用户备份",
                 v -> requestUserBackupExport());
         addWithTop(page, userBackupCard, 10);
@@ -1629,9 +2027,8 @@ public class MainActivity extends Activity {
                                         (update.notes.isEmpty() ? "" :
                                                 "\n\n" + trimForDialog(update.notes, 1400)))
                                 .setNegativeButton("稍后", null)
-                                .setPositiveButton("前往下载", (dialog, which) ->
-                                        openUrl(update.apkUrl.isEmpty()
-                                                ? update.releaseUrl : update.apkUrl))
+                                .setPositiveButton("选择下载源", (dialog, which) ->
+                                        showUpdateDownloadSources(update))
                                 .show();
                     } else {
                         new android.app.AlertDialog.Builder(this)
@@ -1653,6 +2050,38 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void showUpdateDownloadSources(UpdateInfo update) {
+        if (update.apkUrl.isEmpty()) {
+            openUrl(update.releaseUrl);
+            return;
+        }
+        String[] labels = {
+                "GitHub 原站",
+                "ghfast.top 镜像",
+                "gh-proxy.com 镜像",
+                "ghproxy.net 镜像",
+                "复制 APK 下载链接"
+        };
+        String[] urls = {
+                update.apkUrl,
+                "https://ghfast.top/" + update.apkUrl,
+                "https://gh-proxy.com/" + update.apkUrl,
+                "https://ghproxy.net/" + update.apkUrl,
+                update.apkUrl
+        };
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("选择下载源")
+                .setItems(labels, (dialog, which) -> {
+                    if (which == labels.length - 1) {
+                        copyText("下载链接", urls[which]);
+                    } else {
+                        openUrl(urls[which]);
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private UpdateInfo fetchLatestRelease() throws Exception {
@@ -2332,7 +2761,7 @@ public class MainActivity extends Activity {
             try {
                 UserBackupResult result = exportUserBackup(uri);
                 finishDataOperation("用户数据备份完成：收藏 " + result.favorites +
-                        " 条，主题与震动设置已保存。", false);
+                        " 条，简记 " + result.notes + " 条，主题与震动设置已保存。", false);
             } catch (Exception error) {
                 finishDataOperation("用户备份失败：" + readableError(error), true);
             }
@@ -2369,13 +2798,29 @@ public class MainActivity extends Activity {
         settings.put("haptic_enabled", preferences.getBoolean("haptic_enabled", false));
         settings.put("favorite_ids", ids);
         settings.put("favorite_keys", keys);
+        JSONArray notesArray = new JSONArray();
+        try (Cursor cursor = db.rawQuery(
+                "SELECT title,content,created_at,updated_at,pinned,deleted_at " +
+                        "FROM user_notes ORDER BY id", null)) {
+            while (cursor.moveToNext()) {
+                JSONObject note = new JSONObject();
+                note.put("title", safe(cursor.getString(0)));
+                note.put("content", safe(cursor.getString(1)));
+                note.put("created_at", safe(cursor.getString(2)));
+                note.put("updated_at", safe(cursor.getString(3)));
+                note.put("pinned", cursor.getInt(4) != 0);
+                note.put("deleted_at", cursor.isNull(5) ? "" : safe(cursor.getString(5)));
+                notesArray.put(note);
+            }
+        }
+        settings.put("notes", notesArray);
         backup.put("settings", settings);
         try (BufferedWriter writer = new BufferedWriter(
                 new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
             writer.write(backup.toString(2));
             writer.newLine();
         }
-        return new UserBackupResult(keys.length());
+        return new UserBackupResult(keys.length(), notesArray.length());
     }
 
     private void startUserBackupImport(Uri uri) {
@@ -2394,6 +2839,7 @@ public class MainActivity extends Activity {
                     showMainShell();
                     switchTab(4);
                     String message = "用户数据恢复完成：收藏 " + result.favorites +
+                            " 条，简记 " + result.notes +
                             " 条，主题与震动设置已应用。";
                     preferences.edit().putString("last_data_message", message).apply();
                     toast(message);
@@ -2472,7 +2918,38 @@ public class MainActivity extends Activity {
                 .putBoolean("haptic_enabled", haptic)
                 .putStringSet("favorite_ids", restoredIds)
                 .apply();
-        return new UserBackupResult(restoredIds.size());
+        int restoredNotes = 0;
+        JSONArray notes = settings.optJSONArray("notes");
+        if (notes != null) {
+            for (int i = 0; i < notes.length(); i++) {
+                JSONObject note = notes.optJSONObject(i);
+                if (note == null) {
+                    continue;
+                }
+                String title = note.optString("title", "").trim();
+                String noteContent = note.optString("content", "");
+                if (title.isEmpty() && noteContent.trim().isEmpty()) {
+                    continue;
+                }
+                try (Cursor existing = db.rawQuery(
+                        "SELECT 1 FROM user_notes WHERE title=? AND content=? LIMIT 1",
+                        new String[]{title, noteContent})) {
+                    if (existing.moveToFirst()) {
+                        continue;
+                    }
+                }
+                String created = note.optString("created_at", isoNow());
+                String updated = note.optString("updated_at", created);
+                String deleted = note.optString("deleted_at", "");
+                db.execSQL("INSERT INTO user_notes(title,content,created_at,updated_at," +
+                                "pinned,deleted_at) VALUES(?,?,?,?,?,?)",
+                        new Object[]{title, noteContent, created, updated,
+                                note.optBoolean("pinned", false) ? 1 : 0,
+                                deleted.isEmpty() ? null : deleted});
+                restoredNotes++;
+            }
+        }
+        return new UserBackupResult(restoredIds.size(), restoredNotes);
     }
 
     private void startDataImport(Uri uri) {
@@ -3241,10 +3718,14 @@ public class MainActivity extends Activity {
     }
 
     private void copyText(String content) {
+        copyText("扫书内容", content);
+    }
+
+    private void copyText(String label, String content) {
         ClipboardManager manager =
                 (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        manager.setPrimaryClip(ClipData.newPlainText("扫书内容", content));
-        toast("正文已复制");
+        manager.setPrimaryClip(ClipData.newPlainText(label, content));
+        toast(label + "已复制");
     }
 
     private void openUrl(String url) {
@@ -3572,7 +4053,9 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (detailOpen) {
+        if (noteEditorOpen) {
+            closeNoteEditor();
+        } else if (detailOpen) {
             returnFromDetail();
         } else if (currentTab != 0) {
             switchTab(0);
@@ -3586,11 +4069,22 @@ public class MainActivity extends Activity {
         if (pendingSearch != null) {
             mainHandler.removeCallbacks(pendingSearch);
         }
+        if (pendingNoteSave != null) {
+            mainHandler.removeCallbacks(pendingNoteSave);
+        }
         executor.shutdownNow();
         if (db != null && db.isOpen()) {
             db.close();
         }
         super.onDestroy();
+    }
+
+    @Override
+    protected void onPause() {
+        if (noteEditorOpen) {
+            saveCurrentNote();
+        }
+        super.onPause();
     }
 
     private interface ChoiceListener {
@@ -3691,6 +4185,128 @@ public class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT));
             return outer;
+        }
+    }
+
+    private class NoteAdapter extends BaseAdapter {
+        private final List<Note> items;
+
+        NoteAdapter(List<Note> items) {
+            this.items = items;
+        }
+
+        @Override
+        public int getCount() {
+            return items.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return items.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return items.get(position).id;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            Note note = items.get(position);
+            LinearLayout outer = column();
+            outer.setPadding(dp(1), dp(4), dp(1), dp(4));
+            LinearLayout card = column();
+            card.setPadding(dp(14), dp(12), dp(14), dp(10));
+            card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+                    Color.argb(30, 0, 0, 0)));
+            card.setElevation(dp(1));
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setOnClickListener(v -> showNoteEditor(note.id));
+
+            LinearLayout titleRow = row();
+            titleRow.setGravity(Gravity.CENTER_VERTICAL);
+            TextView title = text(note.displayTitle(), 16, TEXT, Typeface.BOLD);
+            title.setSingleLine(true);
+            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            titleRow.addView(title, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            if (note.pinned) {
+                TextView pin = text("置顶", 10, TEAL_DARK, Typeface.BOLD);
+                pin.setPadding(dp(7), dp(3), dp(7), dp(3));
+                pin.setBackground(round(TEAL_PALE, 9));
+                titleRow.addView(pin);
+            }
+            card.addView(titleRow);
+
+            String snippet = note.content.replaceAll("\\s+", " ").trim();
+            if (snippet.length() > 110) {
+                snippet = snippet.substring(0, 110) + "…";
+            }
+            TextView preview = text(snippet.isEmpty() ? "空白简记" : snippet,
+                    12, MUTED, Typeface.NORMAL);
+            preview.setLineSpacing(0, 1.25f);
+            preview.setMaxLines(2);
+            preview.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            addWithTop(card, preview, 6);
+
+            LinearLayout footer = row();
+            footer.setGravity(Gravity.CENTER_VERTICAL);
+            footer.setPadding(0, dp(8), 0, 0);
+            String time = note.updatedAt.replace('T', ' ');
+            if (time.length() > 16) {
+                time = time.substring(0, 16);
+            }
+            TextView date = text(time, 10, MUTED, Typeface.NORMAL);
+            footer.addView(date, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView pinAction = text(note.pinned ? "取消置顶" : "置顶",
+                    11, TEAL_DARK, Typeface.BOLD);
+            pinAction.setPadding(dp(8), dp(5), dp(8), dp(5));
+            pinAction.setOnClickListener(v -> toggleNotePin(note));
+            footer.addView(pinAction);
+            TextView delete = text("删除", 11, PINK_DARK, Typeface.BOLD);
+            delete.setPadding(dp(8), dp(5), dp(8), dp(5));
+            delete.setOnClickListener(v -> confirmDeleteNote(note));
+            footer.addView(delete);
+            card.addView(footer);
+            outer.addView(card, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            return outer;
+        }
+    }
+
+    private static class Note {
+        final long id;
+        final String title;
+        final String content;
+        final String updatedAt;
+        final boolean pinned;
+
+        Note(long id, String title, String content, String updatedAt, boolean pinned) {
+            this.id = id;
+            this.title = title;
+            this.content = content;
+            this.updatedAt = updatedAt;
+            this.pinned = pinned;
+        }
+
+        static Note fromCursor(Cursor cursor) {
+            return new Note(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                    safe(cursor.getString(cursor.getColumnIndexOrThrow("title"))),
+                    safe(cursor.getString(cursor.getColumnIndexOrThrow("content"))),
+                    safe(cursor.getString(cursor.getColumnIndexOrThrow("updated_at"))),
+                    cursor.getInt(cursor.getColumnIndexOrThrow("pinned")) != 0);
+        }
+
+        String displayTitle() {
+            if (!title.trim().isEmpty()) {
+                return title.trim();
+            }
+            String body = content.replaceAll("\\s+", " ").trim();
+            return body.isEmpty() ? "无标题简记" :
+                    (body.length() > 28 ? body.substring(0, 28) + "…" : body);
         }
     }
 
@@ -3914,9 +4530,11 @@ public class MainActivity extends Activity {
 
     private static class UserBackupResult {
         final int favorites;
+        final int notes;
 
-        UserBackupResult(int favorites) {
+        UserBackupResult(int favorites, int notes) {
             this.favorites = favorites;
+            this.notes = notes;
         }
     }
 
