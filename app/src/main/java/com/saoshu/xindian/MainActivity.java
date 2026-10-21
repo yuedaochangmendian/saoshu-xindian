@@ -188,11 +188,20 @@ public class MainActivity extends Activity {
 
     private void configureWindow() {
         Window window = getWindow();
-        window.setStatusBarColor(TEAL_DEEP);
-        window.setNavigationBarColor(PINK_DARK);
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            window.getDecorView().setSystemUiVisibility(0);
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
+                | android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+        window.setStatusBarColor(TEAL_DARK);
+        window.setNavigationBarColor(TEAL_DARK);
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.setNavigationBarDividerColor(TEAL_DEEP);
         }
+        int flags = window.getDecorView().getSystemUiVisibility();
+        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        window.getDecorView().setSystemUiVisibility(flags);
     }
 
     private void applySelectedTheme() {
@@ -707,7 +716,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.14", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.15", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
