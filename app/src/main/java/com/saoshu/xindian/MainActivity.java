@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
@@ -224,15 +225,20 @@ public class MainActivity extends Activity {
     }
 
     private void applyActivityTheme() {
-        setTheme(preferences.getBoolean("dark_mode_enabled", false)
+        setTheme(isSystemDarkMode()
                 ? android.R.style.Theme_Material_NoActionBar
                 : android.R.style.Theme_Material_Light_NoActionBar);
+    }
+
+    private boolean isSystemDarkMode() {
+        return (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
     }
 
     private void applySelectedTheme() {
         String themeId = preferences.getString("theme_id", "teal");
         int[] palette = themePalette(themeId);
-        darkMode = preferences.getBoolean("dark_mode_enabled", false);
+        darkMode = isSystemDarkMode();
         TEAL = palette[0];
         TEAL_DEEP = palette[2];
         if (darkMode) {
@@ -779,7 +785,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.22", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.23", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2030,49 +2036,6 @@ public class MainActivity extends Activity {
         page.addView(themeScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout darkCard = row();
-        darkCard.setGravity(Gravity.CENTER_VERTICAL);
-        darkCard.setPadding(dp(16), dp(12), dp(12), dp(12));
-        darkCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
-                Color.argb(28, 0, 0, 0)));
-        LinearLayout darkText = column();
-        TextView darkTitle = text("深色模式", 14, TEXT, Typeface.BOLD);
-        darkText.addView(darkTitle);
-        TextView darkHint = text("降低夜间阅读亮度，并同步调整所有页面与弹窗",
-                11, MUTED, Typeface.NORMAL);
-        addWithTop(darkText, darkHint, 3);
-        darkCard.addView(darkText, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Switch darkSwitch = new Switch(this);
-        darkSwitch.setChecked(darkMode);
-        int[][] darkSwitchStates = new int[][]{
-                new int[]{android.R.attr.state_checked},
-                new int[]{}
-        };
-        darkSwitch.setThumbTintList(new ColorStateList(
-                darkSwitchStates, new int[]{Color.WHITE, Color.WHITE}));
-        darkSwitch.setTrackTintList(new ColorStateList(
-                darkSwitchStates, new int[]{TEAL, LINE}));
-        darkSwitch.setOnCheckedChangeListener((button, checked) -> {
-            if (checked == darkMode) {
-                return;
-            }
-            preferences.edit().putBoolean("dark_mode_enabled", checked).apply();
-            applyActivityTheme();
-            applySelectedTheme();
-            configureWindow();
-            showMainShell();
-            switchTab(TAB_DATA);
-            toast(checked ? "已开启深色模式" : "已关闭深色模式");
-        });
-        darkCard.addView(darkSwitch, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)));
-        darkCard.setOnClickListener(v -> darkSwitch.toggle());
-        LinearLayout.LayoutParams darkParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        darkParams.setMargins(dp(16), dp(10), dp(16), 0);
-        page.addView(darkCard, darkParams);
-
         LinearLayout hapticCard = row();
         hapticCard.setGravity(Gravity.CENTER_VERTICAL);
         hapticCard.setPadding(dp(16), dp(12), dp(12), dp(12));
@@ -2135,34 +2098,13 @@ public class MainActivity extends Activity {
         }
         addWithTop(page, restoreCard, 8);
 
-        TextView userSection = text("用户数据备份", 17, TEXT, Typeface.BOLD);
+        TextView userSection = text("备份与云同步", 17, TEXT, Typeface.BOLD);
         userSection.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(userSection);
 
-        LinearLayout userDataCard = multiActionCard(
-                "收藏、简记与设置",
-                "备份或恢复收藏、简记、主题颜色、深色模式和震动设置，不重复打包正文数据库。",
-                new String[]{"备份用户数据", "恢复用户数据"},
-                new View.OnClickListener[]{
-                        v -> requestUserBackupExport(),
-                        v -> requestUserBackupImport()
-                });
-        addWithTop(page, userDataCard, 8);
-
         WebDavConfig webDav = loadWebDavConfig();
-        LinearLayout webDavCard = multiActionCard(
-                "WebDAV 云备份",
-                webDav == null
-                        ? "尚未配置。连接自建 NAS 或支持 WebDAV 的网盘，跨设备同步用户数据。"
-                        : "目标：" + webDav.displayTarget() +
-                        "。密码仅加密保存在本机，不会写入备份。",
-                new String[]{"连接设置", "备份到云端", "从云端恢复"},
-                new View.OnClickListener[]{
-                        v -> showWebDavSettings(),
-                        v -> confirmWebDavBackup(),
-                        v -> confirmWebDavRestore()
-                });
-        addWithTop(page, webDavCard, 8);
+        LinearLayout backupCard = buildUserBackupCard(webDav);
+        addWithTop(page, backupCard, 8);
 
         TextView updateSection = text("应用更新", 17, TEXT, Typeface.BOLD);
         updateSection.setPadding(dp(14), dp(12), dp(14), dp(2));
@@ -2305,6 +2247,77 @@ public class MainActivity extends Activity {
         }
         card.addView(actions);
         return card;
+    }
+
+    private LinearLayout buildUserBackupCard(WebDavConfig webDav) {
+        LinearLayout card = column();
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(CARD, 14));
+        card.setElevation(dp(1));
+
+        TextView heading = text("收藏、简记、设置与连接", 16, TEXT, Typeface.BOLD);
+        card.addView(heading);
+        TextView body = text("本地文件和 WebDAV 使用同一份备份，包含收藏、简记、主题、"
+                        + "震动设置与 WebDAV 连接配置，不包含离线正文数据库。"
+                        + "备份文件会保存 WebDAV 登录信息，请妥善保管。",
+                11, MUTED, Typeface.NORMAL);
+        body.setLineSpacing(0, 1.3f);
+        addWithTop(card, body, 5);
+
+        TextView localLabel = text("本地文件", 12, TEXT, Typeface.BOLD);
+        localLabel.setPadding(0, dp(11), 0, 0);
+        card.addView(localLabel);
+        LinearLayout localActions = row();
+        localActions.setPadding(0, dp(6), 0, 0);
+        addBackupActions(localActions,
+                new String[]{"导出备份", "恢复备份"},
+                new View.OnClickListener[]{
+                        v -> requestUserBackupExport(),
+                        v -> requestUserBackupImport()
+                });
+        card.addView(localActions);
+
+        View divider = new View(this);
+        divider.setBackgroundColor(LINE);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        dividerParams.topMargin = dp(11);
+        card.addView(divider, dividerParams);
+
+        TextView cloudLabel = text("WebDAV", 12, TEXT, Typeface.BOLD);
+        cloudLabel.setPadding(0, dp(10), 0, 0);
+        card.addView(cloudLabel);
+        TextView target = text(webDav == null
+                        ? "尚未配置。可连接 NAS 或支持 WebDAV 的网盘。"
+                        : "目标：" + webDav.displayTarget(),
+                10, MUTED, Typeface.NORMAL);
+        target.setLineSpacing(0, 1.25f);
+        addWithTop(card, target, 4);
+        LinearLayout cloudActions = row();
+        cloudActions.setPadding(0, dp(6), 0, 0);
+        addBackupActions(cloudActions,
+                new String[]{"连接设置", "上传云端", "云端恢复"},
+                new View.OnClickListener[]{
+                        v -> showWebDavSettings(),
+                        v -> confirmWebDavBackup(),
+                        v -> confirmWebDavRestore()
+                });
+        card.addView(cloudActions);
+        return card;
+    }
+
+    private void addBackupActions(LinearLayout actions, String[] labels,
+                                  View.OnClickListener[] listeners) {
+        for (int i = 0; i < labels.length; i++) {
+            TextView button = actionButton(labels[i], TEAL_PALE, TEAL_DARK);
+            button.setTextSize(12);
+            button.setOnClickListener(dataBusy
+                    ? v -> toast("请等待当前操作完成") : listeners[i]);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            params.setMargins(i == 0 ? 0 : dp(4), 0, 0, 0);
+            actions.addView(button, params);
+        }
     }
 
     private void setChildrenEnabled(ViewGroup root, boolean enabled) {
@@ -3144,7 +3157,7 @@ public class MainActivity extends Activity {
                 UserBackupResult result = exportUserBackup(uri);
                 finishDataOperation("用户数据备份完成：收藏 " + result.favorites +
                         " 条，简记 " + result.notes +
-                        " 条，主题、深色模式与震动设置已保存。", false);
+                        " 条，设置与 WebDAV 连接配置已保存。", false);
             } catch (Exception error) {
                 finishDataOperation("用户备份失败：" + readableError(error), true);
             }
@@ -3184,14 +3197,22 @@ public class MainActivity extends Activity {
         }
         JSONObject backup = new JSONObject();
         backup.put("kind", "saoshu-xindian-user-backup");
-        backup.put("version", 2);
+        backup.put("version", 3);
         backup.put("created_at", isoNow());
         JSONObject settings = new JSONObject();
         settings.put("theme_id", preferences.getString("theme_id", "teal"));
-        settings.put("dark_mode_enabled", darkMode);
         settings.put("haptic_enabled", preferences.getBoolean("haptic_enabled", false));
         settings.put("favorite_ids", ids);
         settings.put("favorite_keys", keys);
+        WebDavConfig webDav = loadWebDavConfig();
+        if (webDav != null) {
+            JSONObject webDavConfig = new JSONObject();
+            webDavConfig.put("directory", webDav.directory);
+            webDavConfig.put("file_name", webDav.fileName);
+            webDavConfig.put("username", webDav.username);
+            webDavConfig.put("password", webDav.password);
+            settings.put("webdav_config", webDavConfig);
+        }
         JSONArray notesArray = new JSONArray();
         try (Cursor cursor = db.rawQuery(
                 "SELECT title,content,created_at,updated_at,pinned,deleted_at " +
@@ -3239,7 +3260,8 @@ public class MainActivity extends Activity {
             switchTab(TAB_DATA);
             String message = source + "恢复完成：收藏 " + result.favorites +
                     " 条，简记 " + result.notes +
-                    " 条，主题、深色模式和震动设置已应用。";
+                    " 条，主题与震动设置已应用。" +
+                    (result.webDavRestored ? " WebDAV 连接配置已恢复。" : "");
             preferences.edit().putString("last_data_message", message).apply();
             toast(message);
         });
@@ -3278,9 +3300,6 @@ public class MainActivity extends Activity {
         if (!theme.matches("teal|ocean|amber|rose|violet")) {
             theme = "teal";
         }
-        boolean restoredDarkMode = settings.has("dark_mode_enabled")
-                ? settings.optBoolean("dark_mode_enabled", false)
-                : darkMode;
         boolean haptic = settings.optBoolean("haptic_enabled", false);
         Set<String> restoredIds = new LinkedHashSet<>();
         JSONArray keys = settings.optJSONArray("favorite_keys");
@@ -3317,7 +3336,6 @@ public class MainActivity extends Activity {
         }
         preferences.edit()
                 .putString("theme_id", theme)
-                .putBoolean("dark_mode_enabled", restoredDarkMode)
                 .putBoolean("haptic_enabled", haptic)
                 .putStringSet("favorite_ids", restoredIds)
                 .apply();
@@ -3352,7 +3370,26 @@ public class MainActivity extends Activity {
                 restoredNotes++;
             }
         }
-        return new UserBackupResult(restoredIds.size(), restoredNotes);
+        boolean restoredWebDav = restoreWebDavConfigFromBackup(
+                settings.optJSONObject("webdav_config"));
+        return new UserBackupResult(restoredIds.size(), restoredNotes, restoredWebDav);
+    }
+
+    private boolean restoreWebDavConfigFromBackup(JSONObject webDav) {
+        if (webDav == null) {
+            return false;
+        }
+        try {
+            WebDavConfig config = validateWebDavConfig(
+                    webDav.optString("directory", ""),
+                    webDav.optString("file_name", DEFAULT_WEBDAV_FILENAME),
+                    webDav.optString("username", ""),
+                    webDav.optString("password", ""));
+            saveWebDavConfig(config, !config.password.isEmpty());
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private WebDavConfig loadWebDavConfig() {
@@ -3404,24 +3441,6 @@ public class MainActivity extends Activity {
                 ? "" : current.password, true);
         form.addView(password);
 
-        Switch remember = new Switch(this);
-        remember.setText("在本机加密保存密码");
-        remember.setTextColor(TEXT);
-        remember.setTextSize(13);
-        remember.setChecked(!safe(preferences.getString(
-                "webdav_password_encrypted", "")).isEmpty());
-        int[][] states = new int[][]{
-                new int[]{android.R.attr.state_checked},
-                new int[]{}
-        };
-        remember.setThumbTintList(new ColorStateList(
-                states, new int[]{Color.WHITE, Color.WHITE}));
-        remember.setTrackTintList(new ColorStateList(states, new int[]{TEAL, LINE}));
-        LinearLayout.LayoutParams rememberParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        rememberParams.topMargin = dp(8);
-        form.addView(remember, rememberParams);
-
         ScrollView formScroll = new ScrollView(this);
         formScroll.addView(form);
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
@@ -3438,7 +3457,7 @@ public class MainActivity extends Activity {
                         fileName.getText().toString(),
                         username.getText().toString(),
                         password.getText().toString());
-                saveWebDavConfig(config, remember.isChecked());
+                saveWebDavConfig(config, true);
                 dialog.dismiss();
                 testWebDavConnection(config);
             } catch (Exception error) {
@@ -3559,8 +3578,8 @@ public class MainActivity extends Activity {
         }
         new android.app.AlertDialog.Builder(this)
                 .setTitle("备份到 WebDAV？")
-                .setMessage("将收藏、简记、主题、深色模式与震动设置上传到：\n"
-                        + config.displayTarget())
+                .setMessage("将收藏、简记、主题、震动设置和 WebDAV 连接配置"
+                        + "（含登录信息）上传到：\n" + config.displayTarget())
                 .setNegativeButton("取消", null)
                 .setPositiveButton("开始备份", (dialog, which) ->
                         startWebDavBackup(config))
@@ -3595,7 +3614,8 @@ public class MainActivity extends Activity {
         }
         new android.app.AlertDialog.Builder(this)
                 .setTitle("从 WebDAV 恢复？")
-                .setMessage("将读取云端备份，覆盖收藏与界面设置，并补入缺失的简记。"
+                .setMessage("将读取云端备份，覆盖收藏、主题、震动与 WebDAV 连接配置，"
+                        + "并补入缺失的简记。"
                         + "\n\n文件：" + config.displayTarget())
                 .setNegativeButton("取消", null)
                 .setPositiveButton("开始恢复", (dialog, which) ->
@@ -5396,10 +5416,16 @@ public class MainActivity extends Activity {
     private static class UserBackupResult {
         final int favorites;
         final int notes;
+        final boolean webDavRestored;
 
         UserBackupResult(int favorites, int notes) {
+            this(favorites, notes, false);
+        }
+
+        UserBackupResult(int favorites, int notes, boolean webDavRestored) {
             this.favorites = favorites;
             this.notes = notes;
+            this.webDavRestored = webDavRestored;
         }
     }
 
