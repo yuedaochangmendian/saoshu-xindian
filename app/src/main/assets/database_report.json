@@ -1,11 +1,11 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 95178752,
+  "bytes": 97435648,
   "integrity": "ok",
-  "source": "扫书宝典 3.10.250109",
+  "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取",
   "source_backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_optimize_20261022.db",
   "source_database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\yybook_analysis\\YYBOOK.db",
-  "data_cutoff": "2025-01-09",
+  "data_cutoff": "2026-10-22",
   "raw_tables": {
     "clist": 38594,
     "dalao": 2400,
@@ -17,23 +17,37 @@
   },
   "raw_tables_embedded": false,
   "storage_mode": "deduplicated App compatibility schema",
-  "documents": 41033,
-  "books": 23905,
-  "source_rows": 41033,
+  "documents": 42536,
+  "books": 24484,
+  "source_rows": 42539,
   "categories": {
     "卷首": 6,
-    "扫书": 37955,
-    "推书": 256,
+    "扫书": 38350,
+    "推书": 534,
     "讨论": 311,
-    "排雷": 42,
+    "排雷": 872,
     "求书": 63,
     "书评": 2400
   },
+  "xlsx_merge": {
+    "rows_read": 1506,
+    "unique_content": 1503,
+    "inserted": 1503,
+    "merged_existing": 3,
+    "metadata_rows": 1506,
+    "backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_xlsx_merge_20261022.db"
+  },
   "sources": {
-    "无": 6,
-    "百度贴吧": 26925,
-    "雪群推书": 11290,
     "丫丫书屋": 322,
+    "优书网": 78,
+    "公告号": 845,
+    "其它来源": 376,
+    "哔哩哔哩": 1,
+    "扫书宝典": 6,
+    "扫书宝典·每周推书": 39,
+    "百度贴吧": 29271,
+    "群龙令推书群": 257,
+    "雪群推书": 11290,
     "龙空论坛": 51
   }
 }
