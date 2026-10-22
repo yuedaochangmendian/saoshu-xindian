@@ -86,7 +86,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 8;
+    private static final int DB_VERSION = 9;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
             File target = new File(getFilesDir(), "saoshu.db");
             int installedVersion = preferences.getInt("db_asset_version", -1);
             boolean available = target.isFile() && target.length() > 65_536L;
-            File legacy = new File(getFilesDir(), "saoshu.pre-v8.db");
+            File legacy = new File(getFilesDir(), "saoshu.previous.db");
             if (!available || installedVersion != DB_VERSION) {
                 if (target.isFile() && target.length() > 1_000_000L) {
                     copyFile(target, legacy);
@@ -453,70 +453,55 @@ public class MainActivity extends Activity {
         db.execSQL("ATTACH DATABASE ? AS legacy", new Object[]{legacyFile.getAbsolutePath()});
         db.beginTransaction();
         try {
-            Cursor missing = db.rawQuery(
-                    "SELECT d.* FROM legacy.documents d WHERE NOT EXISTS " +
-                            "(SELECT 1 FROM main.documents m " +
-                            "WHERE m.canonical_key=d.canonical_key)",
-                    null);
-            try {
-                while (missing.moveToNext()) {
-                    Document document = Document.fromCursor(missing);
-                    String key = safe(missing.getString(
-                            missing.getColumnIndexOrThrow("canonical_key")));
-                    db.execSQL("INSERT INTO main.documents(" +
-                                    "canonical_key,title,title_norm,author,author_norm," +
-                                    "content,category,source_type,forum,mname,zname," +
-                                    "published_at,source_url,word,hot_score," +
-                                    "mentioned_books_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            new Object[]{key, document.title, compact(document.title),
-                                    document.author, compact(document.author), document.content,
-                                    document.category, document.sourceType, document.forum,
-                                    safe(missing.getString(missing.getColumnIndexOrThrow("mname"))),
-                                    safe(missing.getString(missing.getColumnIndexOrThrow("zname"))),
-                                    document.date, document.sourceUrl, document.word,
-                                    missing.getLong(missing.getColumnIndexOrThrow("hot_score")),
-                                    document.mentionedJson});
-                    long id = db.compileStatement("SELECT last_insert_rowid()")
-                            .simpleQueryForLong();
-                    indexDocumentSearch(id, document.title, document.author,
-                            document.mentionedJson);
-                    adjustBookIndex(document.title, document.mentionedJson,
-                            document.sourceType, document.date, id, document.word, 1);
-                }
-            } finally {
-                missing.close();
+            if (legacyHasTable("user_notes")) {
+                db.execSQL("INSERT OR IGNORE INTO main.user_notes(" +
+                        "id,title,content,created_at,updated_at,pinned,deleted_at) " +
+                        "SELECT id,title,content,created_at,updated_at,pinned,deleted_at " +
+                        "FROM legacy.user_notes");
             }
 
-            db.execSQL("INSERT INTO main.document_sources(" +
-                    "document_id,source_kind,source_ref,source_url) " +
-                    "SELECT m.id,s.source_kind,s.source_ref,s.source_url " +
-                    "FROM legacy.document_sources s " +
-                    "JOIN legacy.documents d ON d.id=s.document_id " +
-                    "JOIN main.documents m ON m.canonical_key=d.canonical_key " +
-                    "WHERE NOT EXISTS (SELECT 1 FROM main.document_sources x " +
-                    "WHERE x.document_id=m.id AND x.source_kind=s.source_kind " +
-                    "AND x.source_ref=s.source_ref " +
-                    "AND coalesce(x.source_url,'')=coalesce(s.source_url,''))");
-
-            Cursor hasDeleted = db.rawQuery("SELECT 1 FROM legacy.sqlite_master " +
-                    "WHERE type='table' AND name='local_deleted' LIMIT 1", null);
-            boolean legacyHasDeleted;
-            try {
-                legacyHasDeleted = hasDeleted.moveToFirst();
-            } finally {
-                hasDeleted.close();
-            }
-            if (legacyHasDeleted) {
+            if (legacyHasTable("local_deleted") && legacyHasTable("documents")) {
                 db.execSQL("INSERT OR IGNORE INTO main.local_deleted(document_id,deleted_at) " +
                         "SELECT m.id,l.deleted_at FROM legacy.local_deleted l " +
                         "JOIN legacy.documents d ON d.id=l.document_id " +
                         "JOIN main.documents m ON m.canonical_key=d.canonical_key");
             }
+            remapFavoriteIdsFromLegacy();
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();
             db.execSQL("DETACH DATABASE legacy");
         }
+    }
+
+    private boolean legacyHasTable(String table) {
+        try (Cursor cursor = db.rawQuery(
+                "SELECT 1 FROM legacy.sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                new String[]{table})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    private void remapFavoriteIdsFromLegacy() {
+        Set<String> saved = preferences.getStringSet(
+                "favorite_ids", new LinkedHashSet<>());
+        if (saved == null || saved.isEmpty() || !legacyHasTable("documents")) {
+            return;
+        }
+        Set<String> mapped = new LinkedHashSet<>();
+        for (String oldId : saved) {
+            try (Cursor cursor = db.rawQuery(
+                    "SELECT m.id FROM legacy.documents d " +
+                            "JOIN main.documents m ON m.title_norm=d.title_norm " +
+                            "AND coalesce(m.author_norm,'')=coalesce(d.author_norm,'') " +
+                            "WHERE d.id=? ORDER BY m.id LIMIT 1",
+                    new String[]{oldId})) {
+                if (cursor.moveToFirst()) {
+                    mapped.add(String.valueOf(cursor.getLong(0)));
+                }
+            }
+        }
+        preferences.edit().putStringSet("favorite_ids", mapped).apply();
     }
 
     private void updateLoadingStatus(String message) {
@@ -716,7 +701,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.15", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.16", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));

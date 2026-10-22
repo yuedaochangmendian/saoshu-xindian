@@ -1,33 +1,36 @@
 {
-  "bytes": 59727872,
+  "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
+  "bytes": 181547008,
   "integrity": "ok",
-  "documents": 34508,
-  "books": 18053,
-  "source_rows": 44402,
-  "removed_duplicates": 18668,
-  "duplicate_threshold": 0.60,
-  "removed_noise": 3,
-  "removed_meaningless": 430,
-  "removed_recent_short": 966,
-  "removed_short_all": 1238,
-  "removed_serialized": 17644,
-  "search_index": "built locally on first launch",
+  "source": "扫书宝典 3.10.250109",
+  "source_backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_yybook_replace_20261022.db",
+  "data_cutoff": "2025-01-09",
+  "raw_tables": {
+    "clist": 38594,
+    "dalao": 2400,
+    "dalaoInfo": 10,
+    "info": 1,
+    "mlist": 46,
+    "zlist": 1665,
+    "wlist": 39
+  },
+  "documents": 41033,
+  "books": 23905,
+  "source_rows": 41033,
   "categories": {
     "卷首": 6,
-    "扫书": 20653,
-    "推书": 2592,
-    "讨论": 10085,
-    "排雷": 515,
-    "求书": 589,
-    "书评": 68
+    "扫书": 37955,
+    "推书": 256,
+    "讨论": 311,
+    "排雷": 42,
+    "求书": 63,
+    "书评": 2400
   },
   "sources": {
     "无": 6,
-    "百度贴吧": 11850,
-    "雪群推书": 10537,
-    "丫丫书屋": 310,
-    "龙空论坛": 42,
-    "资料库": 11566,
-    "文本页面": 197
+    "百度贴吧": 26925,
+    "雪群推书": 11290,
+    "丫丫书屋": 322,
+    "龙空论坛": 51
   }
 }
