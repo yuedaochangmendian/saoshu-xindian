@@ -213,7 +213,7 @@ public class MainActivity extends Activity {
         TEAL_PALE = palette[3];
         TEAL_SOFT = palette[4];
         PINK = TEAL;
-        PINK_DARK = TEAL_DEEP;
+        PINK_DARK = TEAL_DARK;
         PINK_PALE = TEAL_PALE;
     }
 
@@ -570,7 +570,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackground(round((PINK_DARK & 0x00ffffff) | 0xf0000000, 20));
+        shell.setBackground(round((TEAL_DARK & 0x00ffffff) | 0xf0000000, 20));
         shell.setClipToOutline(true);
         shell.setElevation(dp(10));
 
@@ -624,19 +624,37 @@ public class MainActivity extends Activity {
             navItems[i].setBackground(rippleRound(
                     i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
                     Color.TRANSPARENT, 17, Color.argb(55, 255, 255, 255)));
+            navItems[i].animate().cancel();
+            navItems[i].animate().scaleX(i == tab ? 1.08f : 1f)
+                    .scaleY(i == tab ? 1.08f : 1f).setDuration(140).start();
         }
-        content.removeAllViews();
+        View nextPage;
         if (tab == TAB_HOME) {
-            content.addView(buildHome());
+            nextPage = buildHome();
         } else if (tab == TAB_BOOKS) {
-            content.addView(buildBooks());
+            nextPage = buildBooks();
         } else if (tab == TAB_COLLECTION) {
-            content.addView(buildCollection());
+            nextPage = buildCollection();
         } else if (tab == TAB_DATA) {
-            content.addView(buildDataManager());
+            nextPage = buildDataManager();
         } else {
-            content.addView(buildSearch());
+            nextPage = buildSearch();
         }
+        showContentPage(nextPage);
+    }
+
+    private void showContentPage(View page) {
+        content.removeAllViews();
+        page.setAlpha(0f);
+        page.setTranslationY(dp(10));
+        page.setScaleX(0.995f);
+        page.setScaleY(0.995f);
+        content.addView(page);
+        page.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                .setDuration(180)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .withLayer()
+                .start();
     }
 
     private void openSearchPage() {
@@ -701,7 +719,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.18", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.19", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -756,7 +774,7 @@ public class MainActivity extends Activity {
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
-        header.setBackground(gradient(PINK_DARK, PINK, 0));
+        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
         LinearLayout titleRow = row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = text("‹", 30, Color.WHITE, Typeface.NORMAL);
@@ -1198,7 +1216,6 @@ public class MainActivity extends Activity {
         detailOpen = true;
         detailBackTab = TAB_BOOKS;
         bottomBar.setVisibility(View.GONE);
-        content.removeAllViews();
 
         LinearLayout page = column();
         page.setBackgroundColor(BG);
@@ -1254,7 +1271,7 @@ public class MainActivity extends Activity {
         glossaryList.setEmptyView(glossaryEmptyState);
         page.addView(listArea, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(page);
+        showContentPage(page);
 
         search.addTextChangedListener(new TextWatcher() {
             @Override
@@ -1345,7 +1362,6 @@ public class MainActivity extends Activity {
         detailOpen = true;
         detailBackTab = TAB_BOOKS;
         bottomBar.setVisibility(View.GONE);
-        content.removeAllViews();
 
         LinearLayout page = column();
         page.setBackgroundColor(BG);
@@ -1379,7 +1395,7 @@ public class MainActivity extends Activity {
         list.setBackgroundColor(BG);
         page.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(page);
+        showContentPage(page);
 
         executor.execute(() -> {
             List<Document> related = new ArrayList<>();
@@ -1694,7 +1710,6 @@ public class MainActivity extends Activity {
         noteEditorOpen = true;
         activeNoteId = noteId;
         bottomBar.setVisibility(View.GONE);
-        content.removeAllViews();
 
         LinearLayout page = column();
         page.setBackgroundColor(BG);
@@ -1738,7 +1753,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         page.addView(editor, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(page);
+        showContentPage(page);
 
         loadingNoteEditor = true;
         if (note != null) {
@@ -1888,7 +1903,7 @@ public class MainActivity extends Activity {
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(10), dp(12), dp(9));
-        header.setBackground(gradient(TEAL_DEEP, TEAL, 0));
+        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
         TextView title = text("数据管理", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
         TextView subtitle = text(formatCompact(localDocumentCount()) + " 条内容 · " +
@@ -1935,7 +1950,14 @@ public class MainActivity extends Activity {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         Switch hapticSwitch = new Switch(this);
         hapticSwitch.setChecked(preferences.getBoolean("haptic_enabled", false));
-        hapticSwitch.setButtonTintList(ColorStateList.valueOf(TEAL));
+        int[][] switchStates = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        hapticSwitch.setThumbTintList(new ColorStateList(
+                switchStates, new int[]{Color.WHITE, Color.WHITE}));
+        hapticSwitch.setTrackTintList(new ColorStateList(
+                switchStates, new int[]{TEAL, Color.rgb(205, 214, 211)}));
         hapticSwitch.setOnCheckedChangeListener((button, checked) -> {
             preferences.edit().putBoolean("haptic_enabled", checked).apply();
             toast(checked ? "已开启轻微点击震动" : "已关闭点击震动");
@@ -3699,7 +3721,6 @@ public class MainActivity extends Activity {
         detailOpen = true;
         currentDetailId = documentId;
         bottomBar.setVisibility(View.GONE);
-        content.removeAllViews();
 
         LinearLayout page = column();
         page.setBackgroundColor(BG);
@@ -3713,7 +3734,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         page.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(page);
+        showContentPage(page);
 
         LinearLayout headline = column();
         headline.setPadding(dp(17), dp(16), dp(17), dp(16));
