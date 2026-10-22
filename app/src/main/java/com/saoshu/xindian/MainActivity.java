@@ -22,12 +22,15 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.SpannableStringBuilder;
 import android.text.style.StyleSpan;
 import android.text.Layout;
 import android.text.style.ForegroundColorSpan;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -55,6 +58,7 @@ import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -66,6 +70,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.KeyStore;
 import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -84,6 +89,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 public class MainActivity extends Activity {
     private static final int DB_VERSION = 11;
@@ -108,12 +118,16 @@ public class MainActivity extends Activity {
     private int PINK_DARK;
     private int PINK_PALE;
     private static final int GOLD = Color.rgb(244, 195, 0);
-    private static final int BG = Color.rgb(245, 247, 246);
-    private static final int CARD = Color.WHITE;
-    private static final int TEXT = Color.rgb(38, 50, 56);
-    private static final int MUTED = Color.rgb(111, 121, 119);
-    private static final int LINE = Color.rgb(225, 232, 230);
+    private int BG;
+    private int CARD;
+    private int TEXT;
+    private int MUTED;
+    private int LINE;
+    private boolean darkMode;
     private static final String PREFS = "saoshu_prefs";
+    private static final String WEBDAV_KEY_ALIAS = "saoshu_webdav_password";
+    private static final String DEFAULT_WEBDAV_FILENAME =
+            "saoshu-xindian-user-backup.json";
 
     private final ExecutorService executor = Executors.newFixedThreadPool(3);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -184,6 +198,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        applyActivityTheme();
         applySelectedTheme();
         configureWindow();
         showLoadingScreen();
@@ -195,8 +210,8 @@ public class MainActivity extends Activity {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
                 | android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
-        window.setStatusBarColor(TEAL_DARK);
-        window.setNavigationBarColor(TEAL_DARK);
+        window.setStatusBarColor(toolbarColor());
+        window.setNavigationBarColor(toolbarColor());
         if (android.os.Build.VERSION.SDK_INT >= 28) {
             window.setNavigationBarDividerColor(TEAL_DEEP);
         }
@@ -208,17 +223,58 @@ public class MainActivity extends Activity {
         window.getDecorView().setSystemUiVisibility(flags);
     }
 
+    private void applyActivityTheme() {
+        setTheme(preferences.getBoolean("dark_mode_enabled", false)
+                ? android.R.style.Theme_Material_NoActionBar
+                : android.R.style.Theme_Material_Light_NoActionBar);
+    }
+
     private void applySelectedTheme() {
         String themeId = preferences.getString("theme_id", "teal");
         int[] palette = themePalette(themeId);
+        darkMode = preferences.getBoolean("dark_mode_enabled", false);
         TEAL = palette[0];
-        TEAL_DARK = palette[1];
         TEAL_DEEP = palette[2];
-        TEAL_PALE = palette[3];
-        TEAL_SOFT = palette[4];
+        if (darkMode) {
+            BG = Color.rgb(17, 22, 25);
+            CARD = Color.rgb(27, 34, 38);
+            TEXT = Color.rgb(237, 244, 242);
+            MUTED = Color.rgb(166, 181, 177);
+            LINE = Color.rgb(55, 70, 67);
+            TEAL_DARK = blend(palette[0], Color.WHITE, 0.18f);
+            TEAL_PALE = blend(palette[0], CARD, 0.17f);
+            TEAL_SOFT = blend(palette[0], BG, 0.09f);
+        } else {
+            TEAL_DARK = palette[1];
+            TEAL_PALE = palette[3];
+            TEAL_SOFT = palette[4];
+            BG = Color.rgb(245, 247, 246);
+            CARD = Color.WHITE;
+            TEXT = Color.rgb(38, 50, 56);
+            MUTED = Color.rgb(111, 121, 119);
+            LINE = Color.rgb(225, 232, 230);
+        }
         PINK = TEAL;
         PINK_DARK = TEAL_DARK;
         PINK_PALE = TEAL_PALE;
+    }
+
+    private int toolbarColor() {
+        return darkMode ? TEAL_DEEP : TEAL_DARK;
+    }
+
+    private GradientDrawable titleGradient(float radiusDp) {
+        return darkMode
+                ? gradient(TEAL_DEEP, blend(TEAL_DEEP, TEAL, 0.34f), radiusDp)
+                : gradient(TEAL_DARK, TEAL, radiusDp);
+    }
+
+    private static int blend(int from, int to, float amount) {
+        float ratio = Math.max(0f, Math.min(1f, amount));
+        int red = Math.round(Color.red(from) * (1f - ratio) + Color.red(to) * ratio);
+        int green = Math.round(Color.green(from) * (1f - ratio) + Color.green(to) * ratio);
+        int blue = Math.round(Color.blue(from) * (1f - ratio) + Color.blue(to) * ratio);
+        return Color.rgb(red, green, blue);
     }
 
     private int[] themePalette(String themeId) {
@@ -574,7 +630,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackground(round((TEAL_DARK & 0x00ffffff) | 0xf0000000, 20));
+        shell.setBackground(round((toolbarColor() & 0x00ffffff) | 0xf0000000, 20));
         shell.setClipToOutline(true);
         shell.setElevation(dp(10));
 
@@ -723,7 +779,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.21", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.22", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -778,7 +834,7 @@ public class MainActivity extends Activity {
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
-        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        header.setBackground(titleGradient(0));
         LinearLayout titleRow = row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         Button back = toolbarBackButton(() -> switchTab(searchBackTab));
@@ -791,13 +847,13 @@ public class MainActivity extends Activity {
         LinearLayout inputRow = row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(dp(12), 0, dp(8), 0);
-        inputRow.setBackground(round(Color.WHITE, 13));
+        inputRow.setBackground(round(CARD, 13));
         searchField = new EditText(this);
         searchField.setSingleLine(true);
         searchField.setText(searchQuery);
         searchField.setTextSize(15);
         searchField.setTextColor(TEXT);
-        searchField.setHintTextColor(Color.rgb(150, 155, 154));
+        searchField.setHintTextColor(MUTED);
         searchField.setHint("例如：世子很凶 / 作者名 / 西幻");
         searchField.setBackgroundColor(Color.TRANSPARENT);
         searchField.setPadding(0, 0, 0, 0);
@@ -910,7 +966,7 @@ public class MainActivity extends Activity {
         LinearLayout card = column();
         card.setPadding(dp(15), dp(13), dp(15), dp(12));
         card.setMinimumHeight(dp(82));
-        card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
                 Color.argb(34, 0, 0, 0)));
         card.setElevation(dp(1));
         bindWholeCardClick(card, v -> showGlossaryDetail(glossary));
@@ -950,7 +1006,7 @@ public class MainActivity extends Activity {
         LinearLayout content = column();
         content.setPadding(dp(20), dp(8), dp(20), dp(12));
         TextView body = text(glossary.explanation, 14,
-                Color.rgb(62, 72, 70), Typeface.NORMAL);
+                TEXT, Typeface.NORMAL);
         body.setLineSpacing(dp(2), 1.45f);
         body.setTextIsSelectable(true);
         content.addView(body);
@@ -1100,7 +1156,7 @@ public class MainActivity extends Activity {
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
-        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        header.setBackground(titleGradient(0));
         TextView title = text("书库", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
 
@@ -1125,7 +1181,7 @@ public class MainActivity extends Activity {
         LinearLayout input = row();
         input.setGravity(Gravity.CENTER_VERTICAL);
         input.setPadding(dp(12), 0, dp(12), 0);
-        input.setBackground(round(Color.WHITE, 13));
+        input.setBackground(round(CARD, 13));
         input.setElevation(dp(2));
         TextView icon = text("⌕", 20, TEAL, Typeface.BOLD);
         input.addView(icon);
@@ -1135,7 +1191,7 @@ public class MainActivity extends Activity {
         bookField.setTextColor(TEXT);
         bookField.setTextSize(15);
         bookField.setHint("搜索书名");
-        bookField.setHintTextColor(Color.rgb(145, 153, 151));
+        bookField.setHintTextColor(MUTED);
         bookField.setPadding(dp(8), 0, 0, 0);
         input.addView(bookField, new LinearLayout.LayoutParams(0, dp(44), 1f));
         addWithTop(header, input, 7);
@@ -1336,7 +1392,7 @@ public class MainActivity extends Activity {
         }
         button.setTextColor(selected ? TEAL_DARK : Color.WHITE);
         button.setBackground(rippleRound(
-                selected ? Color.WHITE : Color.TRANSPARENT,
+                selected ? CARD : Color.TRANSPARENT,
                 selected ? TEAL_PALE : Color.TRANSPARENT,
                 10, Color.argb(46, 0, 0, 0)));
     }
@@ -1408,7 +1464,7 @@ public class MainActivity extends Activity {
 
         LinearLayout hero = column();
         hero.setPadding(dp(18), dp(16), dp(18), dp(16));
-        hero.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        hero.setBackground(titleGradient(0));
         TextView title = text(book.displayTitle(), 22, Color.WHITE, Typeface.BOLD);
         title.setLineSpacing(0, 1.15f);
         hero.addView(title);
@@ -1515,7 +1571,7 @@ public class MainActivity extends Activity {
         search.setTextSize(14);
         search.setTextColor(TEXT);
         search.setHintTextColor(MUTED);
-        search.setBackground(round(Color.WHITE, 12));
+        search.setBackground(round(CARD, 12));
         search.setPadding(dp(12), 0, dp(12), 0);
         tools.addView(search, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
@@ -1585,7 +1641,7 @@ public class MainActivity extends Activity {
             LinearLayout empty = column();
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(25), dp(16), dp(20));
-            empty.setBackground(round(Color.WHITE, 14));
+            empty.setBackground(round(CARD, 14));
             TextView hint = text(needle.isEmpty() ? "还没有收藏或简记" : "没有匹配的内容",
                     17, TEXT, Typeface.BOLD);
             hint.setGravity(Gravity.CENTER);
@@ -1640,7 +1696,7 @@ public class MainActivity extends Activity {
     private View createNoteCard(Note note) {
         LinearLayout card = column();
         card.setPadding(dp(14), dp(12), dp(14), dp(10));
-        card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
                 Color.argb(30, 0, 0, 0)));
         card.setElevation(dp(1));
         card.setClickable(true);
@@ -1763,7 +1819,7 @@ public class MainActivity extends Activity {
         noteTitleEditor.setTextColor(TEXT);
         noteTitleEditor.setHintTextColor(MUTED);
         noteTitleEditor.setPadding(dp(12), dp(8), dp(12), dp(8));
-        noteTitleEditor.setBackground(round(Color.WHITE, 12));
+        noteTitleEditor.setBackground(round(CARD, 12));
         editor.addView(noteTitleEditor, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
 
@@ -1787,7 +1843,7 @@ public class MainActivity extends Activity {
         noteContentEditor.setHintTextColor(MUTED);
         noteContentEditor.setSingleLine(false);
         noteContentEditor.setPadding(dp(12), dp(12), dp(12), dp(12));
-        noteContentEditor.setBackground(round(Color.WHITE, 12));
+        noteContentEditor.setBackground(round(CARD, 12));
         editor.addView(noteContentEditor, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         page.addView(editor, new LinearLayout.LayoutParams(
@@ -1942,7 +1998,7 @@ public class MainActivity extends Activity {
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(10), dp(12), dp(9));
-        header.setBackground(gradient(TEAL_DARK, TEAL, 0));
+        header.setBackground(titleGradient(0));
         TextView title = text("数据管理", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
         TextView subtitle = text(formatCompact(localDocumentCount()) + " 条内容 · " +
@@ -1952,7 +2008,7 @@ public class MainActivity extends Activity {
         addWithTop(header, subtitle, 3);
         page.addView(header);
 
-        TextView appearance = text("主题颜色", 17, TEXT, Typeface.BOLD);
+        TextView appearance = text("主题与外观", 17, TEXT, Typeface.BOLD);
         appearance.setPadding(dp(14), dp(11), dp(14), dp(5));
         page.addView(appearance);
         HorizontalScrollView themeScroll = new HorizontalScrollView(this);
@@ -1974,10 +2030,53 @@ public class MainActivity extends Activity {
         page.addView(themeScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        LinearLayout darkCard = row();
+        darkCard.setGravity(Gravity.CENTER_VERTICAL);
+        darkCard.setPadding(dp(16), dp(12), dp(12), dp(12));
+        darkCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+                Color.argb(28, 0, 0, 0)));
+        LinearLayout darkText = column();
+        TextView darkTitle = text("深色模式", 14, TEXT, Typeface.BOLD);
+        darkText.addView(darkTitle);
+        TextView darkHint = text("降低夜间阅读亮度，并同步调整所有页面与弹窗",
+                11, MUTED, Typeface.NORMAL);
+        addWithTop(darkText, darkHint, 3);
+        darkCard.addView(darkText, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Switch darkSwitch = new Switch(this);
+        darkSwitch.setChecked(darkMode);
+        int[][] darkSwitchStates = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        darkSwitch.setThumbTintList(new ColorStateList(
+                darkSwitchStates, new int[]{Color.WHITE, Color.WHITE}));
+        darkSwitch.setTrackTintList(new ColorStateList(
+                darkSwitchStates, new int[]{TEAL, LINE}));
+        darkSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (checked == darkMode) {
+                return;
+            }
+            preferences.edit().putBoolean("dark_mode_enabled", checked).apply();
+            applyActivityTheme();
+            applySelectedTheme();
+            configureWindow();
+            showMainShell();
+            switchTab(TAB_DATA);
+            toast(checked ? "已开启深色模式" : "已关闭深色模式");
+        });
+        darkCard.addView(darkSwitch, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)));
+        darkCard.setOnClickListener(v -> darkSwitch.toggle());
+        LinearLayout.LayoutParams darkParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        darkParams.setMargins(dp(16), dp(10), dp(16), 0);
+        page.addView(darkCard, darkParams);
+
         LinearLayout hapticCard = row();
         hapticCard.setGravity(Gravity.CENTER_VERTICAL);
         hapticCard.setPadding(dp(16), dp(12), dp(12), dp(12));
-        hapticCard.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+        hapticCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
                 Color.argb(28, 0, 0, 0)));
         LinearLayout hapticText = column();
         TextView hapticTitle = text("点击震动", 14, TEXT, Typeface.BOLD);
@@ -1996,7 +2095,7 @@ public class MainActivity extends Activity {
         hapticSwitch.setThumbTintList(new ColorStateList(
                 switchStates, new int[]{Color.WHITE, Color.WHITE}));
         hapticSwitch.setTrackTintList(new ColorStateList(
-                switchStates, new int[]{TEAL, Color.rgb(205, 214, 211)}));
+                switchStates, new int[]{TEAL, LINE}));
         hapticSwitch.setOnCheckedChangeListener((button, checked) -> {
             preferences.edit().putBoolean("haptic_enabled", checked).apply();
             toast(checked ? "已开启轻微点击震动" : "已关闭点击震动");
@@ -2042,13 +2141,28 @@ public class MainActivity extends Activity {
 
         LinearLayout userDataCard = multiActionCard(
                 "收藏、简记与设置",
-                "备份或恢复收藏、简记、主题颜色和震动设置，不重复打包正文数据库。",
+                "备份或恢复收藏、简记、主题颜色、深色模式和震动设置，不重复打包正文数据库。",
                 new String[]{"备份用户数据", "恢复用户数据"},
                 new View.OnClickListener[]{
                         v -> requestUserBackupExport(),
                         v -> requestUserBackupImport()
                 });
         addWithTop(page, userDataCard, 8);
+
+        WebDavConfig webDav = loadWebDavConfig();
+        LinearLayout webDavCard = multiActionCard(
+                "WebDAV 云备份",
+                webDav == null
+                        ? "尚未配置。连接自建 NAS 或支持 WebDAV 的网盘，跨设备同步用户数据。"
+                        : "目标：" + webDav.displayTarget() +
+                        "。密码仅加密保存在本机，不会写入备份。",
+                new String[]{"连接设置", "备份到云端", "从云端恢复"},
+                new View.OnClickListener[]{
+                        v -> showWebDavSettings(),
+                        v -> confirmWebDavBackup(),
+                        v -> confirmWebDavRestore()
+                });
+        addWithTop(page, webDavCard, 8);
 
         TextView updateSection = text("应用更新", 17, TEXT, Typeface.BOLD);
         updateSection.setPadding(dp(14), dp(12), dp(14), dp(2));
@@ -2067,7 +2181,7 @@ public class MainActivity extends Activity {
         TextView statusTitle = text("操作状态", 13, TEAL_DARK, Typeface.BOLD);
         statusCard.addView(statusTitle);
         dataStatus = text(preferences.getString("last_data_message",
-                        "本地数据只保存在这台设备；删除与导入都会立即写入本地数据库。"),
+                        "正文数据库仅保存在本机；收藏、简记与设置可备份到文件或 WebDAV。"),
                 12, MUTED, Typeface.NORMAL);
         dataStatus.setLineSpacing(0, 1.35f);
         addWithTop(statusCard, dataStatus, 6);
@@ -2110,7 +2224,7 @@ public class MainActivity extends Activity {
         option.setGravity(Gravity.CENTER_VERTICAL);
         option.setPadding(dp(12), dp(9), dp(14), dp(9));
         option.setBackground(rippleRound(
-                selected ? TEAL_PALE : Color.WHITE,
+                selected ? TEAL_PALE : CARD,
                 selected ? TEAL_DARK : LINE,
                 15,
                 Color.argb(35, 0, 0, 0)));
@@ -2125,6 +2239,7 @@ public class MainActivity extends Activity {
         option.setFocusable(true);
         option.setOnClickListener(v -> {
             preferences.edit().putString("theme_id", id).apply();
+            applyActivityTheme();
             applySelectedTheme();
             configureWindow();
             showMainShell();
@@ -2145,7 +2260,7 @@ public class MainActivity extends Activity {
                                         String buttonLabel, View.OnClickListener listener) {
         LinearLayout card = column();
         card.setPadding(dp(16), dp(15), dp(16), dp(14));
-        card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 15,
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 15,
                 Color.argb(30, 0, 0, 0)));
         card.setElevation(dp(2));
         card.setClickable(true);
@@ -2169,7 +2284,7 @@ public class MainActivity extends Activity {
                                          View.OnClickListener[] listeners) {
         LinearLayout card = column();
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(Color.WHITE, 14));
+        card.setBackground(round(CARD, 14));
         card.setElevation(dp(1));
         TextView heading = text(title, 16, TEXT, Typeface.BOLD);
         card.addView(heading);
@@ -3028,7 +3143,8 @@ public class MainActivity extends Activity {
             try {
                 UserBackupResult result = exportUserBackup(uri);
                 finishDataOperation("用户数据备份完成：收藏 " + result.favorites +
-                        " 条，简记 " + result.notes + " 条，主题与震动设置已保存。", false);
+                        " 条，简记 " + result.notes +
+                        " 条，主题、深色模式与震动设置已保存。", false);
             } catch (Exception error) {
                 finishDataOperation("用户备份失败：" + readableError(error), true);
             }
@@ -3036,10 +3152,20 @@ public class MainActivity extends Activity {
     }
 
     private UserBackupResult exportUserBackup(Uri uri) throws Exception {
+        UserBackupPayload payload = buildUserBackupPayload();
         OutputStream raw = getContentResolver().openOutputStream(uri);
         if (raw == null) {
             throw new IllegalStateException("无法创建用户备份文件");
         }
+        try (BufferedWriter writer = new BufferedWriter(
+                new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
+            writer.write(payload.json);
+            writer.newLine();
+        }
+        return payload.result;
+    }
+
+    private UserBackupPayload buildUserBackupPayload() throws Exception {
         Set<String> favoriteIds = preferences.getStringSet(
                 "favorite_ids", new LinkedHashSet<>());
         JSONArray ids = new JSONArray();
@@ -3058,10 +3184,11 @@ public class MainActivity extends Activity {
         }
         JSONObject backup = new JSONObject();
         backup.put("kind", "saoshu-xindian-user-backup");
-        backup.put("version", 1);
+        backup.put("version", 2);
         backup.put("created_at", isoNow());
         JSONObject settings = new JSONObject();
         settings.put("theme_id", preferences.getString("theme_id", "teal"));
+        settings.put("dark_mode_enabled", darkMode);
         settings.put("haptic_enabled", preferences.getBoolean("haptic_enabled", false));
         settings.put("favorite_ids", ids);
         settings.put("favorite_keys", keys);
@@ -3082,12 +3209,8 @@ public class MainActivity extends Activity {
         }
         settings.put("notes", notesArray);
         backup.put("settings", settings);
-        try (BufferedWriter writer = new BufferedWriter(
-                new OutputStreamWriter(raw, StandardCharsets.UTF_8))) {
-            writer.write(backup.toString(2));
-            writer.newLine();
-        }
-        return new UserBackupResult(keys.length(), notesArray.length());
+        return new UserBackupPayload(
+                backup.toString(2), new UserBackupResult(keys.length(), notesArray.length()));
     }
 
     private void startUserBackupImport(Uri uri) {
@@ -3099,21 +3222,26 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 UserBackupResult result = importUserBackup(uri);
-                mainHandler.post(() -> {
-                    dataBusy = false;
-                    applySelectedTheme();
-                    configureWindow();
-                    showMainShell();
-                    switchTab(TAB_DATA);
-                    String message = "用户数据恢复完成：收藏 " + result.favorites +
-                            " 条，简记 " + result.notes +
-                            " 条，主题与震动设置已应用。";
-                    preferences.edit().putString("last_data_message", message).apply();
-                    toast(message);
-                });
+                applyRestoredUserBackup(result, "本地备份");
             } catch (Exception error) {
                 finishDataOperation("用户恢复失败：" + readableError(error), true);
             }
+        });
+    }
+
+    private void applyRestoredUserBackup(UserBackupResult result, String source) {
+        mainHandler.post(() -> {
+            dataBusy = false;
+            applyActivityTheme();
+            applySelectedTheme();
+            configureWindow();
+            showMainShell();
+            switchTab(TAB_DATA);
+            String message = source + "恢复完成：收藏 " + result.favorites +
+                    " 条，简记 " + result.notes +
+                    " 条，主题、深色模式和震动设置已应用。";
+            preferences.edit().putString("last_data_message", message).apply();
+            toast(message);
         });
     }
 
@@ -3133,6 +3261,10 @@ public class MainActivity extends Activity {
             }
             content = builder.toString();
         }
+        return importUserBackupContent(content);
+    }
+
+    private UserBackupResult importUserBackupContent(String content) throws Exception {
         JSONObject backup = new JSONObject(content);
         if (!"saoshu-xindian-user-backup".equals(
                 backup.optString("kind", ""))) {
@@ -3146,6 +3278,9 @@ public class MainActivity extends Activity {
         if (!theme.matches("teal|ocean|amber|rose|violet")) {
             theme = "teal";
         }
+        boolean restoredDarkMode = settings.has("dark_mode_enabled")
+                ? settings.optBoolean("dark_mode_enabled", false)
+                : darkMode;
         boolean haptic = settings.optBoolean("haptic_enabled", false);
         Set<String> restoredIds = new LinkedHashSet<>();
         JSONArray keys = settings.optJSONArray("favorite_keys");
@@ -3182,6 +3317,7 @@ public class MainActivity extends Activity {
         }
         preferences.edit()
                 .putString("theme_id", theme)
+                .putBoolean("dark_mode_enabled", restoredDarkMode)
                 .putBoolean("haptic_enabled", haptic)
                 .putStringSet("favorite_ids", restoredIds)
                 .apply();
@@ -3217,6 +3353,480 @@ public class MainActivity extends Activity {
             }
         }
         return new UserBackupResult(restoredIds.size(), restoredNotes);
+    }
+
+    private WebDavConfig loadWebDavConfig() {
+        String directory = preferences.getString("webdav_directory", "").trim();
+        if (directory.isEmpty()) {
+            return null;
+        }
+        String fileName = preferences.getString(
+                "webdav_filename", DEFAULT_WEBDAV_FILENAME).trim();
+        if (fileName.isEmpty()) {
+            fileName = DEFAULT_WEBDAV_FILENAME;
+        }
+        String username = preferences.getString("webdav_username", "");
+        String password = decryptWebDavPassword(
+                preferences.getString("webdav_password_encrypted", ""));
+        return new WebDavConfig(directory, fileName, username, password);
+    }
+
+    private void showWebDavSettings() {
+        WebDavConfig current = loadWebDavConfig();
+        LinearLayout form = column();
+        form.setPadding(dp(20), dp(5), dp(20), 0);
+
+        TextView help = text("填写 WebDAV 目录地址、登录账号和备份文件名。"
+                        + "建议使用 HTTPS 与应用专用密码。",
+                12, MUTED, Typeface.NORMAL);
+        help.setLineSpacing(0, 1.35f);
+        form.addView(help);
+
+        form.addView(webDavLabel("WebDAV 目录 URL"));
+        EditText directory = webDavField(current == null
+                ? "" : Uri.decode(current.directory), false);
+        directory.setHint(
+                "https://dav.example.com/remote.php/dav/files/用户名/扫书新典/");
+        form.addView(directory);
+
+        form.addView(webDavLabel("备份文件名"));
+        EditText fileName = webDavField(current == null
+                ? DEFAULT_WEBDAV_FILENAME : current.fileName, false);
+        form.addView(fileName);
+
+        form.addView(webDavLabel("用户名"));
+        EditText username = webDavField(current == null
+                ? "" : current.username, false);
+        form.addView(username);
+
+        form.addView(webDavLabel("密码 / 应用密码"));
+        EditText password = webDavField(current == null
+                ? "" : current.password, true);
+        form.addView(password);
+
+        Switch remember = new Switch(this);
+        remember.setText("在本机加密保存密码");
+        remember.setTextColor(TEXT);
+        remember.setTextSize(13);
+        remember.setChecked(!safe(preferences.getString(
+                "webdav_password_encrypted", "")).isEmpty());
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        remember.setThumbTintList(new ColorStateList(
+                states, new int[]{Color.WHITE, Color.WHITE}));
+        remember.setTrackTintList(new ColorStateList(states, new int[]{TEAL, LINE}));
+        LinearLayout.LayoutParams rememberParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        rememberParams.topMargin = dp(8);
+        form.addView(remember, rememberParams);
+
+        ScrollView formScroll = new ScrollView(this);
+        formScroll.addView(form);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("WebDAV 连接设置")
+                .setView(formScroll)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存并测试", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(
+                android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                WebDavConfig config = validateWebDavConfig(
+                        directory.getText().toString(),
+                        fileName.getText().toString(),
+                        username.getText().toString(),
+                        password.getText().toString());
+                saveWebDavConfig(config, remember.isChecked());
+                dialog.dismiss();
+                testWebDavConnection(config);
+            } catch (Exception error) {
+                toast(readableError(error));
+            }
+        }));
+        dialog.show();
+    }
+
+    private TextView webDavLabel(String label) {
+        TextView view = text(label, 12, TEXT, Typeface.BOLD);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(10);
+        params.bottomMargin = dp(4);
+        view.setLayoutParams(params);
+        return view;
+    }
+
+    private EditText webDavField(String value, boolean password) {
+        EditText field = new EditText(this);
+        field.setText(value);
+        field.setTextSize(14);
+        field.setTextColor(TEXT);
+        field.setHintTextColor(MUTED);
+        field.setSingleLine(true);
+        field.setPadding(dp(11), 0, dp(11), 0);
+        field.setBackground(round(CARD, 10));
+        field.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | (password
+                ? android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                : android.text.InputType.TYPE_TEXT_VARIATION_URI));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        field.setLayoutParams(params);
+        return field;
+    }
+
+    private WebDavConfig validateWebDavConfig(
+            String directoryValue, String fileValue,
+            String username, String password) {
+        String directory = safe(directoryValue).trim();
+        Uri uri = Uri.parse(directory);
+        String scheme = safe(uri.getScheme()).toLowerCase(Locale.ROOT);
+        if (!("https".equals(scheme) || "http".equals(scheme))
+                || safe(uri.getHost()).isEmpty()) {
+            throw new IllegalArgumentException("WebDAV 目录 URL 必须以 http:// 或 https:// 开头");
+        }
+        if (uri.getUserInfo() != null) {
+            throw new IllegalArgumentException("请勿把账号密码写进 URL，使用下方账号字段");
+        }
+        if (uri.getQuery() != null || uri.getFragment() != null) {
+            throw new IllegalArgumentException("WebDAV 目录 URL 不应包含查询参数或片段");
+        }
+        String path = safe(uri.getPath()).isEmpty() ? "/" : uri.getPath();
+        if (!path.endsWith("/")) {
+            path += "/";
+        }
+        directory = uri.buildUpon()
+                .encodedPath(Uri.encode(path, "/"))
+                .build()
+                .toString();
+        String fileName = safe(fileValue).trim().replace('\\', '-')
+                .replace('/', '-');
+        if (fileName.isEmpty()) {
+            fileName = DEFAULT_WEBDAV_FILENAME;
+        }
+        if (!fileName.toLowerCase(Locale.ROOT).endsWith(".json")) {
+            fileName += ".json";
+        }
+        return new WebDavConfig(directory, fileName,
+                safe(username).trim(), safe(password));
+    }
+
+    private void saveWebDavConfig(WebDavConfig config, boolean rememberPassword) {
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString("webdav_directory", config.directory)
+                .putString("webdav_filename", config.fileName)
+                .putString("webdav_username", config.username);
+        if (rememberPassword) {
+            try {
+                editor.putString("webdav_password_encrypted",
+                        encryptWebDavPassword(config.password));
+            } catch (Exception error) {
+                throw new IllegalStateException(
+                        "密码加密保存失败：" + readableError(error));
+            }
+        } else {
+            editor.remove("webdav_password_encrypted");
+        }
+        editor.apply();
+    }
+
+    private void testWebDavConnection(WebDavConfig config) {
+        if (dataBusy) {
+            toast("请等待当前操作完成");
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在测试 WebDAV 连接…");
+        executor.execute(() -> {
+            try {
+                probeWebDav(config);
+                finishDataOperation("WebDAV 连接成功，备份文件：" +
+                        config.fileName, false);
+            } catch (Exception error) {
+                finishDataOperation("WebDAV 连接失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private void confirmWebDavBackup() {
+        WebDavConfig config = loadWebDavConfig();
+        if (config == null) {
+            toast("请先配置 WebDAV 连接");
+            showWebDavSettings();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("备份到 WebDAV？")
+                .setMessage("将收藏、简记、主题、深色模式与震动设置上传到：\n"
+                        + config.displayTarget())
+                .setNegativeButton("取消", null)
+                .setPositiveButton("开始备份", (dialog, which) ->
+                        startWebDavBackup(config))
+                .show();
+    }
+
+    private void startWebDavBackup(WebDavConfig config) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在生成并上传 WebDAV 备份…");
+        executor.execute(() -> {
+            try {
+                UserBackupPayload payload = buildUserBackupPayload();
+                putWebDav(config, payload.json.getBytes(StandardCharsets.UTF_8));
+                finishDataOperation("WebDAV 备份完成：收藏 " +
+                        payload.result.favorites + " 条，简记 " +
+                        payload.result.notes + " 条。", false);
+            } catch (Exception error) {
+                finishDataOperation("WebDAV 备份失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private void confirmWebDavRestore() {
+        WebDavConfig config = loadWebDavConfig();
+        if (config == null) {
+            toast("请先配置 WebDAV 连接");
+            showWebDavSettings();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("从 WebDAV 恢复？")
+                .setMessage("将读取云端备份，覆盖收藏与界面设置，并补入缺失的简记。"
+                        + "\n\n文件：" + config.displayTarget())
+                .setNegativeButton("取消", null)
+                .setPositiveButton("开始恢复", (dialog, which) ->
+                        startWebDavRestore(config))
+                .show();
+    }
+
+    private void startWebDavRestore(WebDavConfig config) {
+        if (dataBusy) {
+            return;
+        }
+        dataBusy = true;
+        updateDataStatus("正在下载并恢复 WebDAV 备份…");
+        executor.execute(() -> {
+            try {
+                String content = getWebDav(config);
+                UserBackupResult result = importUserBackupContent(content);
+                applyRestoredUserBackup(result, "WebDAV 备份");
+            } catch (Exception error) {
+                finishDataOperation("WebDAV 恢复失败：" + readableError(error), true);
+            }
+        });
+    }
+
+    private void probeWebDav(WebDavConfig config) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = openWebDavConnection(config.directory, "PROPFIND", config);
+            connection.setRequestProperty("Depth", "0");
+            int status = connection.getResponseCode();
+            if (status == 404) {
+                int created = createWebDavDirectory(config);
+                if (created == 200 || created == 201
+                        || created == 204 || created == 405) {
+                    return;
+                }
+                throw new IllegalStateException(
+                        "WebDAV 目录不存在，且自动创建失败（HTTP " + created + "）");
+            }
+            if (status < 200 || status >= 300) {
+                throw webDavHttpError(connection, status);
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void putWebDav(WebDavConfig config, byte[] content) throws Exception {
+        String target = config.directory + Uri.encode(config.fileName, "/");
+        int status = putWebDavFile(target, config, content);
+        if (status == 404 || status == 409) {
+            int mkcol = createWebDavDirectory(config);
+            if (mkcol != 200 && mkcol != 201 && mkcol != 204 && mkcol != 405) {
+                throw new IllegalStateException("无法创建 WebDAV 目录（HTTP " + mkcol + "）");
+            }
+            status = putWebDavFile(target, config, content);
+        }
+        if (status != 200 && status != 201 && status != 204) {
+            throw new IllegalStateException("WebDAV 上传失败（HTTP " + status + "）");
+        }
+    }
+
+    private int putWebDavFile(String target, WebDavConfig config,
+                              byte[] content) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = openWebDavConnection(target, "PUT", config);
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(content.length);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(content);
+            }
+            return connection.getResponseCode();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private int createWebDavDirectory(WebDavConfig config) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = openWebDavConnection(config.directory, "MKCOL", config);
+            connection.setDoOutput(false);
+            return connection.getResponseCode();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private String getWebDav(WebDavConfig config) throws Exception {
+        String target = config.directory + Uri.encode(config.fileName, "/");
+        HttpURLConnection connection = null;
+        try {
+            connection = openWebDavConnection(target, "GET", config);
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                throw webDavHttpError(connection, status);
+            }
+            try (InputStream input = connection.getInputStream()) {
+                return readLimitedText(input, 16 * 1024 * 1024);
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private HttpURLConnection openWebDavConnection(
+            String target, String method, WebDavConfig config) throws Exception {
+        HttpURLConnection connection =
+                (HttpURLConnection) new URL(target).openConnection();
+        connection.setConnectTimeout(12_000);
+        connection.setReadTimeout(30_000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestMethod(method);
+        connection.setRequestProperty("Accept",
+                "application/json, application/xml, text/xml, */*");
+        connection.setRequestProperty("User-Agent",
+                "SaoshuXindian/" + currentVersionName());
+        if (!config.username.isEmpty() || !config.password.isEmpty()) {
+            String credential = config.username + ":" + config.password;
+            connection.setRequestProperty("Authorization", "Basic " +
+                    Base64.encodeToString(
+                            credential.getBytes(StandardCharsets.UTF_8),
+                            Base64.NO_WRAP));
+        }
+        return connection;
+    }
+
+    private Exception webDavHttpError(HttpURLConnection connection, int status) {
+        String detail = "";
+        try {
+            InputStream error = connection.getErrorStream();
+            if (error != null) {
+                try (InputStream input = error) {
+                    detail = readLimitedText(input, 1200)
+                            .replaceAll("<[^>]+>", " ")
+                            .replaceAll("\\s+", " ")
+                            .trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (status == 401 || status == 403) {
+            return new IllegalStateException(
+                    "WebDAV 鉴权失败（HTTP " + status + "），请检查账号或应用密码");
+        }
+        if (status == 404) {
+            return new IllegalStateException("WebDAV 路径不存在（HTTP 404）");
+        }
+        return new IllegalStateException("WebDAV HTTP " + status
+                + (detail.isEmpty() ? "" : "：" + previewText(detail, 180)));
+    }
+
+    private String readLimitedText(InputStream input, int maxBytes) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            total += count;
+            if (total > maxBytes) {
+                throw new IllegalStateException("WebDAV 响应超过大小限制");
+            }
+            output.write(buffer, 0, count);
+        }
+        return output.toString(StandardCharsets.UTF_8.name());
+    }
+
+    private String encryptWebDavPassword(String password) throws Exception {
+        if (password.isEmpty()) {
+            return "";
+        }
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, webDavSecretKey());
+        byte[] encrypted = cipher.doFinal(
+                password.getBytes(StandardCharsets.UTF_8));
+        byte[] iv = cipher.getIV();
+        byte[] packed = new byte[1 + iv.length + encrypted.length];
+        packed[0] = (byte) iv.length;
+        System.arraycopy(iv, 0, packed, 1, iv.length);
+        System.arraycopy(encrypted, 0, packed, 1 + iv.length, encrypted.length);
+        return Base64.encodeToString(packed, Base64.NO_WRAP);
+    }
+
+    private String decryptWebDavPassword(String encoded) {
+        if (safe(encoded).isEmpty()) {
+            return "";
+        }
+        try {
+            byte[] packed = Base64.decode(encoded, Base64.NO_WRAP);
+            int ivLength = packed[0] & 0xff;
+            if (ivLength <= 0 || packed.length <= 1 + ivLength) {
+                return "";
+            }
+            byte[] iv = new byte[ivLength];
+            byte[] encrypted = new byte[packed.length - 1 - ivLength];
+            System.arraycopy(packed, 1, iv, 0, ivLength);
+            System.arraycopy(packed, 1 + ivLength, encrypted, 0, encrypted.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, webDavSecretKey(),
+                    new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private SecretKey webDavSecretKey() throws Exception {
+        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+        if (!keyStore.containsAlias(WEBDAV_KEY_ALIAS)) {
+            KeyGenerator generator = KeyGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+            generator.init(new KeyGenParameterSpec.Builder(
+                    WEBDAV_KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .build());
+            generator.generateKey();
+        }
+        return (SecretKey) keyStore.getKey(WEBDAV_KEY_ALIAS, null);
     }
 
     private void startDataImport(Uri uri) {
@@ -3777,7 +4387,7 @@ public class MainActivity extends Activity {
 
         LinearLayout headline = column();
         headline.setPadding(dp(17), dp(16), dp(17), dp(16));
-        headline.setBackground(gradient(TEAL_DARK, TEAL, 15));
+        headline.setBackground(titleGradient(15));
         LinearLayout badgeRow = row();
         badgeRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView badge = text(document.category, 12, TEAL_DEEP, Typeface.BOLD);
@@ -3801,13 +4411,13 @@ public class MainActivity extends Activity {
 
         LinearLayout actionCard = row();
         actionCard.setPadding(dp(10), dp(11), dp(10), dp(11));
-        actionCard.setBackground(round(Color.WHITE, 14));
+        actionCard.setBackground(round(CARD, 14));
         actionCard.setElevation(dp(2));
         boolean favored = isFavorite(document.id);
         TextView favorite = actionButton(favored ? "★ 已收藏" : "☆ 收藏",
                 favored ? PINK_PALE : TEAL_PALE, favored ? PINK_DARK : TEAL_DARK);
         actionCard.addView(favorite, weightedAction());
-        TextView copy = actionButton("复制正文", Color.rgb(239, 244, 243), TEXT);
+        TextView copy = actionButton("复制正文", TEAL_SOFT, TEXT);
         actionCard.addView(copy, weightedAction());
         TextView original = actionButton("打开原帖", PINK_PALE, PINK_DARK);
         actionCard.addView(original, weightedAction());
@@ -3815,9 +4425,9 @@ public class MainActivity extends Activity {
 
         LinearLayout bodyCard = column();
         bodyCard.setPadding(dp(17), dp(17), dp(17), dp(18));
-        bodyCard.setBackground(round(Color.WHITE, 15));
+        bodyCard.setBackground(round(CARD, 15));
         bodyCard.setElevation(dp(1));
-        TextView body = text("", 16, Color.rgb(65, 70, 69), Typeface.NORMAL);
+        TextView body = text("", 16, TEXT, Typeface.NORMAL);
         body.setText(formatScanContent(document.content));
         body.setTextIsSelectable(true);
         body.setLineSpacing(dp(6), 1.52f);
@@ -3834,7 +4444,7 @@ public class MainActivity extends Activity {
         if (!mentioned.isEmpty()) {
             LinearLayout booksCard = column();
             booksCard.setPadding(dp(16), dp(14), dp(16), dp(13));
-            booksCard.setBackground(round(Color.WHITE, 14));
+            booksCard.setBackground(round(CARD, 14));
             TextView heading = text("文中提及书名", 14, TEXT, Typeface.BOLD);
             booksCard.addView(heading);
             LinearLayout chips = row();
@@ -3858,14 +4468,14 @@ public class MainActivity extends Activity {
         Document newer = adjacentDocument(document, true);
         Document older = adjacentDocument(document, false);
         TextView previous = actionButton(newer == null ? "‹ 没有上一篇" : "‹ 上一篇",
-                Color.WHITE, newer == null ? Color.LTGRAY : TEAL_DARK);
+                TEAL_PALE, newer == null ? MUTED : TEAL_DARK);
         previous.setEnabled(newer != null);
         if (newer != null) {
             previous.setOnClickListener(v -> openDocument(newer.id));
         }
         pager.addView(previous, weightedAction());
         TextView next = actionButton(older == null ? "下一篇 没有 ›" : "下一篇 ›",
-                Color.WHITE, older == null ? Color.LTGRAY : TEAL_DARK);
+                TEAL_PALE, older == null ? MUTED : TEAL_DARK);
         next.setEnabled(older != null);
         if (older != null) {
             next.setOnClickListener(v -> openDocument(older.id));
@@ -3874,10 +4484,10 @@ public class MainActivity extends Activity {
         addWithTop(article, pager, 10);
 
         LinearLayout dataActions = row();
-        TextView exportSingle = actionButton("导出此条", Color.WHITE, TEAL_DARK);
+        TextView exportSingle = actionButton("导出此条", TEAL_PALE, TEAL_DARK);
         exportSingle.setOnClickListener(v -> requestSingleExport(document));
         dataActions.addView(exportSingle, weightedAction());
-        TextView deleteLocal = actionButton("删除此条扫书", Color.WHITE, TEAL_DARK);
+        TextView deleteLocal = actionButton("删除此条扫书", TEAL_PALE, TEAL_DARK);
         deleteLocal.setOnClickListener(v -> confirmLocalDelete(document));
         dataActions.addView(deleteLocal, weightedAction());
         addWithTop(article, dataActions, 9);
@@ -3920,7 +4530,7 @@ public class MainActivity extends Activity {
         LinearLayout bar = row();
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), dp(7), dp(12), dp(7));
-        bar.setBackgroundColor(TEAL_DARK);
+        bar.setBackgroundColor(toolbarColor());
         Button back = toolbarBackButton(backAction);
         bar.addView(back, new LinearLayout.LayoutParams(dp(45), dp(48)));
         TextView title = text(label, 16, Color.WHITE, Typeface.BOLD);
@@ -4056,7 +4666,7 @@ public class MainActivity extends Activity {
 
         if (!compact) {
             String preview = previewText(d.content, previewLimit);
-            TextView body = text(preview, 13, Color.rgb(92, 101, 99), Typeface.NORMAL);
+            TextView body = text(preview, 13, MUTED, Typeface.NORMAL);
             body.setLineSpacing(dp(2), 1.35f);
             body.setMaxLines(3);
             body.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -4440,7 +5050,7 @@ public class MainActivity extends Activity {
             card.setMinimumHeight(dp(70));
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setPadding(dp(14), dp(13), dp(13), dp(13));
-            card.setBackground(rippleRound(Color.WHITE, Color.TRANSPARENT, 14,
+            card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
                     Color.argb(35, 0, 0, 0)));
             card.setElevation(dp(1));
             bindWholeCardClick(card, v -> showBookDetail(book));
@@ -4764,6 +5374,25 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static class WebDavConfig {
+        final String directory;
+        final String fileName;
+        final String username;
+        final String password;
+
+        WebDavConfig(String directory, String fileName,
+                     String username, String password) {
+            this.directory = directory;
+            this.fileName = fileName;
+            this.username = username;
+            this.password = password;
+        }
+
+        String displayTarget() {
+            return Uri.decode(directory) + fileName;
+        }
+    }
+
     private static class UserBackupResult {
         final int favorites;
         final int notes;
@@ -4771,6 +5400,16 @@ public class MainActivity extends Activity {
         UserBackupResult(int favorites, int notes) {
             this.favorites = favorites;
             this.notes = notes;
+        }
+    }
+
+    private static class UserBackupPayload {
+        final String json;
+        final UserBackupResult result;
+
+        UserBackupPayload(String json, UserBackupResult result) {
+            this.json = json;
+            this.result = result;
         }
     }
 
