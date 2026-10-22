@@ -158,6 +158,8 @@ public class MainActivity extends Activity {
     private EditText searchField;
     private TextView searchStatus;
     private ListView searchList;
+    private LinearLayout searchHistorySection;
+    private LinearLayout searchHistoryRow;
     private Runnable pendingSearch;
     private String glossaryQuery = "";
     private TextView glossaryCount;
@@ -785,7 +787,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.23", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.24", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -876,6 +878,33 @@ public class MainActivity extends Activity {
 
         page.addView(header);
 
+        searchHistorySection = column();
+        searchHistorySection.setPadding(dp(13), dp(9), dp(8), dp(10));
+        searchHistorySection.setBackground(round(CARD, 14));
+        searchHistorySection.setElevation(dp(1));
+        LinearLayout historyTitleRow = row();
+        historyTitleRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView historyTitle = text("最近搜索", 13, TEXT, Typeface.BOLD);
+        historyTitleRow.addView(historyTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView clearHistory = text("清空", 11, PINK_DARK, Typeface.BOLD);
+        clearHistory.setPadding(dp(8), dp(5), dp(8), dp(5));
+        clearHistory.setOnClickListener(v -> clearSearchHistory());
+        historyTitleRow.addView(clearHistory);
+        searchHistorySection.addView(historyTitleRow);
+        HorizontalScrollView historyScroll = new HorizontalScrollView(this);
+        historyScroll.setHorizontalScrollBarEnabled(false);
+        historyScroll.setPadding(0, dp(7), 0, 0);
+        searchHistoryRow = row();
+        historyScroll.addView(searchHistoryRow, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        searchHistorySection.addView(historyScroll);
+        LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        historyParams.setMargins(dp(12), dp(8), dp(12), 0);
+        page.addView(searchHistorySection, historyParams);
+
         LinearLayout resultHeader = row();
         resultHeader.setGravity(Gravity.CENTER_VERTICAL);
         resultHeader.setPadding(dp(13), dp(7), dp(8), dp(4));
@@ -904,7 +933,7 @@ public class MainActivity extends Activity {
         page.addView(searchList, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        searchButton.setOnClickListener(v -> launchSearch());
+        searchButton.setOnClickListener(v -> submitSearch());
         toggle.setOnClickListener(v -> {
             searchFullText = !searchFullText;
             toggle.setText(searchFullText ? "● 全文" : "○ 标题");
@@ -915,7 +944,7 @@ public class MainActivity extends Activity {
         });
         searchField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                launchSearch();
+                submitSearch();
                 hideKeyboard();
                 return true;
             }
@@ -929,6 +958,7 @@ public class MainActivity extends Activity {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 searchQuery = s.toString();
+                updateSearchHistoryVisibility();
                 if (pendingSearch != null) {
                     mainHandler.removeCallbacks(pendingSearch);
                 }
@@ -940,8 +970,135 @@ public class MainActivity extends Activity {
             public void afterTextChanged(Editable s) {
             }
         });
+        renderSearchHistory();
         mainHandler.post(this::launchSearch);
         return page;
+    }
+
+    private void submitSearch() {
+        if (searchField == null) {
+            return;
+        }
+        String query = searchField.getText().toString().trim();
+        searchQuery = query;
+        if (!query.isEmpty()) {
+            recordSearchHistory(query);
+        }
+        if (pendingSearch != null) {
+            mainHandler.removeCallbacks(pendingSearch);
+            pendingSearch = null;
+        }
+        launchSearch();
+    }
+
+    private List<String> loadSearchHistory() {
+        List<String> history = new ArrayList<>();
+        try {
+            JSONArray saved = new JSONArray(
+                    preferences.getString("search_history", "[]"));
+            for (int i = 0; i < saved.length() && history.size() < 10; i++) {
+                String query = saved.optString(i, "").trim();
+                if (!query.isEmpty() && !containsIgnoreCase(history, query)) {
+                    history.add(query);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return history;
+    }
+
+    private void saveSearchHistory(List<String> history) {
+        JSONArray array = new JSONArray();
+        for (String query : history) {
+            if (!query.trim().isEmpty()) {
+                array.put(query.trim());
+            }
+        }
+        preferences.edit().putString("search_history", array.toString()).apply();
+    }
+
+    private void recordSearchHistory(String query) {
+        String value = safe(query).trim();
+        if (value.isEmpty()) {
+            return;
+        }
+        List<String> history = loadSearchHistory();
+        for (int i = history.size() - 1; i >= 0; i--) {
+            if (history.get(i).equalsIgnoreCase(value)) {
+                history.remove(i);
+            }
+        }
+        history.add(0, value);
+        while (history.size() > 10) {
+            history.remove(history.size() - 1);
+        }
+        saveSearchHistory(history);
+        renderSearchHistory();
+    }
+
+    private boolean containsIgnoreCase(List<String> values, String query) {
+        for (String value : values) {
+            if (value.equalsIgnoreCase(query)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void clearSearchHistory() {
+        preferences.edit().remove("search_history").apply();
+        renderSearchHistory();
+        toast("已清空搜索记录");
+    }
+
+    private void renderSearchHistory() {
+        if (searchHistorySection == null || searchHistoryRow == null) {
+            return;
+        }
+        searchHistoryRow.removeAllViews();
+        List<String> history = loadSearchHistory();
+        for (String query : history) {
+            TextView chip = text(query, 12, TEAL_DARK, Typeface.BOLD);
+            chip.setSingleLine(true);
+            chip.setMaxWidth(dp(190));
+            chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            chip.setPadding(dp(11), dp(7), dp(11), dp(7));
+            chip.setBackground(rippleRound(TEAL_PALE, LINE, 11,
+                    Color.argb(40, 0, 0, 0)));
+            chip.setOnClickListener(v -> selectSearchHistory(query));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.rightMargin = dp(7);
+            searchHistoryRow.addView(chip, params);
+        }
+        updateSearchHistoryVisibility();
+    }
+
+    private void selectSearchHistory(String query) {
+        if (searchField == null) {
+            return;
+        }
+        searchQuery = query;
+        searchField.setText(query);
+        searchField.setSelection(query.length());
+        if (pendingSearch != null) {
+            mainHandler.removeCallbacks(pendingSearch);
+            pendingSearch = null;
+        }
+        recordSearchHistory(query);
+        launchSearch();
+        hideKeyboard();
+    }
+
+    private void updateSearchHistoryVisibility() {
+        if (searchHistorySection == null) {
+            return;
+        }
+        boolean show = searchQuery.trim().isEmpty()
+                && searchHistoryRow != null
+                && searchHistoryRow.getChildCount() > 0;
+        searchHistorySection.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
     private void renderGlossary() {
@@ -2257,8 +2414,8 @@ public class MainActivity extends Activity {
 
         TextView heading = text("收藏、简记、设置与连接", 16, TEXT, Typeface.BOLD);
         card.addView(heading);
-        TextView body = text("本地文件和 WebDAV 使用同一份备份，包含收藏、简记、主题、"
-                        + "震动设置与 WebDAV 连接配置，不包含离线正文数据库。"
+        TextView body = text("本地文件和 WebDAV 使用同一份备份，包含收藏、简记、搜索记录、"
+                        + "主题、震动设置与 WebDAV 连接配置，不包含离线正文数据库。"
                         + "备份文件会保存 WebDAV 登录信息，请妥善保管。",
                 11, MUTED, Typeface.NORMAL);
         body.setLineSpacing(0, 1.3f);
@@ -3157,7 +3314,7 @@ public class MainActivity extends Activity {
                 UserBackupResult result = exportUserBackup(uri);
                 finishDataOperation("用户数据备份完成：收藏 " + result.favorites +
                         " 条，简记 " + result.notes +
-                        " 条，设置与 WebDAV 连接配置已保存。", false);
+                        " 条，搜索记录、设置与 WebDAV 连接配置已保存。", false);
             } catch (Exception error) {
                 finishDataOperation("用户备份失败：" + readableError(error), true);
             }
@@ -3197,13 +3354,18 @@ public class MainActivity extends Activity {
         }
         JSONObject backup = new JSONObject();
         backup.put("kind", "saoshu-xindian-user-backup");
-        backup.put("version", 3);
+        backup.put("version", 4);
         backup.put("created_at", isoNow());
         JSONObject settings = new JSONObject();
         settings.put("theme_id", preferences.getString("theme_id", "teal"));
         settings.put("haptic_enabled", preferences.getBoolean("haptic_enabled", false));
         settings.put("favorite_ids", ids);
         settings.put("favorite_keys", keys);
+        JSONArray searchHistory = new JSONArray();
+        for (String query : loadSearchHistory()) {
+            searchHistory.put(query);
+        }
+        settings.put("search_history", searchHistory);
         WebDavConfig webDav = loadWebDavConfig();
         if (webDav != null) {
             JSONObject webDavConfig = new JSONObject();
@@ -3260,7 +3422,7 @@ public class MainActivity extends Activity {
             switchTab(TAB_DATA);
             String message = source + "恢复完成：收藏 " + result.favorites +
                     " 条，简记 " + result.notes +
-                    " 条，主题与震动设置已应用。" +
+                    " 条，搜索记录、主题与震动设置已应用。" +
                     (result.webDavRestored ? " WebDAV 连接配置已恢复。" : "");
             preferences.edit().putString("last_data_message", message).apply();
             toast(message);
@@ -3369,6 +3531,17 @@ public class MainActivity extends Activity {
                                 deleted.isEmpty() ? null : deleted});
                 restoredNotes++;
             }
+        }
+        JSONArray restoredHistory = settings.optJSONArray("search_history");
+        if (restoredHistory != null) {
+            List<String> history = new ArrayList<>();
+            for (int i = 0; i < restoredHistory.length() && history.size() < 10; i++) {
+                String query = restoredHistory.optString(i, "").trim();
+                if (!query.isEmpty() && !containsIgnoreCase(history, query)) {
+                    history.add(query);
+                }
+            }
+            saveSearchHistory(history);
         }
         boolean restoredWebDav = restoreWebDavConfigFromBackup(
                 settings.optJSONObject("webdav_config"));
@@ -3578,7 +3751,7 @@ public class MainActivity extends Activity {
         }
         new android.app.AlertDialog.Builder(this)
                 .setTitle("备份到 WebDAV？")
-                .setMessage("将收藏、简记、主题、震动设置和 WebDAV 连接配置"
+                .setMessage("将收藏、简记、搜索记录、主题、震动设置和 WebDAV 连接配置"
                         + "（含登录信息）上传到：\n" + config.displayTarget())
                 .setNegativeButton("取消", null)
                 .setPositiveButton("开始备份", (dialog, which) ->
@@ -3614,7 +3787,7 @@ public class MainActivity extends Activity {
         }
         new android.app.AlertDialog.Builder(this)
                 .setTitle("从 WebDAV 恢复？")
-                .setMessage("将读取云端备份，覆盖收藏、主题、震动与 WebDAV 连接配置，"
+                .setMessage("将读取云端备份，覆盖收藏、搜索记录、主题、震动与 WebDAV 连接配置，"
                         + "并补入缺失的简记。"
                         + "\n\n文件：" + config.displayTarget())
                 .setNegativeButton("取消", null)
