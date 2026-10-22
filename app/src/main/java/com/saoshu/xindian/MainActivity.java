@@ -726,10 +726,19 @@ public class MainActivity extends Activity {
     }
 
     private void openSearchPage() {
+        resetSearchInput();
         if (currentTab != TAB_SEARCH) {
             searchBackTab = currentTab;
         }
         switchTab(TAB_SEARCH);
+    }
+
+    private void resetSearchInput() {
+        searchQuery = "";
+        if (pendingSearch != null) {
+            mainHandler.removeCallbacks(pendingSearch);
+            pendingSearch = null;
+        }
     }
 
     private void rememberPagePosition() {
@@ -787,7 +796,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.24", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.25", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -837,6 +846,7 @@ public class MainActivity extends Activity {
     }
 
     private View buildSearch() {
+        resetSearchInput();
         LinearLayout page = column();
         page.setBackgroundColor(BG);
 
