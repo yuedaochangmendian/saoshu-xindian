@@ -723,7 +723,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.20", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.21", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -781,10 +781,7 @@ public class MainActivity extends Activity {
         header.setBackground(gradient(TEAL_DARK, TEAL, 0));
         LinearLayout titleRow = row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text("‹", 30, Color.WHITE, Typeface.NORMAL);
-        back.setGravity(Gravity.CENTER);
-        back.setPadding(0, 0, dp(8), dp(2));
-        back.setOnClickListener(v -> switchTab(searchBackTab));
+        Button back = toolbarBackButton(() -> switchTab(searchBackTab));
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
         TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
@@ -1230,6 +1227,30 @@ public class MainActivity extends Activity {
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setClickable(true);
         button.setFocusable(true);
+        return button;
+    }
+
+    private Button toolbarBackButton(Runnable action) {
+        Button button = new Button(this);
+        button.setText("‹");
+        button.setAllCaps(false);
+        button.setTextSize(30);
+        button.setTextColor(Color.WHITE);
+        button.setTypeface(Typeface.create("sans", Typeface.NORMAL));
+        button.setIncludeFontPadding(false);
+        button.setGravity(Gravity.CENTER);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumWidth(0);
+        button.setMinimumHeight(0);
+        button.setPadding(0, 0, 0, dp(2));
+        button.setContentDescription("返回");
+        button.setBackground(rippleRound(Color.TRANSPARENT, Color.TRANSPARENT,
+                12, Color.argb(55, 255, 255, 255)));
+        button.setOnClickListener(v -> {
+            hideKeyboard();
+            action.run();
+        });
         return button;
     }
 
@@ -3900,12 +3921,7 @@ public class MainActivity extends Activity {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), dp(7), dp(12), dp(7));
         bar.setBackgroundColor(TEAL_DARK);
-        TextView back = text("‹", 32, Color.WHITE, Typeface.NORMAL);
-        back.setGravity(Gravity.CENTER);
-        back.setPadding(dp(5), 0, dp(8), dp(2));
-        back.setBackground(rippleRound(Color.TRANSPARENT, Color.TRANSPARENT, 12,
-                Color.argb(55, 255, 255, 255)));
-        back.setOnClickListener(v -> backAction.run());
+        Button back = toolbarBackButton(backAction);
         bar.addView(back, new LinearLayout.LayoutParams(dp(45), dp(48)));
         TextView title = text(label, 16, Color.WHITE, Typeface.BOLD);
         bar.addView(title, new LinearLayout.LayoutParams(
