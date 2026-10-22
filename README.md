@@ -13,13 +13,13 @@ GitHub Release 提供：
 
 - `app/src/main/assets/saoshu.db`：41,033 条可读内容、23,905 个书名聚合、41,033 次来源关系
 - 数据来源：《扫书宝典》3.10.250109，截止 2025-01-09
-- 原库全部表和数据行保留：`clist` 38,594 条、`dalao` 2,400 条、`wlist` 39 条，以及分类和说明表
-- `documents`、`books` 和 `document_sources` 是供当前 App 搜索与书库使用的兼容层
-- 原始 `item`、`book_review` 等字段保持不变，兼容层额外清理 HTML 便于阅读
+- 原库的 `clist` 38,594 条、`dalao` 2,400 条和 `wlist` 39 条已归一化到 `documents`，不再重复内嵌原始正文表
+- `document_sources` 使用 `WITHOUT ROWID` 复合主键保存 `clist/dalao/wlist` 来源编号，避免额外索引
+- 正文清理 HTML 后只存储一次，书名聚合和来源关系使用紧凑索引
 - 不再使用此前合并库中的去重、短回复过滤和来源合并结果
 - 安装包不携带 FTS 索引，首次启动时在设备本地生成，以减小 APK 并支持单文件发布
 
-数据库文件约 173 MiB，超过 GitHub 对单个普通仓库文件 100 MB 的限制，因此不提交到 Git 历史，而是放在 Release 的完整源码压缩包中。克隆源码后，将 `saoshu.db` 放入 `app/src/main/assets/` 即可构建。
+数据库文件约 91 MiB，已从重复保存原表和兼容表的 173 MiB 版本压缩约 48%。文件仍作为 Release 源码包的一部分分发，不提交到 Git 历史。
 
 ## 功能
 

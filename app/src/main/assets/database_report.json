@@ -1,9 +1,10 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 181547008,
+  "bytes": 95178752,
   "integrity": "ok",
   "source": "扫书宝典 3.10.250109",
-  "source_backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_yybook_replace_20261022.db",
+  "source_backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_optimize_20261022.db",
+  "source_database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\yybook_analysis\\YYBOOK.db",
   "data_cutoff": "2025-01-09",
   "raw_tables": {
     "clist": 38594,
@@ -14,6 +15,8 @@
     "zlist": 1665,
     "wlist": 39
   },
+  "raw_tables_embedded": false,
+  "storage_mode": "deduplicated App compatibility schema",
   "documents": 41033,
   "books": 23905,
   "source_rows": 41033,
