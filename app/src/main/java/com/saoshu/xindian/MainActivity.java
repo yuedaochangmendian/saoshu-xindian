@@ -98,7 +98,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 13;
+    private static final int DB_VERSION = 14;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -161,6 +161,8 @@ public class MainActivity extends Activity {
     private EditText searchField;
     private TextView searchStatus;
     private ListView searchList;
+    private Cursor searchCursor;
+    private View cachedSearchPage;
     private LinearLayout searchHistorySection;
     private LinearLayout searchHistoryRow;
     private Runnable pendingSearch;
@@ -790,7 +792,17 @@ public class MainActivity extends Activity {
         } else if (tab == TAB_DATA) {
             nextPage = buildDataManager();
         } else {
-            nextPage = buildSearch();
+            if (cachedSearchPage == null) {
+                nextPage = buildSearch();
+            } else {
+                nextPage = cachedSearchPage;
+                if (searchList != null) {
+                    searchList.invalidateViews();
+                }
+                if (restorePageTab == TAB_SEARCH) {
+                    restorePageTab = -1;
+                }
+            }
         }
         showContentPage(nextPage);
     }
@@ -822,6 +834,24 @@ public class MainActivity extends Activity {
         if (pendingSearch != null) {
             mainHandler.removeCallbacks(pendingSearch);
             pendingSearch = null;
+        }
+        discardSearchPage();
+    }
+
+    private void discardSearchPage() {
+        searchVersion.incrementAndGet();
+        cachedSearchPage = null;
+        if (searchCursor != null) {
+            searchCursor.close();
+            searchCursor = null;
+        }
+        searchField = null;
+        searchStatus = null;
+        searchList = null;
+        searchHistorySection = null;
+        searchHistoryRow = null;
+        if (restorePageTab == TAB_SEARCH) {
+            restorePageTab = -1;
         }
     }
 
@@ -880,7 +910,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.34", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.35", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -1061,6 +1091,7 @@ public class MainActivity extends Activity {
     private View buildSearch() {
         LinearLayout page = column();
         page.setBackgroundColor(BG);
+        cachedSearchPage = page;
 
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
@@ -1458,23 +1489,34 @@ public class MainActivity extends Activity {
         final boolean fullText = searchFullText;
         searchStatus.setText("搜索中…");
         executor.execute(() -> {
+            Cursor resultCursor = null;
             try {
-                List<Document> results = searchDocuments(query, fullText);
+                resultCursor = searchDocuments(query, fullText);
+                int count = resultCursor.getCount();
+                final Cursor nextCursor = resultCursor;
                 mainHandler.post(() -> {
                     if (version != searchVersion.get() || searchList == null) {
+                        nextCursor.close();
                         return;
                     }
                     searchStatus.setText(query.isEmpty()
-                            ? formatCompact(results.size()) + " 条最近内容"
-                            : "找到 " + formatCompact(results.size()) + " 条" +
-                            (results.size() >= 250 ? "（显示前 250 条）" : ""));
-                    searchList.setAdapter(new DocumentAdapter(results, query));
+                            ? formatCompact(count) + " 条最近内容"
+                            : "找到 " + formatCompact(count) + " 条");
+                    searchList.setAdapter(new SearchCursorAdapter(nextCursor));
+                    Cursor previous = searchCursor;
+                    searchCursor = nextCursor;
+                    if (previous != null) {
+                        previous.close();
+                    }
                     restoreListPositionIfNeeded(searchList, TAB_SEARCH);
-                    if (results.isEmpty()) {
+                    if (count == 0) {
                         searchStatus.setText("没有匹配内容，试试减少关键词或切换全文");
                     }
                 });
             } catch (Exception error) {
+                if (resultCursor != null) {
+                    resultCursor.close();
+                }
                 mainHandler.post(() -> {
                     if (version == searchVersion.get()) {
                         searchStatus.setText("搜索未完成，请换一个关键词");
@@ -1484,7 +1526,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private List<Document> searchDocuments(String query, boolean fullText) {
+    private Cursor searchDocuments(String query, boolean fullText) {
         StringBuilder sql = new StringBuilder("SELECT d.* FROM documents d");
         List<String> args = new ArrayList<>();
         boolean hasQuery = !query.isEmpty();
@@ -1518,11 +1560,11 @@ public class MainActivity extends Activity {
         } else {
             sql.append(" ORDER BY d.published_at DESC,d.id DESC");
         }
-        sql.append(" LIMIT 250");
-        List<Document> found = queryDocuments(sql.toString(), args.toArray(new String[0]));
-        if (!found.isEmpty() || !hasQuery || fullText) {
-            return found;
+        Cursor primary = db.rawQuery(sql.toString(), args.toArray(new String[0]));
+        if (primary.getCount() != 0 || !hasQuery || fullText) {
+            return primary;
         }
+        primary.close();
 
         // A title/book lookup should still find an exact quote inside a long review.
         StringBuilder fallback = new StringBuilder("SELECT * FROM documents WHERE " +
@@ -1531,8 +1573,8 @@ public class MainActivity extends Activity {
         List<String> fallbackArgs = new ArrayList<>();
         String like = "%" + query + "%";
         Collections.addAll(fallbackArgs, like, like, like);
-        fallback.append(" ORDER BY published_at DESC,hot_score DESC,id DESC LIMIT 250");
-        return queryDocuments(fallback.toString(), fallbackArgs.toArray(new String[0]));
+        fallback.append(" ORDER BY published_at DESC,hot_score DESC,id DESC");
+        return db.rawQuery(fallback.toString(), fallbackArgs.toArray(new String[0]));
     }
 
     private View buildBooks() {
@@ -5408,6 +5450,9 @@ public class MainActivity extends Activity {
                                 if (removed) {
                                     homeRandomVersion.incrementAndGet();
                                     homeRandomDocuments.clear();
+                                    if (detailBackTab == TAB_SEARCH) {
+                                        discardSearchPage();
+                                    }
                                     toast("已从本地资料库删除");
                                     switchTab(detailBackTab);
                                 } else {
@@ -6407,6 +6452,10 @@ public class MainActivity extends Activity {
         if (pendingNoteSave != null) {
             mainHandler.removeCallbacks(pendingNoteSave);
         }
+        if (searchCursor != null) {
+            searchCursor.close();
+            searchCursor = null;
+        }
         executor.shutdownNow();
         if (db != null && db.isOpen()) {
             db.close();
@@ -6453,6 +6502,49 @@ public class MainActivity extends Activity {
             holder.setPadding(dp(1), dp(5), dp(1), dp(5));
             holder.addView(view, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return holder;
+        }
+    }
+
+    private class SearchCursorAdapter extends BaseAdapter {
+        private final Cursor cursor;
+        private final int count;
+
+        SearchCursorAdapter(Cursor cursor) {
+            this.cursor = cursor;
+            this.count = cursor.getCount();
+        }
+
+        @Override
+        public int getCount() {
+            return count;
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return position;
+        }
+
+        @Override
+        public long getItemId(int position) {
+            if (!cursor.moveToPosition(position)) {
+                return -1;
+            }
+            return cursor.getLong(cursor.getColumnIndexOrThrow("id"));
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            LinearLayout holder = new LinearLayout(MainActivity.this);
+            holder.setPadding(dp(1), dp(5), dp(1), dp(5));
+            if (!cursor.moveToPosition(position)) {
+                return holder;
+            }
+            Document document = Document.fromCursor(cursor);
+            holder.addView(documentCard(document, 130, false),
+                    new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
             return holder;
         }
     }
