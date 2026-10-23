@@ -1,53 +1,36 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 97435648,
+  "bytes": 99094528,
   "integrity": "ok",
   "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取",
-  "source_backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_optimize_20261022.db",
-  "source_database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\yybook_analysis\\YYBOOK.db",
-  "data_cutoff": "2026-10-22",
-  "raw_tables": {
-    "clist": 38594,
-    "dalao": 2400,
-    "dalaoInfo": 10,
-    "info": 1,
-    "mlist": 46,
-    "zlist": 1665,
-    "wlist": 39
-  },
-  "raw_tables_embedded": false,
-  "storage_mode": "deduplicated App compatibility schema",
-  "documents": 42536,
-  "books": 24484,
-  "source_rows": 42539,
+  "data_cutoff": "2026-10-23",
+  "documents": 43566,
+  "books": 24988,
+  "source_rows": 43571,
+  "extract_metadata": 2538,
   "categories": {
-    "卷首": 6,
-    "扫书": 38350,
-    "推书": 534,
+    "扫书": 38826,
+    "书评": 2400,
+    "排雷": 1139,
+    "推书": 821,
     "讨论": 311,
-    "排雷": 872,
     "求书": 63,
-    "书评": 2400
+    "卷首": 6
   },
   "xlsx_merge": {
-    "rows_read": 1506,
-    "unique_content": 1503,
-    "inserted": 1503,
-    "merged_existing": 3,
-    "metadata_rows": 1506,
-    "backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_xlsx_merge_20261022.db"
+    "rows_read": 1032,
+    "inserted": 1030,
+    "merged_existing": 2,
+    "metadata_rows": 1032,
+    "skipped_existing_rows": 0,
+    "source_rows_added": 1032,
+    "affected_documents": 1032,
+    "affected_books": 810,
+    "cumulative_imported": 2533,
+    "cumulative_merged_existing": 5,
+    "cumulative_metadata_rows": 2538,
+    "backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_xlsx_merge_20261023.db",
+    "source_file": "C:\\Users\\ljlgg\\OneDrive\\Desktop\\贴吧扫书推书避雷_新增提取.xlsx"
   },
-  "sources": {
-    "丫丫书屋": 322,
-    "优书网": 78,
-    "公告号": 845,
-    "其它来源": 376,
-    "哔哩哔哩": 1,
-    "扫书宝典": 6,
-    "扫书宝典·每周推书": 39,
-    "百度贴吧": 29271,
-    "群龙令推书群": 257,
-    "雪群推书": 11290,
-    "龙空论坛": 51
-  }
+  "storage_mode": "deduplicated App compatibility schema"
 }
