@@ -204,6 +204,7 @@ public class MainActivity extends Activity {
     private TextView networkCollectorStart;
     private TextView networkCollectorStop;
     private TextView networkBdussStatus;
+    private TextView networkCollectorOptionsStatus;
 
     private static final Pattern QUERY_CHUNKS =
             Pattern.compile("[a-z0-9]+|[\\u4e00-\\u9fff]+", Pattern.CASE_INSENSITIVE);
@@ -845,7 +846,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.29", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.30", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2600,6 +2601,21 @@ public class MainActivity extends Activity {
         accountRow.addView(bdussAction);
         card.addView(accountRow);
 
+        LinearLayout optionsRow = row();
+        optionsRow.setGravity(Gravity.CENTER_VERTICAL);
+        optionsRow.setPadding(0, dp(3), 0, 0);
+        networkCollectorOptionsStatus = text(
+                networkCollectorOptionsSummary(),
+                10, MUTED, Typeface.NORMAL);
+        optionsRow.addView(networkCollectorOptionsStatus,
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView optionsAction = text("参数", 11, TEAL_DARK, Typeface.BOLD);
+        optionsAction.setPadding(dp(8), dp(6), dp(8), dp(6));
+        optionsAction.setOnClickListener(v -> showCollectionOptionsDialog());
+        optionsRow.addView(optionsAction);
+        card.addView(optionsRow);
+
         networkCollectorStatus = text(networkCollectRunning.get()
                         ? "网络采集正在运行，完成后会更新水位和统计。"
                         : networkCollectorSummary(),
@@ -2810,6 +2826,137 @@ public class MainActivity extends Activity {
                     });
         });
         dialog.show();
+    }
+
+    private int collectionOption(String key, int fallback,
+                                 int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum,
+                preferences.getInt(key, fallback)));
+    }
+
+    private String networkCollectorOptionsSummary() {
+        return "采集参数：每吧 " + collectionOption(
+                TiebaCollector.PREF_THREADS, 20, 1, 50) +
+                " 帖 · 冷启动 " + collectionOption(
+                TiebaCollector.PREF_COLD_THREADS, 8, 1, 50) +
+                " 帖 · 每帖 " + collectionOption(
+                TiebaCollector.PREF_FLOORS, 150, 1, 300) +
+                " 楼 · 列表 " + collectionOption(
+                TiebaCollector.PREF_LIST_PAGES, 3, 1, 5) + " 页";
+    }
+
+    private void showCollectionOptionsDialog() {
+        if (networkCollectRunning.get() || dataBusy) {
+            toast("请等待当前任务完成");
+            return;
+        }
+        LinearLayout form = column();
+        form.setPadding(dp(20), dp(4), dp(20), 0);
+        TextView help = text("控制单轮采集规模。每页列表约 50 帖，每页楼层 30 楼；"
+                        + "设置越大，请求次数和耗时越多。",
+                12, MUTED, Typeface.NORMAL);
+        help.setLineSpacing(0, 1.35f);
+        form.addView(help);
+        EditText threads = collectionNumberField(form,
+                "每吧采集帖数（1–50）", collectionOption(
+                        TiebaCollector.PREF_THREADS, 20, 1, 50));
+        EditText coldThreads = collectionNumberField(form,
+                "冷启动帖数（1–50）", collectionOption(
+                        TiebaCollector.PREF_COLD_THREADS, 8, 1, 50));
+        EditText floors = collectionNumberField(form,
+                "每帖楼层数（1–300）", collectionOption(
+                        TiebaCollector.PREF_FLOORS, 150, 1, 300));
+        EditText pages = collectionNumberField(form,
+                "列表扫描页数（1–5）", collectionOption(
+                        TiebaCollector.PREF_LIST_PAGES, 3, 1, 5));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(form);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("采集参数")
+                .setView(scroll)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("恢复默认", null)
+                .setPositiveButton("保存", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(v -> {
+                        try {
+                            preferences.edit()
+                                    .putInt(TiebaCollector.PREF_THREADS,
+                                            parseCollectionOption(
+                                                    threads, 1, 50, "采集帖数"))
+                                    .putInt(TiebaCollector.PREF_COLD_THREADS,
+                                            parseCollectionOption(
+                                                    coldThreads, 1, 50, "冷启动帖数"))
+                                    .putInt(TiebaCollector.PREF_FLOORS,
+                                            parseCollectionOption(
+                                                    floors, 1, 300, "楼层数"))
+                                    .putInt(TiebaCollector.PREF_LIST_PAGES,
+                                            parseCollectionOption(
+                                                    pages, 1, 5, "列表页数"))
+                                    .apply();
+                            dialog.dismiss();
+                            if (networkCollectorOptionsStatus != null) {
+                                networkCollectorOptionsStatus.setText(
+                                        networkCollectorOptionsSummary());
+                            }
+                            toast("采集参数已保存");
+                        } catch (Exception error) {
+                            toast(readableError(error));
+                        }
+                    });
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> {
+                        preferences.edit()
+                                .putInt(TiebaCollector.PREF_THREADS, 20)
+                                .putInt(TiebaCollector.PREF_COLD_THREADS, 8)
+                                .putInt(TiebaCollector.PREF_FLOORS, 150)
+                                .putInt(TiebaCollector.PREF_LIST_PAGES, 3)
+                                .apply();
+                        dialog.dismiss();
+                        if (networkCollectorOptionsStatus != null) {
+                            networkCollectorOptionsStatus.setText(
+                                    networkCollectorOptionsSummary());
+                        }
+                        toast("已恢复默认采集参数");
+                    });
+        });
+        dialog.show();
+    }
+
+    private EditText collectionNumberField(LinearLayout form, String label,
+                                           int value) {
+        TextView heading = text(label, 12, TEXT, Typeface.BOLD);
+        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        headingParams.topMargin = dp(10);
+        form.addView(heading, headingParams);
+        EditText field = webDavField(String.valueOf(value), false);
+        field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
+        fieldParams.topMargin = dp(4);
+        form.addView(field, fieldParams);
+        return field;
+    }
+
+    private int parseCollectionOption(EditText field, int minimum, int maximum,
+                                      String label) {
+        String value = field.getText().toString().trim();
+        int parsed;
+        try {
+            parsed = Integer.parseInt(value);
+        } catch (Exception error) {
+            throw new IllegalArgumentException(label + "必须是数字");
+        }
+        if (parsed < minimum || parsed > maximum) {
+            throw new IllegalArgumentException(
+                    label + "范围为 " + minimum + "–" + maximum);
+        }
+        return parsed;
     }
 
     private void startNetworkCollection() {

@@ -34,6 +34,10 @@ import java.util.TimeZone;
  */
 final class TiebaCollector {
     static final String SOURCE_KIND = "tieba_network";
+    static final String PREF_THREADS = "tieba_collect_threads";
+    static final String PREF_COLD_THREADS = "tieba_collect_cold_threads";
+    static final String PREF_FLOORS = "tieba_collect_floors";
+    static final String PREF_LIST_PAGES = "tieba_collect_list_pages";
     private static final String HOST = "https://tiebac.baidu.com";
     private static final String USER_AGENT = "aiotieba/22.12.1.0";
     private static final String CLIENT_VERSION = "12.64.1.1";
@@ -42,10 +46,7 @@ final class TiebaCollector {
     private static final int PB_CMD = 302001;
     private static final int LIST_PAGE_SIZE = 50;
     private static final int POST_PAGE_SIZE = 30;
-    private static final int MAX_LIST_PAGES = 3;
-    private static final int MAX_POST_PAGES = 5;
-    private static final int MAX_COLD_THREADS = 8;
-    private static final int MAX_INCREMENTAL_THREADS = 20;
+    private static final int MAX_POST_PAGES = 20;
     private static final int DAILY_BUDGET = 300;
     private static final int FORUM_FAILURE_LIMIT = 3;
     private static final long COOLDOWN_MS = 48L * 60L * 60L * 1000L;
@@ -265,6 +266,10 @@ final class TiebaCollector {
     private final SharedPreferences preferences;
     private final Listener listener;
     private final String bduss;
+    private final int configuredThreads;
+    private final int configuredColdThreads;
+    private final int configuredFloors;
+    private final int configuredListPages;
     private final Random random = new Random();
     private volatile boolean canceled;
     private int requestCount;
@@ -276,6 +281,13 @@ final class TiebaCollector {
         this.preferences = preferences;
         this.listener = listener;
         this.bduss = safe(bduss);
+        configuredThreads = clamp(preferences.getInt(PREF_THREADS, 20), 1, 50);
+        configuredColdThreads = clamp(
+                preferences.getInt(PREF_COLD_THREADS, 8), 1, 50);
+        configuredFloors = clamp(
+                preferences.getInt(PREF_FLOORS, 150), 1, 300);
+        configuredListPages = clamp(
+                preferences.getInt(PREF_LIST_PAGES, 3), 1, 5);
     }
 
     void cancel() {
@@ -302,6 +314,10 @@ final class TiebaCollector {
             if (enabledCount == 0) {
                 throw new IllegalStateException("没有启用的贴吧");
             }
+            log("全局", "参数", "每吧 " + configuredThreads +
+                    " 帖 · 冷启动 " + configuredColdThreads +
+                    " 帖 · 每帖 " + configuredFloors +
+                    " 楼 · 列表 " + configuredListPages + " 页");
             int forumIndex = 0;
             for (ForumState forum : forums) {
                 if (!forum.enabled) {
@@ -352,8 +368,10 @@ final class TiebaCollector {
             throws Exception {
         List<CollectedThread> collected = new ArrayList<>();
         boolean cold = forum.lastThreadTime <= 0;
-        int maxPages = cold ? 1 : MAX_LIST_PAGES;
-        int maxThreads = cold ? MAX_COLD_THREADS : MAX_INCREMENTAL_THREADS;
+        int maxPages = configuredListPages;
+        int maxThreads = cold
+                ? Math.min(configuredThreads, configuredColdThreads)
+                : configuredThreads;
         List<ThreadSummary> queue = new ArrayList<>();
         boolean stopScan = false;
         try {
@@ -457,7 +475,9 @@ final class TiebaCollector {
         int createTime = summary.createTime;
         int replyNum = 0;
         int viewNum = 0;
-        for (int pageNo = 1; pageNo <= MAX_POST_PAGES; pageNo++) {
+        int postPages = Math.min(MAX_POST_PAGES,
+                (configuredFloors + POST_PAGE_SIZE - 1) / POST_PAGE_SIZE);
+        for (int pageNo = 1; pageNo <= postPages; pageNo++) {
             throwIfCanceled();
             PostsPage page = requestPostsWithRetry(summary.tid, pageNo);
             if (!page.title.trim().isEmpty()) {
@@ -476,9 +496,13 @@ final class TiebaCollector {
                     floors.add(floor);
                 }
             }
-            if (!page.hasMore) {
+            if (floors.size() >= configuredFloors || !page.hasMore) {
                 break;
             }
+        }
+        if (floors.size() > configuredFloors) {
+            floors = new ArrayList<>(
+                    floors.subList(0, configuredFloors));
         }
         Collections.sort(floors, new Comparator<Floor>() {
             @Override
@@ -932,6 +956,10 @@ final class TiebaCollector {
 
     private static int safeInt(long value) {
         return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     private static String safe(String value) {
