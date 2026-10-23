@@ -8,19 +8,28 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+      - uses: actions/checkout@v4
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.1"
+
+      - name: Set up Gradle 8.14.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.5'
+
+      # 仓库里没有 gradlew，也不带 332 MiB 的 saoshu.db（未入库），
+      # 所以这里只做编译与 lint 检查，不产出可发布 APK。
+      - name: Build and lint
+        run: gradle --no-daemon --console=plain assembleDebug lintDebug
