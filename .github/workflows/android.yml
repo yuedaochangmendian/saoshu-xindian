@@ -18,9 +18,12 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      # ubuntu-latest 自带 Android SDK（ANDROID_HOME 已配置），只需补齐本工程用的版本。
+      # ubuntu-latest 自带 Android SDK（ANDROID_HOME 已配置），此处只补本工程要用的版本。
       - name: Install SDK packages
-        run: yes | sdkmanager --install "platforms;android-35" "build-tools;35.0.1" > /dev/null
+        run: |
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          echo "using $SDKMANAGER"
+          yes | "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.1" > /dev/null
 
       - name: Set up Gradle 8.14.5
         uses: gradle/actions/setup-gradle@v4
