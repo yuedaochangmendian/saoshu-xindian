@@ -126,6 +126,7 @@ public class MainActivity extends Activity {
     private int MUTED;
     private int LINE;
     private boolean darkMode;
+    private boolean miuixTheme;
     private static final String PREFS = "saoshu_prefs";
     private static final String WEBDAV_KEY_ALIAS = "saoshu_webdav_password";
     private static final String TIEBA_BDUSS_KEY_ALIAS = "saoshu_tieba_bduss";
@@ -253,26 +254,48 @@ public class MainActivity extends Activity {
         String themeId = preferences.getString("theme_id", "teal");
         int[] palette = themePalette(themeId);
         darkMode = isSystemDarkMode();
+        miuixTheme = "miuix".equals(themeId);
         TEAL = palette[0];
         TEAL_DEEP = palette[2];
         if (darkMode) {
-            BG = Color.rgb(17, 22, 25);
-            CARD = Color.rgb(27, 34, 38);
-            TEXT = Color.rgb(237, 244, 242);
-            MUTED = Color.rgb(166, 181, 177);
-            LINE = Color.rgb(55, 70, 67);
-            TEAL_DARK = blend(palette[0], Color.WHITE, 0.18f);
-            TEAL_PALE = blend(palette[0], CARD, 0.17f);
-            TEAL_SOFT = blend(palette[0], BG, 0.09f);
+            if (miuixTheme) {
+                BG = Color.rgb(36, 36, 36);
+                CARD = Color.rgb(45, 45, 45);
+                TEXT = Color.rgb(235, 239, 247);
+                MUTED = Color.rgb(149, 149, 149);
+                LINE = Color.rgb(64, 64, 64);
+                TEAL = Color.rgb(39, 122, 247);
+                TEAL_DARK = TEAL;
+                TEAL_DEEP = Color.rgb(15, 78, 160);
+                TEAL_PALE = Color.rgb(43, 59, 84);
+                TEAL_SOFT = Color.rgb(36, 36, 36);
+            } else {
+                BG = Color.rgb(17, 22, 25);
+                CARD = Color.rgb(27, 34, 38);
+                TEXT = Color.rgb(237, 244, 242);
+                MUTED = Color.rgb(166, 181, 177);
+                LINE = Color.rgb(55, 70, 67);
+                TEAL_DARK = blend(palette[0], Color.WHITE, 0.18f);
+                TEAL_PALE = blend(palette[0], CARD, 0.17f);
+                TEAL_SOFT = blend(palette[0], BG, 0.09f);
+            }
         } else {
             TEAL_DARK = palette[1];
             TEAL_PALE = palette[3];
             TEAL_SOFT = palette[4];
-            BG = Color.rgb(245, 247, 246);
-            CARD = Color.WHITE;
-            TEXT = Color.rgb(38, 50, 56);
-            MUTED = Color.rgb(111, 121, 119);
-            LINE = Color.rgb(225, 232, 230);
+            if (miuixTheme) {
+                BG = Color.rgb(247, 247, 247);
+                CARD = Color.WHITE;
+                TEXT = Color.BLACK;
+                MUTED = Color.rgb(124, 130, 148);
+                LINE = Color.rgb(224, 224, 224);
+            } else {
+                BG = Color.rgb(245, 247, 246);
+                CARD = Color.WHITE;
+                TEXT = Color.rgb(38, 50, 56);
+                MUTED = Color.rgb(111, 121, 119);
+                LINE = Color.rgb(225, 232, 230);
+            }
         }
         PINK = TEAL;
         PINK_DARK = TEAL_DARK;
@@ -332,6 +355,15 @@ public class MainActivity extends Activity {
                     Color.rgb(46, 26, 71),
                     Color.rgb(238, 232, 247),
                     Color.rgb(249, 247, 252)
+            };
+        }
+        if ("miuix".equals(themeId)) {
+            return new int[]{
+                    Color.rgb(52, 130, 255),
+                    Color.rgb(0, 115, 221),
+                    Color.rgb(12, 67, 132),
+                    Color.rgb(234, 242, 255),
+                    Color.rgb(247, 247, 247)
             };
         }
         return new int[]{
@@ -846,7 +878,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.30", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.31", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2344,6 +2376,8 @@ public class MainActivity extends Activity {
                 Color.rgb(199, 91, 122)), themeOptionParams());
         themeRow.addView(themeOption("violet", "暮云紫", currentTheme,
                 Color.rgb(126, 87, 194)), themeOptionParams());
+        themeRow.addView(themeOption("miuix", "Miuix 蓝", currentTheme,
+                Color.rgb(52, 130, 255)), themeOptionParams());
         themeScroll.addView(themeRow);
         page.addView(themeScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -4510,7 +4544,7 @@ public class MainActivity extends Activity {
             throw new IllegalArgumentException("备份中缺少 settings");
         }
         String theme = settings.optString("theme_id", "teal");
-        if (!theme.matches("teal|ocean|amber|rose|violet")) {
+        if (!theme.matches("teal|ocean|amber|rose|violet|miuix")) {
             theme = "teal";
         }
         boolean haptic = settings.optBoolean("haptic_enabled", false);
@@ -6110,7 +6144,10 @@ public class MainActivity extends Activity {
     private GradientDrawable round(int color, float radiusDp) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
-        drawable.setCornerRadius(dp(radiusDp));
+        float themedRadius = miuixTheme && radiusDp > 0
+                ? Math.min(28f, radiusDp * 1.12f + 1f)
+                : radiusDp;
+        drawable.setCornerRadius(dp(themedRadius));
         return drawable;
     }
 
