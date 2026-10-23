@@ -845,7 +845,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.28", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.29", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2896,25 +2896,34 @@ public class MainActivity extends Activity {
         }
         String[] labels = new String[session.threads.size()];
         boolean[] checked = new boolean[session.threads.size()];
+        int[] lastTouched = {0};
         for (int i = 0; i < session.threads.size(); i++) {
             TiebaCollector.CollectedThread thread = session.threads.get(i);
             labels[i] = thread.forum + " · " + networkPreviewTitle(thread) +
-                    " · " + thread.floors.size() + " 楼";
+                    " · " + thread.floors.size() + " 楼\n" +
+                    previewText(thread.combinedText(), 100);
             checked[i] = true;
         }
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("选择要导入的采集结果")
+                .setMessage("点击项目切换选中状态；选中后点“查看详情”可阅读完整正文。")
                 .setMultiChoiceItems(labels, checked,
-                        (choiceDialog, which, isChecked) ->
-                                checked[which] = isChecked)
+                        (choiceDialog, which, isChecked) -> {
+                            checked[which] = isChecked;
+                            lastTouched[0] = which;
+                        })
                 .setNegativeButton("全部放弃",
                         (choiceDialog, which) ->
                                 finalizeNetworkImport(session,
                                         new ArrayList<>(), new NetworkImportStats()))
+                .setNeutralButton("查看详情", null)
                 .setPositiveButton("导入所选", null)
                 .create();
         dialog.setCancelable(false);
-        dialog.setOnShowListener(ignored ->
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> showNetworkThreadDetail(
+                            session.threads.get(lastTouched[0])));
                 dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
                         .setOnClickListener(v -> {
                             List<TiebaCollector.CollectedThread> selected =
@@ -2926,8 +2935,56 @@ public class MainActivity extends Activity {
                             }
                             dialog.dismiss();
                             importSelectedNetworkThreads(session, selected);
-                        }));
+                        });
+        });
         dialog.show();
+    }
+
+    private void showNetworkThreadDetail(TiebaCollector.CollectedThread thread) {
+        LinearLayout content = column();
+        content.setPadding(dp(18), dp(6), dp(18), dp(4));
+        TextView meta = text(thread.forum + " · " +
+                        (thread.author.isEmpty() ? "作者未知" : thread.author) +
+                        " · " + networkDate(thread.createTime) + "\n" +
+                        "楼层 " + thread.floors.size() +
+                        " · 回复 " + thread.replyNum +
+                        " · 浏览 " + thread.viewNum +
+                        " · 最高赞同 " + thread.maxAgree(),
+                11, MUTED, Typeface.NORMAL);
+        meta.setLineSpacing(0, 1.3f);
+        content.addView(meta);
+
+        String title = networkThreadResolvedTitle(thread);
+        TextView heading = text(title, 17, TEXT, Typeface.BOLD);
+        heading.setLineSpacing(0, 1.2f);
+        addWithTop(content, heading, 10);
+
+        String body = thread.combinedText();
+        if (body.length() > 60_000) {
+            body = body.substring(0, 60_000) + "\n\n[正文过长，预览已截断]";
+        }
+        TextView text = text(body, 14, TEXT, Typeface.NORMAL);
+        text.setTextIsSelectable(true);
+        text.setLineSpacing(dp(2), 1.45f);
+        text.setPadding(0, dp(8), 0, dp(10));
+        content.addView(text);
+        TextView source = text("原帖：https://tieba.baidu.com/p/" + thread.tid,
+                11, TEAL_DARK, Typeface.NORMAL);
+        source.setTextIsSelectable(true);
+        content.addView(source);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
+        String finalBody = body;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("采集帖子详情")
+                .setView(scroll)
+                .setNegativeButton("关闭", null)
+                .setNeutralButton("打开原帖", (dialog, which) ->
+                        openUrl("https://tieba.baidu.com/p/" + thread.tid))
+                .setPositiveButton("复制正文", (dialog, which) ->
+                        copyText(title, title + "\n\n" + finalBody))
+                .show();
     }
 
     private void importSelectedNetworkThreads(
@@ -3043,17 +3100,21 @@ public class MainActivity extends Activity {
     }
 
     private String networkPreviewTitle(TiebaCollector.CollectedThread thread) {
+        return previewText(networkThreadResolvedTitle(thread), 34);
+    }
+
+    private String networkThreadResolvedTitle(TiebaCollector.CollectedThread thread) {
         LinkedHashSet<String> books = extractNetworkBooks(
                 safe(thread.title) + "\n" + thread.combinedText());
         if (!books.isEmpty()) {
-            return previewText(books.iterator().next(), 34);
+            return books.iterator().next();
         }
         String candidate = networkTitleBookCandidate(
                 cleanDisplayTitle(thread.title));
         if (!candidate.isEmpty()) {
-            return previewText(candidate, 34);
+            return candidate;
         }
-        return previewText(cleanDisplayTitle(thread.title), 34);
+        return cleanDisplayTitle(thread.title);
     }
 
     private void finishNetworkCollection(String message) {
