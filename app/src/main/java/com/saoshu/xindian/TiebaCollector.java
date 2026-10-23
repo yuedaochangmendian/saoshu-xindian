@@ -16,7 +16,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -57,37 +56,32 @@ final class TiebaCollector {
         void onLog(String fname, String event, String detail);
     }
 
-    interface Ingestor {
-        IngestResult ingest(CollectedThread thread) throws Exception;
-    }
+    static final class ForumScan {
+        final String fname;
+        final boolean complete;
+        final boolean cooldown;
+        final String error;
 
-    static final class IngestResult {
-        final boolean inserted;
-        final int floors;
-        final int skipped;
-
-        IngestResult(boolean inserted, int floors, int skipped) {
-            this.inserted = inserted;
-            this.floors = floors;
-            this.skipped = skipped;
+        ForumScan(String fname, boolean complete, boolean cooldown, String error) {
+            this.fname = fname;
+            this.complete = complete;
+            this.cooldown = cooldown;
+            this.error = safe(error);
         }
     }
 
-    static final class Result {
-        final int threadsAdded;
-        final int threadsUpdated;
-        final int floorsAdded;
-        final int skipped;
+    static final class CollectionSession {
+        final List<CollectedThread> threads;
+        final Map<String, ForumScan> forums;
         final int requests;
         final int failedForums;
         final long finishedAt;
 
-        Result(int threadsAdded, int threadsUpdated, int floorsAdded,
-               int skipped, int requests, int failedForums, long finishedAt) {
-            this.threadsAdded = threadsAdded;
-            this.threadsUpdated = threadsUpdated;
-            this.floorsAdded = floorsAdded;
-            this.skipped = skipped;
+        CollectionSession(List<CollectedThread> threads,
+                          Map<String, ForumScan> forums,
+                          int requests, int failedForums, long finishedAt) {
+            this.threads = threads;
+            this.forums = forums;
             this.requests = requests;
             this.failedForums = failedForums;
             this.finishedAt = finishedAt;
@@ -270,36 +264,33 @@ final class TiebaCollector {
     private final SQLiteDatabase db;
     private final SharedPreferences preferences;
     private final Listener listener;
-    private final Ingestor ingestor;
+    private final String bduss;
     private final Random random = new Random();
-    private final StringBuilder recentLogs = new StringBuilder();
     private volatile boolean canceled;
     private int requestCount;
     private long lastRequestAt;
 
-    TiebaCollector(SQLiteDatabase db, SharedPreferences preferences, Listener listener,
-                   Ingestor ingestor) {
+    TiebaCollector(SQLiteDatabase db, SharedPreferences preferences,
+                   Listener listener, String bduss) {
         this.db = db;
         this.preferences = preferences;
         this.listener = listener;
-        this.ingestor = ingestor;
+        this.bduss = safe(bduss);
     }
 
     void cancel() {
         canceled = true;
     }
 
-    Result collect() throws Exception {
+    CollectionSession collect() throws Exception {
         try {
             ensureForums();
             List<ForumState> forums = loadForums();
             if (forums.isEmpty()) {
                 throw new IllegalStateException("没有启用的贴吧");
             }
-            int totalAdded = 0;
-            int totalUpdated = 0;
-            int totalFloors = 0;
-            int totalSkipped = 0;
+            List<CollectedThread> threads = new ArrayList<>();
+            Map<String, ForumScan> scans = new HashMap<>();
             int failedForums = 0;
             int enabledCount = 0;
             for (ForumState forum : forums) {
@@ -320,24 +311,25 @@ final class TiebaCollector {
                 if (forum.cooldownUntil > System.currentTimeMillis()) {
                     log(forum.fname, "跳过",
                             "失败冷却中至 " + formatTime(forum.cooldownUntil));
+                    scans.put(forum.fname,
+                            new ForumScan(forum.fname, false, true, "失败冷却中"));
                     forumIndex++;
                     continue;
                 }
                 listener.onStatus("正在读取 " + forum.fname + " 新帖列表…",
                         forumIndex * 100 / Math.max(1, enabledCount));
-                ForumRun run = collectForum(forum, forumIndex, enabledCount);
-                totalAdded += run.added;
-                totalUpdated += run.updated;
-                totalFloors += run.floors;
-                totalSkipped += run.skipped;
-                if (run.failed) {
+                ForumPreview preview = collectForum(
+                        forum, forumIndex, enabledCount);
+                threads.addAll(preview.threads);
+                scans.put(forum.fname, preview.scan);
+                if (!preview.scan.complete) {
                     failedForums++;
                 }
                 forumIndex++;
             }
             listener.onStatus("网络采集完成", 100);
-            return new Result(totalAdded, totalUpdated, totalFloors,
-                    totalSkipped, requestCount, failedForums,
+            return new CollectionSession(threads, scans,
+                    requestCount, failedForums,
                     System.currentTimeMillis());
         } catch (BudgetException error) {
             throw new IllegalStateException("今日贴吧请求预算已用完", error);
@@ -346,24 +338,24 @@ final class TiebaCollector {
         }
     }
 
-    private static final class ForumRun {
-        int added;
-        int updated;
-        int floors;
-        int skipped;
-        boolean failed;
+    private static final class ForumPreview {
+        final ForumScan scan;
+        final List<CollectedThread> threads;
+
+        ForumPreview(ForumScan scan, List<CollectedThread> threads) {
+            this.scan = scan;
+            this.threads = threads;
+        }
     }
 
-    private ForumRun collectForum(ForumState forum, int forumIndex, int forumCount)
+    private ForumPreview collectForum(ForumState forum, int forumIndex, int forumCount)
             throws Exception {
-        ForumRun total = new ForumRun();
+        List<CollectedThread> collected = new ArrayList<>();
         boolean cold = forum.lastThreadTime <= 0;
         int maxPages = cold ? 1 : MAX_LIST_PAGES;
         int maxThreads = cold ? MAX_COLD_THREADS : MAX_INCREMENTAL_THREADS;
         List<ThreadSummary> queue = new ArrayList<>();
         boolean stopScan = false;
-        long maxSeenTime = forum.lastThreadTime;
-        long maxSeenTid = forum.lastTid;
         try {
             for (int pageNo = 1; pageNo <= maxPages && !stopScan; pageNo++) {
                 throwIfCanceled();
@@ -379,8 +371,6 @@ final class TiebaCollector {
                     if (thread.top || thread.deleted || thread.masked) {
                         continue;
                     }
-                    maxSeenTime = Math.max(maxSeenTime, thread.createTime);
-                    maxSeenTid = Math.max(maxSeenTid, thread.tid);
                     if (forum.lastThreadTime <= 0
                             || thread.createTime > forum.lastThreadTime
                             || (thread.createTime == forum.lastThreadTime
@@ -409,8 +399,6 @@ final class TiebaCollector {
             if (queue.size() > maxThreads) {
                 queue = new ArrayList<>(queue.subList(queue.size() - maxThreads, queue.size()));
             }
-            List<ThreadSummary> ordered = new ArrayList<>(queue);
-            List<ThreadSummary> successfulPrefix = new ArrayList<>();
             int failures = 0;
             int processed = 0;
             for (ThreadSummary summary : queue) {
@@ -422,19 +410,9 @@ final class TiebaCollector {
                                 Math.max(1, queue.size()))) / Math.max(1, forumCount));
                 try {
                     CollectedThread thread = fetchThread(forum.fname, summary);
-                    IngestResult result = ingestor.ingest(thread);
-                    if (result.inserted) {
-                        total.added++;
-                        log(forum.fname, "入库", "tid=" + summary.tid +
-                                " 新增内容，楼层=" + result.floors);
-                    } else {
-                        total.updated++;
-                        log(forum.fname, "去重", "tid=" + summary.tid +
-                                " 已存在，跳过=" + result.skipped);
-                    }
-                    total.floors += result.floors;
-                    total.skipped += result.skipped;
-                    successfulPrefix.add(summary);
+                    collected.add(thread);
+                    log(forum.fname, "待导入", "tid=" + summary.tid +
+                            " · " + thread.title + " · 楼层=" + thread.floors.size());
                     failures = 0;
                 } catch (BudgetException | CanceledException error) {
                     throw error;
@@ -443,83 +421,31 @@ final class TiebaCollector {
                     log(forum.fname, "失败", "tid=" + summary.tid + " · " +
                             error.getMessage());
                     if (failures >= FORUM_FAILURE_LIMIT) {
-                        throw error;
+                        return new ForumPreview(new ForumScan(
+                                forum.fname, false, false, error.getMessage()),
+                                collected);
                     }
                 } catch (Exception error) {
-                    total.skipped++;
-                    log(forum.fname, "跳过", "tid=" + summary.tid + " · " +
+                    log(forum.fname, "失败", "tid=" + summary.tid + " · " +
                             readable(error));
+                    return new ForumPreview(new ForumScan(
+                            forum.fname, false, false, readable(error)),
+                            collected);
                 }
             }
-            ForumPosition position = prefixPosition(
-                    ordered, successfulPrefix, forum.lastThreadTime, forum.lastTid);
-            String status = total.skipped > 0 ? "partial" : "ok";
-            updateForumAfterRun(forum.fname, position, status, "",
-                    0, false, total.added, total.floors);
-            appendSummaryLog(forum.fname, status, total, position);
-            log(forum.fname, "完成", "新增=" + total.added +
-                    " 更新=" + total.updated + " 楼层=" + total.floors +
-                    " 跳过=" + total.skipped);
-            return total;
+            log(forum.fname, "预览", "已获取 " + collected.size() +
+                    " 个帖子，等待用户选择导入");
+            return new ForumPreview(new ForumScan(
+                    forum.fname, true, false, ""), collected);
         } catch (BudgetException error) {
-            updateForumAfterRun(forum.fname,
-                    new ForumPosition(forum.lastThreadTime, forum.lastTid),
-                    "budget", "今日请求预算已用完", 0, false,
-                    total.added, total.floors);
             throw error;
         } catch (CanceledException error) {
-            updateForumAfterRun(forum.fname,
-                    new ForumPosition(forum.lastThreadTime, forum.lastTid),
-                    "canceled", "用户取消", 0, false,
-                    total.added, total.floors);
             throw error;
         } catch (CollectException error) {
-            total.failed = true;
-            forum.consecutiveFailures++;
-            boolean cooldown = forum.consecutiveFailures >= FORUM_FAILURE_LIMIT;
-            long cooldownUntil = cooldown
-                    ? System.currentTimeMillis() + COOLDOWN_MS : 0;
-            updateForumAfterRun(forum.fname,
-                    new ForumPosition(forum.lastThreadTime, forum.lastTid),
-                    error.rateLimited ? "rate_limited" : "api_error",
-                    error.getMessage(), forum.consecutiveFailures,
-                    cooldown, total.added, total.floors);
-            appendSummaryLog(forum.fname,
-                    error.rateLimited ? "rate_limited" : "api_error",
-                    total, new ForumPosition(forum.lastThreadTime, forum.lastTid));
-            log(forum.fname, cooldown ? "冷却" : "失败",
-                    error.getMessage() + (cooldown ? "（冷却 48 小时）" : ""));
-            return total;
+            log(forum.fname, "失败", error.getMessage());
+            return new ForumPreview(new ForumScan(
+                    forum.fname, false, false, error.getMessage()), collected);
         }
-    }
-
-    private static final class ForumPosition {
-        final long lastThreadTime;
-        final long lastTid;
-
-        ForumPosition(long lastThreadTime, long lastTid) {
-            this.lastThreadTime = lastThreadTime;
-            this.lastTid = lastTid;
-        }
-    }
-
-    private ForumPosition prefixPosition(List<ThreadSummary> ordered,
-                                        List<ThreadSummary> successful,
-                                        long fromTime, long fromTid) {
-        Set<Long> ok = new HashSet<>();
-        for (ThreadSummary thread : successful) {
-            ok.add(thread.tid);
-        }
-        long time = fromTime;
-        long tid = fromTid;
-        for (ThreadSummary thread : ordered) {
-            if (!ok.contains(thread.tid)) {
-                break;
-            }
-            time = Math.max(time, thread.createTime);
-            tid = thread.tid;
-        }
-        return new ForumPosition(time, tid);
     }
 
     private CollectedThread fetchThread(String fname, ThreadSummary summary)
@@ -631,8 +557,7 @@ final class TiebaCollector {
         TiebaProto.Writer common = new TiebaProto.Writer()
                 .varint(1, 2)
                 .text(2, CLIENT_VERSION);
-        String bduss = preferences.getString("tieba_bduss", "");
-        if (bduss != null && !bduss.isEmpty()) {
+        if (!bduss.isEmpty()) {
             common.text(10, bduss);
         }
         return common;
@@ -825,7 +750,10 @@ final class TiebaCollector {
     private void throttle() throws Exception {
         throwIfCanceled();
         if (lastRequestAt > 0) {
-            long minimum = 1_500L + random.nextInt(1_501);
+            boolean loggedIn = !bduss.isEmpty();
+            long minimum = loggedIn
+                    ? 1_000L + random.nextInt(1_001)
+                    : 1_500L + random.nextInt(1_501);
             long wait = minimum - (System.currentTimeMillis() - lastRequestAt);
             if (wait > 0) {
                 sleep(wait);
@@ -836,7 +764,8 @@ final class TiebaCollector {
         String savedDay = preferences.getString("tieba_budget_day", "");
         int used = today.equals(savedDay)
                 ? preferences.getInt("tieba_budget_used", 0) : 0;
-        if (used >= DAILY_BUDGET) {
+        int limit = bduss.isEmpty() ? DAILY_BUDGET : DAILY_BUDGET * 2;
+        if (used >= limit) {
             throw new BudgetException();
         }
         preferences.edit()
@@ -890,46 +819,69 @@ final class TiebaCollector {
                 new Object[]{fid, fname});
     }
 
-    private void updateForumAfterRun(String fname, ForumPosition position,
-                                     String status, String error,
-                                     int consecutiveFailures, boolean cooldown,
-                                     int addedThreads, int addedFloors) {
+    void commitForumImport(ForumScan scan, int selectedCount, boolean importAll,
+                           long targetTime, long targetTid,
+                           int addedThreads, int addedFloors, int skipped) {
+        if (scan.cooldown) {
+            return;
+        }
+        int failures = 0;
+        try (Cursor cursor = db.rawQuery(
+                "SELECT consecutive_failures FROM collector_forums WHERE fname=?",
+                new String[]{scan.fname})) {
+            if (cursor.moveToFirst()) {
+                failures = cursor.getInt(0);
+            }
+        }
+        boolean hasError = !scan.error.isEmpty();
+        if (hasError) {
+            failures++;
+        } else {
+            failures = 0;
+        }
+        boolean cooldown = failures >= FORUM_FAILURE_LIMIT;
         long cooldownUntil = cooldown
                 ? System.currentTimeMillis() + COOLDOWN_MS : 0;
-        db.execSQL("UPDATE collector_forums SET last_thread_time=?," +
-                        "last_tid=?,last_run_at=?,last_status=?,last_error=?," +
+        boolean advance = importAll && scan.complete && !hasError;
+        String status;
+        if (hasError) {
+            status = "api_error";
+        } else if (advance) {
+            status = "ok";
+        } else if (selectedCount == 0) {
+            status = "skipped";
+        } else {
+            status = "partial";
+        }
+        db.execSQL("UPDATE collector_forums SET " +
+                        "last_thread_time=CASE WHEN ? THEN ? ELSE last_thread_time END," +
+                        "last_tid=CASE WHEN ? THEN ? ELSE last_tid END," +
+                        "last_run_at=?,last_status=?,last_error=?," +
                         "consecutive_failures=?,cooldown_until=?," +
                         "total_threads=total_threads+?,total_floors=total_floors+? " +
                         "WHERE fname=?",
-                new Object[]{position.lastThreadTime, position.lastTid,
-                        nowIso(), status, safe(error), consecutiveFailures,
-                        cooldownUntil, addedThreads, addedFloors, fname});
-    }
-
-    private void appendSummaryLog(String fname, String status,
-                                  ForumRun run, ForumPosition position) {
-        String detail = "新增=" + run.added + " 更新=" + run.updated +
-                " 楼层=" + run.floors + " 跳过=" + run.skipped +
-                " 水位=" + formatTime(position.lastThreadTime) +
-                " tid=" + position.lastTid;
+                new Object[]{advance ? 1 : 0, targetTime,
+                        advance ? 1 : 0, targetTid, nowIso(), status,
+                        hasError ? scan.error : "", failures,
+                        cooldownUntil, addedThreads, addedFloors, scan.fname});
+        String detail = "选择=" + selectedCount +
+                " 新增=" + addedThreads + " 楼层=" + addedFloors +
+                " 跳过=" + skipped +
+                (advance ? " 水位=" + formatTime(targetTime) +
+                        " tid=" + targetTid : " 水位未推进") +
+                (hasError ? " err=" + scan.error : "");
         db.execSQL("INSERT INTO collector_logs(" +
                         "fname,run_at,status,threads_added,floors_added,skipped_dup,detail) " +
                         "VALUES(?,?,?,?,?,?,?)",
-                new Object[]{fname, nowIso(), status, run.added,
-                        run.floors, run.skipped, detail});
+                new Object[]{scan.fname, nowIso(), status, addedThreads,
+                        addedFloors, skipped, detail});
         db.execSQL("DELETE FROM collector_logs WHERE id NOT IN " +
                 "(SELECT id FROM collector_logs ORDER BY id DESC LIMIT 200)");
+        log(scan.fname, hasError ? "失败" : "导入", detail);
     }
 
     private void log(String fname, String event, String detail) {
         listener.onLog(fname, event, detail);
-        synchronized (recentLogs) {
-            recentLogs.insert(0, formatTime(System.currentTimeMillis()) +
-                    "  " + fname + " · " + event + " · " + detail + "\n");
-            if (recentLogs.length() > 6000) {
-                recentLogs.setLength(6000);
-            }
-        }
     }
 
     private static byte[] readLimited(InputStream input, int max)

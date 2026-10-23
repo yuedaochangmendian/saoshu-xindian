@@ -128,6 +128,7 @@ public class MainActivity extends Activity {
     private boolean darkMode;
     private static final String PREFS = "saoshu_prefs";
     private static final String WEBDAV_KEY_ALIAS = "saoshu_webdav_password";
+    private static final String TIEBA_BDUSS_KEY_ALIAS = "saoshu_tieba_bduss";
     private static final String DEFAULT_WEBDAV_FILENAME =
             "saoshu-xindian-user-backup.json";
 
@@ -174,6 +175,8 @@ public class MainActivity extends Activity {
     private TextView glossaryEmptyState;
     private FrameLayout libraryBody;
     private View glossaryPanel;
+    private View networkCollectorPanel;
+    private LinearLayout librarySearchContainer;
     private int glossaryReturnPosition;
     private int glossaryReturnTop;
     private int searchBackTab = TAB_HOME;
@@ -200,6 +203,7 @@ public class MainActivity extends Activity {
     private TextView networkCollectorLog;
     private TextView networkCollectorStart;
     private TextView networkCollectorStop;
+    private TextView networkBdussStatus;
 
     private static final Pattern QUERY_CHUNKS =
             Pattern.compile("[a-z0-9]+|[\\u4e00-\\u9fff]+", Pattern.CASE_INSENSITIVE);
@@ -841,7 +845,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.27", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.28", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -1369,6 +1373,99 @@ public class MainActivity extends Activity {
     }
 
     private View buildBooks() {
+        return buildCollectorLibrary();
+    }
+
+    private View buildCollectorLibrary() {
+        LinearLayout page = column();
+        page.setBackgroundColor(BG);
+
+        LinearLayout header = column();
+        header.setPadding(dp(12), dp(9), dp(12), dp(8));
+        header.setBackground(titleGradient(0));
+        TextView title = text("书库", 19, Color.WHITE, Typeface.BOLD);
+        header.addView(title);
+
+        LinearLayout switcher = row();
+        switcher.setGravity(Gravity.CENTER_VERTICAL);
+        switcher.setPadding(dp(4), dp(4), dp(4), dp(4));
+        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 13));
+        bookModeButton = libraryModeButton("网络采集");
+        glossaryModeButton = libraryModeButton("名词解释");
+        switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
+                0, dp(44), 1f));
+        LinearLayout.LayoutParams glossaryModeParams = new LinearLayout.LayoutParams(
+                0, dp(44), 1f);
+        glossaryModeParams.leftMargin = dp(4);
+        switcher.addView(glossaryModeButton, glossaryModeParams);
+        bookModeButton.setOnClickListener(v -> activateLibraryMode(false));
+        glossaryModeButton.setOnClickListener(v -> activateLibraryMode(true));
+        addWithTop(header, switcher, 7);
+
+        librarySearchContainer = row();
+        librarySearchContainer.setGravity(Gravity.CENTER_VERTICAL);
+        librarySearchContainer.setPadding(dp(12), 0, dp(12), 0);
+        librarySearchContainer.setBackground(round(CARD, 13));
+        librarySearchContainer.setElevation(dp(2));
+        TextView icon = text("⌕", 20, TEAL, Typeface.BOLD);
+        librarySearchContainer.addView(icon);
+        bookField = new EditText(this);
+        bookField.setSingleLine(true);
+        bookField.setBackgroundColor(Color.TRANSPARENT);
+        bookField.setTextColor(TEXT);
+        bookField.setTextSize(15);
+        bookField.setHint("搜索名词或释义");
+        bookField.setHintTextColor(MUTED);
+        bookField.setPadding(dp(8), 0, 0, 0);
+        bookField.setText(glossaryQuery);
+        librarySearchContainer.addView(bookField, new LinearLayout.LayoutParams(
+                0, dp(44), 1f));
+        addWithTop(header, librarySearchContainer, 7);
+        page.addView(header);
+
+        libraryBody = new FrameLayout(this);
+        libraryBody.setBackgroundColor(BG);
+
+        ScrollView collectorScroll = new ScrollView(this);
+        collectorScroll.setFillViewport(true);
+        LinearLayout collectorContainer = column();
+        collectorContainer.setPadding(dp(12), dp(10), dp(12), dp(64));
+        collectorContainer.addView(buildNetworkCollectorCard());
+        collectorScroll.addView(collectorContainer);
+        networkCollectorPanel = collectorScroll;
+        libraryBody.addView(networkCollectorPanel, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        glossaryPanel = buildGlossaryPanel();
+        libraryBody.addView(glossaryPanel, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        page.addView(libraryBody, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        bookField.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (!libraryShowGlossary || syncingLibrarySearch) {
+                    return;
+                }
+                glossaryQuery = s.toString().trim();
+                renderGlossary();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        libraryShowGlossary = false;
+        updateLibraryMode(false);
+        return page;
+    }
+
+    private View buildBooksLegacy() {
         LinearLayout page = column();
         page.setBackgroundColor(BG);
 
@@ -1567,10 +1664,8 @@ public class MainActivity extends Activity {
         updateLibraryMode(showGlossary);
         if (showGlossary) {
             renderGlossary();
-        } else if (books.isEmpty() && !booksLoading) {
-            loadBooks(true);
         }
-        View shown = showGlossary ? glossaryPanel : bookList;
+        View shown = showGlossary ? glossaryPanel : networkCollectorPanel;
         if (shown != null) {
             shown.setAlpha(0f);
             shown.setTranslationY(dp(8));
@@ -1584,8 +1679,8 @@ public class MainActivity extends Activity {
 
     private void updateLibraryMode(boolean showGlossary) {
         libraryShowGlossary = showGlossary;
-        if (bookList != null) {
-            bookList.setVisibility(showGlossary ? View.GONE : View.VISIBLE);
+        if (networkCollectorPanel != null) {
+            networkCollectorPanel.setVisibility(showGlossary ? View.GONE : View.VISIBLE);
         }
         if (glossaryPanel != null) {
             glossaryPanel.setVisibility(showGlossary ? View.VISIBLE : View.GONE);
@@ -1593,12 +1688,16 @@ public class MainActivity extends Activity {
                 glossaryPanel.bringToFront();
             }
         }
+        if (librarySearchContainer != null) {
+            librarySearchContainer.setVisibility(
+                    showGlossary ? View.VISIBLE : View.GONE);
+        }
         styleLibraryModeButton(bookModeButton, !showGlossary);
         styleLibraryModeButton(glossaryModeButton, showGlossary);
         if (bookField != null) {
             syncingLibrarySearch = true;
-            bookField.setHint(showGlossary ? "搜索名词或释义" : "搜索书名");
-            bookField.setText(showGlossary ? glossaryQuery : bookQuery);
+            bookField.setHint("搜索名词或释义");
+            bookField.setText(showGlossary ? glossaryQuery : "");
             bookField.setSelection(bookField.getText().length());
             syncingLibrarySearch = false;
         }
@@ -2310,11 +2409,6 @@ public class MainActivity extends Activity {
         }
         addWithTop(page, restoreCard, 8);
 
-        TextView networkSection = text("网络增量采集", 17, TEXT, Typeface.BOLD);
-        networkSection.setPadding(dp(14), dp(12), dp(14), dp(2));
-        page.addView(networkSection);
-        addWithTop(page, buildNetworkCollectorCard(), 8);
-
         TextView userSection = text("备份与云同步", 17, TEXT, Typeface.BOLD);
         userSection.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(userSection);
@@ -2490,6 +2584,22 @@ public class MainActivity extends Activity {
                 weightedAction());
         card.addView(forumRow);
 
+        LinearLayout accountRow = row();
+        accountRow.setGravity(Gravity.CENTER_VERTICAL);
+        accountRow.setPadding(0, dp(5), 0, 0);
+        networkBdussStatus = text(hasTiebaBduss()
+                        ? "BDUSS：已加密保存 · 账号档 1–2 秒 / 600 次"
+                        : "BDUSS：未登录 · 匿名档 1.5–3 秒 / 300 次",
+                10, MUTED, Typeface.NORMAL);
+        accountRow.addView(networkBdussStatus, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView bdussAction = text(hasTiebaBduss() ? "更换" : "登录",
+                11, TEAL_DARK, Typeface.BOLD);
+        bdussAction.setPadding(dp(8), dp(6), dp(8), dp(6));
+        bdussAction.setOnClickListener(v -> showTiebaBdussDialog());
+        accountRow.addView(bdussAction);
+        card.addView(accountRow);
+
         networkCollectorStatus = text(networkCollectRunning.get()
                         ? "网络采集正在运行，完成后会更新水位和统计。"
                         : networkCollectorSummary(),
@@ -2623,14 +2733,83 @@ public class MainActivity extends Activity {
 
     private void updateNetworkCollectorButtons() {
         boolean running = networkCollectRunning.get();
+        boolean busy = running || dataBusy;
         if (networkCollectorStart != null) {
-            networkCollectorStart.setEnabled(!running);
-            networkCollectorStart.setAlpha(running ? 0.45f : 1f);
+            networkCollectorStart.setEnabled(!busy);
+            networkCollectorStart.setAlpha(busy ? 0.45f : 1f);
         }
         if (networkCollectorStop != null) {
             networkCollectorStop.setEnabled(running);
             networkCollectorStop.setAlpha(running ? 1f : 0.45f);
         }
+    }
+
+    private boolean hasTiebaBduss() {
+        return !safe(preferences.getString(
+                "tieba_bduss_encrypted", "")).isEmpty();
+    }
+
+    private void showTiebaBdussDialog() {
+        if (networkCollectRunning.get() || dataBusy) {
+            toast("请等待当前任务完成");
+            return;
+        }
+        LinearLayout form = column();
+        form.setPadding(dp(20), dp(4), dp(20), 0);
+        TextView help = text("BDUSS 只用于贴吧请求身份，使用 Android Keystore "
+                        + "加密保存在本机，不会写入日志或用户备份。"
+                        + "可粘贴完整 Cookie 片段。",
+                12, MUTED, Typeface.NORMAL);
+        help.setLineSpacing(0, 1.35f);
+        form.addView(help);
+        EditText field = webDavField("", true);
+        field.setHint("粘贴 BDUSS=... 或仅粘贴值");
+        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+        fieldParams.topMargin = dp(12);
+        field.setLayoutParams(fieldParams);
+        form.addView(field);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("贴吧 BDUSS 登录")
+                .setView(form)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("清除", null)
+                .setPositiveButton("保存", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(v -> {
+                        String value = field.getText().toString().trim()
+                                .replaceFirst("(?i)^BDUSS\\s*=\\s*", "")
+                                .trim();
+                        if (value.isEmpty()) {
+                            toast("请输入 BDUSS");
+                            return;
+                        }
+                        try {
+                            preferences.edit()
+                                    .putString("tieba_bduss_encrypted",
+                                            encryptTiebaBduss(value))
+                                    .apply();
+                            dialog.dismiss();
+                            switchTab(TAB_BOOKS);
+                            toast("BDUSS 已加密保存");
+                        } catch (Exception error) {
+                            toast("BDUSS 保存失败：" + readableError(error));
+                        }
+                    });
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> {
+                        preferences.edit()
+                                .remove("tieba_bduss_encrypted")
+                                .apply();
+                        dialog.dismiss();
+                        switchTab(TAB_BOOKS);
+                        toast("已清除 BDUSS，后续使用匿名档");
+                    });
+        });
+        dialog.show();
     }
 
     private void startNetworkCollection() {
@@ -2674,16 +2853,12 @@ public class MainActivity extends Activity {
                         });
                     }
                 },
-                this::ingestNetworkThread);
+                decryptTiebaBduss());
         executor.execute(() -> {
             try {
-                TiebaCollector.Result result = activeNetworkCollector.collect();
-                String message = "网络采集完成：新增 " + result.threadsAdded +
-                        " 帖，更新 " + result.threadsUpdated + " 帖，楼层 " +
-                        result.floorsAdded + "，请求 " + result.requests + " 次" +
-                        (result.failedForums > 0
-                                ? "；失败贴吧 " + result.failedForums + " 个。" : "。");
-                mainHandler.post(() -> finishNetworkCollection(message, false));
+                TiebaCollector.CollectionSession session =
+                        activeNetworkCollector.collect();
+                mainHandler.post(() -> showNetworkImportSelection(session));
             } catch (Exception error) {
                 String message = readableError(error);
                 if (message.contains("Canceled") || message.contains("已停止")) {
@@ -2694,7 +2869,7 @@ public class MainActivity extends Activity {
                     message = "网络采集结束：" + message;
                 }
                 String finalMessage = message;
-                mainHandler.post(() -> finishNetworkCollection(finalMessage, true));
+                mainHandler.post(() -> finishNetworkCollection(finalMessage));
             }
         });
     }
@@ -2711,7 +2886,177 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void finishNetworkCollection(String message, boolean error) {
+    private void showNetworkImportSelection(TiebaCollector.CollectionSession session) {
+        networkCollectRunning.set(false);
+        updateNetworkCollectorButtons();
+        if (session.threads.isEmpty()) {
+            finalizeNetworkImport(session, new ArrayList<>(),
+                    new NetworkImportStats());
+            return;
+        }
+        String[] labels = new String[session.threads.size()];
+        boolean[] checked = new boolean[session.threads.size()];
+        for (int i = 0; i < session.threads.size(); i++) {
+            TiebaCollector.CollectedThread thread = session.threads.get(i);
+            labels[i] = thread.forum + " · " + networkPreviewTitle(thread) +
+                    " · " + thread.floors.size() + " 楼";
+            checked[i] = true;
+        }
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("选择要导入的采集结果")
+                .setMultiChoiceItems(labels, checked,
+                        (choiceDialog, which, isChecked) ->
+                                checked[which] = isChecked)
+                .setNegativeButton("全部放弃",
+                        (choiceDialog, which) ->
+                                finalizeNetworkImport(session,
+                                        new ArrayList<>(), new NetworkImportStats()))
+                .setPositiveButton("导入所选", null)
+                .create();
+        dialog.setCancelable(false);
+        dialog.setOnShowListener(ignored ->
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            List<TiebaCollector.CollectedThread> selected =
+                                    new ArrayList<>();
+                            for (int i = 0; i < checked.length; i++) {
+                                if (checked[i]) {
+                                    selected.add(session.threads.get(i));
+                                }
+                            }
+                            dialog.dismiss();
+                            importSelectedNetworkThreads(session, selected);
+                        }));
+        dialog.show();
+    }
+
+    private void importSelectedNetworkThreads(
+            TiebaCollector.CollectionSession session,
+            List<TiebaCollector.CollectedThread> selected) {
+        if (selected.isEmpty()) {
+            finalizeNetworkImport(session, selected, new NetworkImportStats());
+            return;
+        }
+        if (networkCollectorStatus != null) {
+            networkCollectorStatus.setText("正在导入已选择的 " +
+                    selected.size() + " 个帖子…");
+        }
+        executor.execute(() -> {
+            NetworkImportStats stats = new NetworkImportStats();
+            for (TiebaCollector.CollectedThread thread : selected) {
+                try {
+                    NetworkIngestResult result = ingestNetworkThread(thread);
+                    if (result.inserted) {
+                        stats.added++;
+                    } else {
+                        stats.skipped++;
+                    }
+                    stats.floors += result.floors;
+                    stats.addedByForum.put(thread.forum,
+                            mapInt(stats.addedByForum, thread.forum, 0) +
+                                    (result.inserted ? 1 : 0));
+                    stats.floorsByForum.put(thread.forum,
+                            mapInt(stats.floorsByForum, thread.forum, 0) +
+                                    result.floors);
+                    stats.skippedByForum.put(thread.forum,
+                            mapInt(stats.skippedByForum, thread.forum, 0) +
+                                    (result.inserted ? 0 : 1));
+                } catch (Exception error) {
+                    stats.skipped++;
+                    stats.failed++;
+                    stats.skippedByForum.put(thread.forum,
+                            mapInt(stats.skippedByForum, thread.forum, 0) + 1);
+                    stats.failedByForum.put(thread.forum,
+                            mapInt(stats.failedByForum, thread.forum, 0) + 1);
+                }
+            }
+            mainHandler.post(() -> finalizeNetworkImport(session, selected, stats));
+        });
+    }
+
+    private void finalizeNetworkImport(
+            TiebaCollector.CollectionSession session,
+            List<TiebaCollector.CollectedThread> selected,
+            NetworkImportStats stats) {
+        Map<String, Integer> selectedCounts = new HashMap<>();
+        Map<String, Integer> totalCounts = new HashMap<>();
+        Map<String, Long> targetTimes = new HashMap<>();
+        Map<String, Long> targetTids = new HashMap<>();
+        for (TiebaCollector.CollectedThread thread : session.threads) {
+            totalCounts.put(thread.forum,
+                    mapInt(totalCounts, thread.forum, 0) + 1);
+        }
+        for (TiebaCollector.CollectedThread thread : selected) {
+            selectedCounts.put(thread.forum,
+                    mapInt(selectedCounts, thread.forum, 0) + 1);
+            targetTimes.put(thread.forum, Math.max(
+                    mapLong(targetTimes, thread.forum, 0L),
+                    (long) thread.createTime));
+            targetTids.put(thread.forum, Math.max(
+                    mapLong(targetTids, thread.forum, 0L), thread.tid));
+        }
+        if (activeNetworkCollector != null) {
+            for (Map.Entry<String, TiebaCollector.ForumScan> entry :
+                    session.forums.entrySet()) {
+                String forum = entry.getKey();
+                int selectedCount = mapInt(selectedCounts, forum, 0);
+                int totalCount = mapInt(totalCounts, forum, 0);
+                boolean importAll = selectedCount > 0
+                        && selectedCount == totalCount
+                        && mapInt(stats.failedByForum, forum, 0) == 0;
+                activeNetworkCollector.commitForumImport(
+                        entry.getValue(), selectedCount, importAll,
+                        mapLong(targetTimes, forum, 0L),
+                        mapLong(targetTids, forum, 0L),
+                        mapInt(stats.addedByForum, forum, 0),
+                        mapInt(stats.floorsByForum, forum, 0),
+                        mapInt(stats.skippedByForum, forum, 0));
+            }
+        }
+        networkCollectRunning.set(false);
+        activeNetworkCollector = null;
+        dataBusy = false;
+        String message;
+        if (selected.isEmpty()) {
+            message = session.threads.isEmpty()
+                    ? "采集未获取到可导入帖子；水位未推进。"
+                    : "已放弃导入，采集水位未推进。";
+        } else {
+            message = "采集导入完成：选择 " + selected.size() +
+                    " 帖，新增 " + stats.added + " 帖，楼层 " + stats.floors +
+                    "，跳过 " + stats.skipped + "。" +
+                    (stats.failed > 0 ? " 导入失败 " + stats.failed + " 帖。" : "");
+        }
+        if (networkCollectorStatus != null) {
+            networkCollectorStatus.setText(networkCollectorSummary());
+        }
+        if (networkCollectorLog != null) {
+            networkCollectorLog.setText(networkCollectorRecentLogs());
+        }
+        updateNetworkCollectorButtons();
+        preferences.edit().putString("last_data_message", message).apply();
+        if (currentTab == TAB_BOOKS && !detailOpen) {
+            switchTab(TAB_BOOKS);
+        } else {
+            toast(message);
+        }
+    }
+
+    private String networkPreviewTitle(TiebaCollector.CollectedThread thread) {
+        LinkedHashSet<String> books = extractNetworkBooks(
+                safe(thread.title) + "\n" + thread.combinedText());
+        if (!books.isEmpty()) {
+            return previewText(books.iterator().next(), 34);
+        }
+        String candidate = networkTitleBookCandidate(
+                cleanDisplayTitle(thread.title));
+        if (!candidate.isEmpty()) {
+            return previewText(candidate, 34);
+        }
+        return previewText(cleanDisplayTitle(thread.title), 34);
+    }
+
+    private void finishNetworkCollection(String message) {
         networkCollectRunning.set(false);
         activeNetworkCollector = null;
         dataBusy = false;
@@ -2723,12 +3068,9 @@ public class MainActivity extends Activity {
             networkCollectorLog.setText(networkCollectorRecentLogs());
         }
         updateNetworkCollectorButtons();
-        if (currentTab == TAB_DATA && !detailOpen) {
-            switchTab(TAB_DATA);
+        if (currentTab == TAB_BOOKS && !detailOpen) {
+            switchTab(TAB_BOOKS);
         } else {
-            toast(message);
-        }
-        if (error && !message.contains("已停止")) {
             toast(message);
         }
     }
@@ -2738,15 +3080,15 @@ public class MainActivity extends Activity {
                 "consecutive_failures=0,last_status='never',last_error=NULL");
         preferences.edit().putString("last_data_message",
                 "已清除网络采集失败冷却。").apply();
-        switchTab(TAB_DATA);
+        switchTab(TAB_BOOKS);
         toast("已清除采集冷却");
     }
 
-    private TiebaCollector.IngestResult ingestNetworkThread(
+    private NetworkIngestResult ingestNetworkThread(
             TiebaCollector.CollectedThread thread) {
         String combined = thread.combinedText();
         if (compact(combined).length() < 20) {
-            return new TiebaCollector.IngestResult(false, 0, 1);
+            return new NetworkIngestResult(false, 0, 1);
         }
         String sourceUrl = "https://tieba.baidu.com/p/" + thread.tid;
         String sourceRef = String.valueOf(thread.tid);
@@ -2755,7 +3097,7 @@ public class MainActivity extends Activity {
                         "AND source_ref=? LIMIT 1",
                 new String[]{TiebaCollector.SOURCE_KIND, sourceRef})) {
             if (cursor.moveToFirst()) {
-                return new TiebaCollector.IngestResult(false, 0, 1);
+                return new NetworkIngestResult(false, 0, 1);
             }
         }
 
@@ -2770,7 +3112,7 @@ public class MainActivity extends Activity {
             }
         }
         if (books.isEmpty()) {
-            return new TiebaCollector.IngestResult(false, 0, 1);
+            return new NetworkIngestResult(false, 0, 1);
         }
         title = books.iterator().next();
         if (title.isEmpty() || "未命名内容".equals(title)) {
@@ -2829,7 +3171,7 @@ public class MainActivity extends Activity {
                                 thread.replyNum, thread.viewNum,
                                 thread.maxAgree(), isoNow()});
                 db.setTransactionSuccessful();
-                return new TiebaCollector.IngestResult(true,
+                return new NetworkIngestResult(true,
                         thread.floors.size(), 0);
             }
             insertSourceIfMissing(existingId, TiebaCollector.SOURCE_KIND,
@@ -2841,7 +3183,7 @@ public class MainActivity extends Activity {
                             thread.replyNum, thread.viewNum,
                             thread.maxAgree(), isoNow()});
             db.setTransactionSuccessful();
-            return new TiebaCollector.IngestResult(false, 0,
+            return new NetworkIngestResult(false, 0,
                     thread.floors.size());
         } finally {
             db.endTransaction();
@@ -4468,13 +4810,30 @@ public class MainActivity extends Activity {
     }
 
     private String encryptWebDavPassword(String password) throws Exception {
-        if (password.isEmpty()) {
+        return encryptSecret(WEBDAV_KEY_ALIAS, password);
+    }
+
+    private String decryptWebDavPassword(String encoded) {
+        return decryptSecret(WEBDAV_KEY_ALIAS, encoded);
+    }
+
+    private String encryptTiebaBduss(String value) throws Exception {
+        return encryptSecret(TIEBA_BDUSS_KEY_ALIAS, value);
+    }
+
+    private String decryptTiebaBduss() {
+        return decryptSecret(TIEBA_BDUSS_KEY_ALIAS,
+                preferences.getString("tieba_bduss_encrypted", ""));
+    }
+
+    private String encryptSecret(String alias, String value) throws Exception {
+        if (safe(value).isEmpty()) {
             return "";
         }
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, webDavSecretKey());
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey(alias));
         byte[] encrypted = cipher.doFinal(
-                password.getBytes(StandardCharsets.UTF_8));
+                value.getBytes(StandardCharsets.UTF_8));
         byte[] iv = cipher.getIV();
         byte[] packed = new byte[1 + iv.length + encrypted.length];
         packed[0] = (byte) iv.length;
@@ -4483,7 +4842,7 @@ public class MainActivity extends Activity {
         return Base64.encodeToString(packed, Base64.NO_WRAP);
     }
 
-    private String decryptWebDavPassword(String encoded) {
+    private String decryptSecret(String alias, String encoded) {
         if (safe(encoded).isEmpty()) {
             return "";
         }
@@ -4498,7 +4857,7 @@ public class MainActivity extends Activity {
             System.arraycopy(packed, 1, iv, 0, ivLength);
             System.arraycopy(packed, 1 + ivLength, encrypted, 0, encrypted.length);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, webDavSecretKey(),
+            cipher.init(Cipher.DECRYPT_MODE, secretKey(alias),
                     new GCMParameterSpec(128, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (Exception ignored) {
@@ -4506,21 +4865,21 @@ public class MainActivity extends Activity {
         }
     }
 
-    private SecretKey webDavSecretKey() throws Exception {
+    private SecretKey secretKey(String alias) throws Exception {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
-        if (!keyStore.containsAlias(WEBDAV_KEY_ALIAS)) {
+        if (!keyStore.containsAlias(alias)) {
             KeyGenerator generator = KeyGenerator.getInstance(
                     KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
             generator.init(new KeyGenParameterSpec.Builder(
-                    WEBDAV_KEY_ALIAS,
+                    alias,
                     KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .build());
             generator.generateKey();
         }
-        return (SecretKey) keyStore.getKey(WEBDAV_KEY_ALIAS, null);
+        return (SecretKey) keyStore.getKey(alias, null);
     }
 
     private void startDataImport(Uri uri) {
@@ -5613,6 +5972,18 @@ public class MainActivity extends Activity {
         return value == null ? "" : value;
     }
 
+    private static int mapInt(Map<String, Integer> values,
+                              String key, int fallback) {
+        Integer value = values.get(key);
+        return value == null ? fallback : value;
+    }
+
+    private static long mapLong(Map<String, Long> values,
+                                String key, long fallback) {
+        Long value = values.get(key);
+        return value == null ? fallback : value;
+    }
+
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
@@ -6069,6 +6440,29 @@ public class MainActivity extends Activity {
             this.skipped = skipped;
             this.sources = sources;
         }
+    }
+
+    private static class NetworkIngestResult {
+        final boolean inserted;
+        final int floors;
+        final int skipped;
+
+        NetworkIngestResult(boolean inserted, int floors, int skipped) {
+            this.inserted = inserted;
+            this.floors = floors;
+            this.skipped = skipped;
+        }
+    }
+
+    private static class NetworkImportStats {
+        int added;
+        int floors;
+        int skipped;
+        int failed;
+        final Map<String, Integer> addedByForum = new HashMap<>();
+        final Map<String, Integer> floorsByForum = new HashMap<>();
+        final Map<String, Integer> skippedByForum = new HashMap<>();
+        final Map<String, Integer> failedByForum = new HashMap<>();
     }
 
     private static class WebDavConfig {
