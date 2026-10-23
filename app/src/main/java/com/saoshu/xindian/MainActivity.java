@@ -98,7 +98,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 public class MainActivity extends Activity {
-    private static final int DB_VERSION = 14;
+    private static final int DB_VERSION = 15;
     private static final int REQUEST_EXPORT_DATA = 2201;
     private static final int REQUEST_IMPORT_DATA = 2202;
     private static final int REQUEST_EXPORT_SINGLE = 2203;
@@ -829,6 +829,11 @@ public class MainActivity extends Activity {
         switchTab(TAB_SEARCH);
     }
 
+    private void leaveSearchPage() {
+        discardSearchPage();
+        switchTab(searchBackTab);
+    }
+
     private void resetSearchInput() {
         searchQuery = "";
         if (pendingSearch != null) {
@@ -910,7 +915,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.35", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.36", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -1098,7 +1103,7 @@ public class MainActivity extends Activity {
         header.setBackground(titleGradient(0));
         LinearLayout titleRow = row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        Button back = toolbarBackButton(() -> switchTab(searchBackTab));
+        Button back = toolbarBackButton(this::leaveSearchPage);
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
         TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
@@ -6433,7 +6438,7 @@ public class MainActivity extends Activity {
         } else if (detailOpen) {
             returnFromDetail();
         } else if (currentTab == TAB_SEARCH) {
-            switchTab(searchBackTab);
+            leaveSearchPage();
         } else if (currentTab != TAB_HOME) {
             switchTab(TAB_HOME);
         } else {
