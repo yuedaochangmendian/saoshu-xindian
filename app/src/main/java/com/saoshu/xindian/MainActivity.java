@@ -182,6 +182,8 @@ public class MainActivity extends Activity {
     private int glossaryReturnTop;
     private int searchBackTab = TAB_HOME;
     private ScrollView homeScroll;
+    private final List<Document> homeRandomDocuments = new ArrayList<>();
+    private final AtomicInteger homeRandomVersion = new AtomicInteger();
     private ScrollView collectionScroll;
     private int restorePageTab = -1;
     private int restoreScrollY;
@@ -808,9 +810,9 @@ public class MainActivity extends Activity {
     }
 
     private void openSearchPage() {
-        resetSearchInput();
         if (currentTab != TAB_SEARCH) {
             searchBackTab = currentTab;
+            resetSearchInput();
         }
         switchTab(TAB_SEARCH);
     }
@@ -878,7 +880,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.33", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.34", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -913,22 +915,150 @@ public class MainActivity extends Activity {
         searchCard.setOnClickListener(v -> openSearchPage());
         addWithTop(page, searchCard, 10);
 
-        page.addView(sectionTitle("最近扫书", "查看全部", v -> {
-            openSearchPage();
+        LinearLayout randomSection = column();
+        page.addView(sectionTitle("随机扫书 · 推书 · 避雷", "换一批", v -> {
+            loadHomeRandomDocuments(true, randomSection);
         }));
-        List<Document> recent = queryDocuments(
-                "SELECT d.* FROM documents d WHERE d.published_at<>'' " +
-                        "AND d.id NOT IN (SELECT document_id FROM local_deleted) " +
-                        "ORDER BY d.published_at DESC,d.id DESC LIMIT 20", new String[]{});
-        for (Document document : recent) {
-            addWithTop(page, documentCard(document, 120, false), 8);
-        }
+        page.addView(randomSection);
+        loadHomeRandomDocuments(false, randomSection);
         restoreScrollPositionIfNeeded(scroll, TAB_HOME);
         return scroll;
     }
 
+    private void loadHomeRandomDocuments(boolean force, LinearLayout container) {
+        if (!force && !homeRandomDocuments.isEmpty()) {
+            renderHomeRandomDocuments(container);
+            return;
+        }
+        final int version = homeRandomVersion.incrementAndGet();
+        container.removeAllViews();
+        TextView loading = text("正在随机挑选…", 13, MUTED, Typeface.NORMAL);
+        loading.setPadding(0, dp(10), 0, dp(10));
+        container.addView(loading);
+        executor.execute(() -> {
+            try {
+                List<Document> random = queryRandomHomeDocuments();
+                mainHandler.post(() -> {
+                    if (version != homeRandomVersion.get()
+                            || currentTab != TAB_HOME || detailOpen) {
+                        return;
+                    }
+                    homeRandomDocuments.clear();
+                    homeRandomDocuments.addAll(random);
+                    renderHomeRandomDocuments(container);
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    if (version != homeRandomVersion.get()
+                            || currentTab != TAB_HOME || detailOpen) {
+                        return;
+                    }
+                    container.removeAllViews();
+                    TextView empty = text("随机内容加载失败，点击“换一批”重试",
+                            13, MUTED, Typeface.NORMAL);
+                    empty.setPadding(0, dp(10), 0, dp(10));
+                    container.addView(empty);
+                });
+            }
+        });
+    }
+
+    private List<Document> queryRandomHomeDocuments() {
+        List<Long> scanIds = new ArrayList<>();
+        List<Long> recommendIds = new ArrayList<>();
+        List<Long> warningIds = new ArrayList<>();
+        try (Cursor cursor = db.rawQuery(
+                "SELECT id,category FROM documents d " +
+                        "WHERE d.category IN ('扫书','推书','排雷') " +
+                        "AND length(d.content)>=20 " +
+                        "AND d.id NOT IN (SELECT document_id FROM local_deleted) " +
+                        "ORDER BY RANDOM() LIMIT 600", null)) {
+            while (cursor.moveToNext()) {
+                long id = cursor.getLong(0);
+                String category = safe(cursor.getString(1));
+                if ("推书".equals(category)) {
+                    recommendIds.add(id);
+                } else if ("排雷".equals(category)) {
+                    warningIds.add(id);
+                } else if ("扫书".equals(category)) {
+                    scanIds.add(id);
+                }
+            }
+        }
+
+        List<Long> selectedIds = new ArrayList<>();
+        appendRandomIds(selectedIds, scanIds, 8);
+        appendRandomIds(selectedIds, recommendIds, 6);
+        appendRandomIds(selectedIds, warningIds, 6);
+        for (int index = 0; selectedIds.size() < 20
+                && (index < scanIds.size() || index < recommendIds.size()
+                || index < warningIds.size()); index++) {
+            if (index < scanIds.size() && !selectedIds.contains(scanIds.get(index))) {
+                selectedIds.add(scanIds.get(index));
+            }
+            if (selectedIds.size() < 20 && index < recommendIds.size()
+                    && !selectedIds.contains(recommendIds.get(index))) {
+                selectedIds.add(recommendIds.get(index));
+            }
+            if (selectedIds.size() < 20 && index < warningIds.size()
+                    && !selectedIds.contains(warningIds.get(index))) {
+                selectedIds.add(warningIds.get(index));
+            }
+        }
+        if (selectedIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        StringBuilder placeholders = new StringBuilder();
+        String[] args = new String[selectedIds.size()];
+        for (int i = 0; i < selectedIds.size(); i++) {
+            if (i > 0) {
+                placeholders.append(',');
+            }
+            placeholders.append('?');
+            args[i] = String.valueOf(selectedIds.get(i));
+        }
+        List<Document> loaded = queryDocuments(
+                "SELECT * FROM documents WHERE id IN (" + placeholders + ") " +
+                        "AND id NOT IN (SELECT document_id FROM local_deleted)",
+                args);
+        Map<Long, Document> byId = new HashMap<>();
+        for (Document document : loaded) {
+            byId.put(document.id, document);
+        }
+        List<Document> selected = new ArrayList<>();
+        for (long id : selectedIds) {
+            Document document = byId.get(id);
+            if (document != null) {
+                selected.add(document);
+            }
+        }
+        Collections.shuffle(selected);
+        return selected;
+    }
+
+    private static void appendRandomIds(List<Long> selected,
+                                        List<Long> candidates, int limit) {
+        int added = 0;
+        for (long id : candidates) {
+            if (added >= limit) {
+                return;
+            }
+            if (!selected.contains(id)) {
+                selected.add(id);
+                added++;
+            }
+        }
+    }
+
+    private void renderHomeRandomDocuments(LinearLayout container) {
+        container.removeAllViews();
+        for (Document document : homeRandomDocuments) {
+            addWithTop(container, documentCard(document, 120, false), 8);
+        }
+    }
+
     private View buildSearch() {
-        resetSearchInput();
         LinearLayout page = column();
         page.setBackgroundColor(BG);
 
@@ -5276,6 +5406,8 @@ public class MainActivity extends Activity {
                             mainHandler.post(() -> {
                                 dataBusy = false;
                                 if (removed) {
+                                    homeRandomVersion.incrementAndGet();
+                                    homeRandomDocuments.clear();
                                     toast("已从本地资料库删除");
                                     switchTab(detailBackTab);
                                 } else {
