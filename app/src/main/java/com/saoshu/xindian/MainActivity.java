@@ -241,8 +241,8 @@ public class MainActivity extends Activity {
 
     private void applyActivityTheme() {
         setTheme(isSystemDarkMode()
-                ? android.R.style.Theme_Material_NoActionBar
-                : android.R.style.Theme_Material_Light_NoActionBar);
+                ? R.style.Theme_Saoshu_Dark
+                : R.style.Theme_Saoshu_Light);
     }
 
     private boolean isSystemDarkMode() {
@@ -878,7 +878,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.31", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.32", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2417,20 +2417,13 @@ public class MainActivity extends Activity {
         hapticParams.setMargins(dp(16), dp(10), dp(16), 0);
         page.addView(hapticCard, hapticParams);
 
-        TextView section = text("扫书数据", 17, TEXT, Typeface.BOLD);
+        TextView section = text("备份、导入与恢复", 17, TEXT, Typeface.BOLD);
         section.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(section);
 
-        LinearLayout scanDataCard = multiActionCard(
-                "导入与导出",
-                "导出全部扫书，或从 JSONL 文件、剪切板导入。导入内容会自动去重。",
-                new String[]{"导出全部", "文件导入", "剪切板"},
-                new View.OnClickListener[]{
-                        v -> requestDataExport(),
-                        v -> requestDataImport(),
-                        v -> importFromClipboard()
-                });
-        addWithTop(page, scanDataCard, 8);
+        WebDavConfig webDav = loadWebDavConfig();
+        LinearLayout backupCard = buildUserBackupCard(webDav);
+        addWithTop(page, backupCard, 8);
 
         int deleted = (int) localDeletedCount();
         LinearLayout restoreCard = dataActionCard(
@@ -2443,14 +2436,6 @@ public class MainActivity extends Activity {
             setChildrenEnabled(restoreCard, false);
         }
         addWithTop(page, restoreCard, 8);
-
-        TextView userSection = text("备份与云同步", 17, TEXT, Typeface.BOLD);
-        userSection.setPadding(dp(14), dp(12), dp(14), dp(2));
-        page.addView(userSection);
-
-        WebDavConfig webDav = loadWebDavConfig();
-        LinearLayout backupCard = buildUserBackupCard(webDav);
-        addWithTop(page, backupCard, 8);
 
         TextView updateSection = text("应用更新", 17, TEXT, Typeface.BOLD);
         updateSection.setPadding(dp(14), dp(12), dp(14), dp(2));
@@ -3493,73 +3478,104 @@ public class MainActivity extends Activity {
 
     private LinearLayout buildUserBackupCard(WebDavConfig webDav) {
         LinearLayout card = column();
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(CARD, 14));
-        card.setElevation(dp(1));
+        card.setPadding(dp(16), dp(15), dp(16), dp(14));
+        card.setBackground(round(CARD, 16));
+        card.setElevation(dp(2));
 
-        TextView heading = text("收藏、简记、设置与连接", 16, TEXT, Typeface.BOLD);
+        TextView heading = text("统一备份与恢复", 17, TEXT, Typeface.BOLD);
         card.addView(heading);
-        TextView body = text("本地文件和 WebDAV 使用同一份备份，包含收藏、简记、搜索记录、"
-                        + "主题、震动设置与 WebDAV 连接配置，不包含离线正文数据库。"
-                        + "备份文件会保存 WebDAV 登录信息，请妥善保管。",
-                11, MUTED, Typeface.NORMAL);
+        TextView body = text("完整书库、用户数据和 WebDAV 统一从这里操作。"
+                        + "用户备份含收藏、简记、搜索记录、设置和 WebDAV 登录信息。",
+                12, MUTED, Typeface.NORMAL);
         body.setLineSpacing(0, 1.3f);
-        addWithTop(card, body, 5);
+        addWithTop(card, body, 6);
 
-        TextView localLabel = text("本地文件", 12, TEXT, Typeface.BOLD);
-        localLabel.setPadding(0, dp(11), 0, 0);
-        card.addView(localLabel);
-        LinearLayout localActions = row();
-        localActions.setPadding(0, dp(6), 0, 0);
-        addBackupActions(localActions,
-                new String[]{"导出备份", "恢复备份"},
-                new View.OnClickListener[]{
-                        v -> requestUserBackupExport(),
-                        v -> requestUserBackupImport()
-                });
-        card.addView(localActions);
-
-        View divider = new View(this);
-        divider.setBackgroundColor(LINE);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
-        dividerParams.topMargin = dp(11);
-        card.addView(divider, dividerParams);
-
-        TextView cloudLabel = text("WebDAV", 12, TEXT, Typeface.BOLD);
-        cloudLabel.setPadding(0, dp(10), 0, 0);
-        card.addView(cloudLabel);
-        TextView target = text(webDav == null
-                        ? "尚未配置。可连接 NAS 或支持 WebDAV 的网盘。"
-                        : "目标：" + webDav.displayTarget(),
+        TextView stats = text(formatCompact(localDocumentCount()) + " 条内容 · " +
+                        formatCompact(visibleSourceCount()) + " 条来源",
                 10, MUTED, Typeface.NORMAL);
-        target.setLineSpacing(0, 1.25f);
-        addWithTop(card, target, 4);
-        LinearLayout cloudActions = row();
-        cloudActions.setPadding(0, dp(6), 0, 0);
-        addBackupActions(cloudActions,
-                new String[]{"连接设置", "上传云端", "云端恢复"},
-                new View.OnClickListener[]{
-                        v -> showWebDavSettings(),
-                        v -> confirmWebDavBackup(),
-                        v -> confirmWebDavRestore()
-                });
-        card.addView(cloudActions);
+        addWithTop(card, stats, 7);
+        TextView webDavStatus = text(webDav == null
+                        ? "WebDAV：未配置"
+                        : "WebDAV：" + webDav.displayTarget(),
+                10, webDav == null ? MUTED : TEAL_DARK, Typeface.NORMAL);
+        webDavStatus.setSingleLine(true);
+        webDavStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        addWithTop(card, webDavStatus, 4);
+
+        LinearLayout actions = row();
+        actions.setPadding(0, dp(12), 0, 0);
+        TextView backup = actionButton("备份", TEAL_PALE, TEAL_DARK);
+        backup.setTextSize(14);
+        backup.setOnClickListener(dataBusy
+                ? v -> toast("请等待当前操作完成")
+                : v -> showBackupTypeDialog());
+        TextView restore = actionButton("恢复", PINK_PALE, PINK_DARK);
+        restore.setTextSize(14);
+        restore.setOnClickListener(dataBusy
+                ? v -> toast("请等待当前操作完成")
+                : v -> showRestoreTypeDialog());
+        actions.addView(backup, weightedAction());
+        actions.addView(restore, weightedAction());
+        card.addView(actions);
         return card;
     }
 
-    private void addBackupActions(LinearLayout actions, String[] labels,
-                                  View.OnClickListener[] listeners) {
-        for (int i = 0; i < labels.length; i++) {
-            TextView button = actionButton(labels[i], TEAL_PALE, TEAL_DARK);
-            button.setTextSize(12);
-            button.setOnClickListener(dataBusy
-                    ? v -> toast("请等待当前操作完成") : listeners[i]);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            params.setMargins(i == 0 ? 0 : dp(4), 0, 0, 0);
-            actions.addView(button, params);
-        }
+    private void showBackupTypeDialog() {
+        String[] labels = {
+                "完整书库导出（JSONL）",
+                "用户数据本地备份（JSON）",
+                "WebDAV 云备份",
+                "WebDAV 连接设置"
+        };
+        showRoundedItemsDialog("选择备份方式", labels, which -> {
+            if (which == 0) {
+                requestDataExport();
+            } else if (which == 1) {
+                requestUserBackupExport();
+            } else if (which == 2) {
+                confirmWebDavBackup();
+            } else {
+                showWebDavSettings();
+            }
+        });
+    }
+
+    private void showRestoreTypeDialog() {
+        String[] labels = {
+                "完整书库导入（JSONL）",
+                "用户数据本地恢复（JSON）",
+                "WebDAV 云恢复",
+                "从剪切板导入扫书",
+                "WebDAV 连接设置"
+        };
+        showRoundedItemsDialog("选择恢复方式", labels, which -> {
+            if (which == 0) {
+                requestDataImport();
+            } else if (which == 1) {
+                requestUserBackupImport();
+            } else if (which == 2) {
+                confirmWebDavRestore();
+            } else if (which == 3) {
+                importFromClipboard();
+            } else {
+                showWebDavSettings();
+            }
+        });
+    }
+
+    private void showRoundedItemsDialog(String title, String[] items,
+                                        ChoiceAction listener) {
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(items, (choiceDialog, which) ->
+                        listener.onChoice(which))
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.show();
+    }
+
+    private interface ChoiceAction {
+        void onChoice(int which);
     }
 
     private void setChildrenEnabled(ViewGroup root, boolean enabled) {

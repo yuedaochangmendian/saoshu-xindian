@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dialog_surface_light">#FFFFFFFF</color>
+    <color name="dialog_outline_light">#FFD9D9D9</color>
+    <color name="dialog_surface_dark">#FF2D2D2D</color>
+    <color name="dialog_outline_dark">#FF404040</color>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Saoshu.Light" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:alertDialogTheme">@style/Theme.Saoshu.Dialog.Light</item>
+        <item name="android:colorAccent">#FF3482FF</item>
+    </style>
+
+    <style name="Theme.Saoshu.Dark" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:alertDialogTheme">@style/Theme.Saoshu.Dialog.Dark</item>
+        <item name="android:colorAccent">#FF277AF7</item>
+    </style>
+
+    <style name="Theme.Saoshu.Dialog.Light" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_light</item>
+        <item name="android:colorAccent">#FF3482FF</item>
+        <item name="android:windowMinWidthMajor">86%</item>
+        <item name="android:windowMinWidthMinor">92%</item>
+        <item name="android:backgroundDimAmount">0.42</item>
+        <item name="android:windowNoTitle">false</item>
+    </style>
+
+    <style name="Theme.Saoshu.Dialog.Dark" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_dark</item>
+        <item name="android:colorAccent">#FF277AF7</item>
+        <item name="android:windowMinWidthMajor">86%</item>
+        <item name="android:windowMinWidthMinor">92%</item>
+        <item name="android:backgroundDimAmount">0.58</item>
+        <item name="android:windowNoTitle">false</item>
+    </style>
+</resources>
