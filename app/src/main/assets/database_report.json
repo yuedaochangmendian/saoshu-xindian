@@ -1,20 +1,20 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 99094528,
+  "bytes": 232083456,
   "integrity": "ok",
-  "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取",
+  "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取；优书网；BookSift",
   "data_cutoff": "2026-10-23",
-  "documents": 43566,
-  "books": 24988,
-  "source_rows": 43571,
+  "documents": 82999,
+  "books": 29298,
+  "source_rows": 106521,
   "extract_metadata": 2538,
   "categories": {
-    "扫书": 38826,
-    "书评": 2400,
-    "排雷": 1139,
-    "推书": 821,
+    "扫书": 53696,
+    "书评": 14453,
+    "排雷": 12225,
+    "推书": 1993,
     "讨论": 311,
-    "求书": 63,
+    "求书": 315,
     "卷首": 6
   },
   "xlsx_merge": {
@@ -32,5 +32,16 @@
     "backup": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\saoshu_before_xlsx_merge_20261023.db",
     "source_file": "C:\\Users\\ljlgg\\OneDrive\\Desktop\\贴吧扫书推书避雷_新增提取.xlsx"
   },
-  "storage_mode": "deduplicated App compatibility schema"
+  "external_merge": {
+    "yousuu_comments_seen": 350443,
+    "yousuu_comments_included": 119014,
+    "yousuu_books_imported": 12143,
+    "yousuu_metadata_imported": 3359,
+    "yousuu_books_filtered": 47680,
+    "booksift_content_groups": 40672,
+    "booksift_documents_imported": 23931,
+    "booksift_documents_merged": 16741,
+    "booksift_source_rows": 47448
+  },
+  "storage_mode": "curated external merge with deduplicated App compatibility schema"
 }
