@@ -87,6 +87,7 @@ import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -193,6 +194,12 @@ public class MainActivity extends Activity {
     private String bookQuery = "";
     private boolean dataBusy = false;
     private TextView dataStatus;
+    private final AtomicBoolean networkCollectRunning = new AtomicBoolean(false);
+    private TiebaCollector activeNetworkCollector;
+    private TextView networkCollectorStatus;
+    private TextView networkCollectorLog;
+    private TextView networkCollectorStart;
+    private TextView networkCollectorStop;
 
     private static final Pattern QUERY_CHUNKS =
             Pattern.compile("[a-z0-9]+|[\\u4e00-\\u9fff]+", Pattern.CASE_INSENSITIVE);
@@ -407,6 +414,44 @@ public class MainActivity extends Activity {
                 "deleted_at TEXT)");
         db.execSQL("CREATE INDEX IF NOT EXISTS user_notes_updated_idx " +
                 "ON user_notes(updated_at DESC)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS collector_forums (" +
+                "fname TEXT PRIMARY KEY," +
+                "fid INTEGER NOT NULL DEFAULT 0," +
+                "enabled INTEGER NOT NULL DEFAULT 1," +
+                "last_thread_time INTEGER NOT NULL DEFAULT 0," +
+                "last_tid INTEGER NOT NULL DEFAULT 0," +
+                "last_run_at TEXT," +
+                "last_status TEXT NOT NULL DEFAULT 'never'," +
+                "last_error TEXT," +
+                "consecutive_failures INTEGER NOT NULL DEFAULT 0," +
+                "cooldown_until INTEGER NOT NULL DEFAULT 0," +
+                "total_threads INTEGER NOT NULL DEFAULT 0," +
+                "total_floors INTEGER NOT NULL DEFAULT 0)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS collector_logs (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "fname TEXT NOT NULL," +
+                "run_at TEXT NOT NULL," +
+                "status TEXT NOT NULL," +
+                "threads_added INTEGER NOT NULL DEFAULT 0," +
+                "floors_added INTEGER NOT NULL DEFAULT 0," +
+                "skipped_dup INTEGER NOT NULL DEFAULT 0," +
+                "detail TEXT)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS network_threads (" +
+                "document_id INTEGER PRIMARY KEY," +
+                "tid INTEGER NOT NULL UNIQUE," +
+                "forum TEXT NOT NULL," +
+                "reply_count INTEGER NOT NULL DEFAULT 0," +
+                "view_count INTEGER NOT NULL DEFAULT 0," +
+                "agree_max INTEGER NOT NULL DEFAULT 0," +
+                "collected_at TEXT NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS network_threads_forum_idx " +
+                "ON network_threads(forum,collected_at DESC)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS collector_logs_run_idx " +
+                "ON collector_logs(run_at DESC)");
+        db.execSQL("INSERT OR IGNORE INTO collector_forums(fname,enabled) " +
+                "VALUES('yy小说吧',1)");
+        db.execSQL("INSERT OR IGNORE INTO collector_forums(fname,enabled) " +
+                "VALUES('哀伤雪刃',1)");
         Cursor cursor = db.rawQuery("SELECT 1 FROM sqlite_master " +
                 "WHERE type='table' AND name='search_idx' LIMIT 1", null);
         boolean hasSearchIndex;
@@ -796,7 +841,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.26", 11, MUTED, Typeface.BOLD);
+        TextView edition = text("v3.27", 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -2265,6 +2310,11 @@ public class MainActivity extends Activity {
         }
         addWithTop(page, restoreCard, 8);
 
+        TextView networkSection = text("网络增量采集", 17, TEXT, Typeface.BOLD);
+        networkSection.setPadding(dp(14), dp(12), dp(14), dp(2));
+        page.addView(networkSection);
+        addWithTop(page, buildNetworkCollectorCard(), 8);
+
         TextView userSection = text("备份与云同步", 17, TEXT, Typeface.BOLD);
         userSection.setPadding(dp(14), dp(12), dp(14), dp(2));
         page.addView(userSection);
@@ -2414,6 +2464,447 @@ public class MainActivity extends Activity {
         }
         card.addView(actions);
         return card;
+    }
+
+    private LinearLayout buildNetworkCollectorCard() {
+        LinearLayout card = column();
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(CARD, 14));
+        card.setElevation(dp(1));
+
+        TextView heading = text("贴吧增量采集", 16, TEXT, Typeface.BOLD);
+        card.addView(heading);
+        TextView body = text("使用匿名 protobuf 通道读取两个关注吧的新帖。"
+                        + "请求间隔 1.5–3 秒，每日预算 300 次；只抓取水位之后的新帖，"
+                        + "正文和来源会自动去重。",
+                11, MUTED, Typeface.NORMAL);
+        body.setLineSpacing(0, 1.3f);
+        addWithTop(card, body, 5);
+
+        LinearLayout forumRow = row();
+        forumRow.setGravity(Gravity.CENTER_VERTICAL);
+        forumRow.setPadding(0, dp(8), 0, 0);
+        forumRow.addView(collectorForumSwitch("yy小说吧", "yy小说吧"),
+                weightedAction());
+        forumRow.addView(collectorForumSwitch("哀伤雪刃", "哀伤雪刃"),
+                weightedAction());
+        card.addView(forumRow);
+
+        networkCollectorStatus = text(networkCollectRunning.get()
+                        ? "网络采集正在运行，完成后会更新水位和统计。"
+                        : networkCollectorSummary(),
+                11, TEXT, Typeface.NORMAL);
+        networkCollectorStatus.setLineSpacing(0, 1.3f);
+        addWithTop(card, networkCollectorStatus, 9);
+
+        LinearLayout actions = row();
+        actions.setPadding(0, dp(8), 0, 0);
+        networkCollectorStart = actionButton("开始采集",
+                TEAL_PALE, TEAL_DARK);
+        networkCollectorStart.setOnClickListener(v -> startNetworkCollection());
+        networkCollectorStop = actionButton("停止",
+                PINK_PALE, PINK_DARK);
+        networkCollectorStop.setOnClickListener(v -> stopNetworkCollection());
+        actions.addView(networkCollectorStart, weightedAction());
+        actions.addView(networkCollectorStop, weightedAction());
+        card.addView(actions);
+        updateNetworkCollectorButtons();
+
+        TextView clearCooldown = text("清除失败冷却", 11, TEAL_DARK,
+                Typeface.BOLD);
+        clearCooldown.setPadding(dp(7), dp(6), dp(7), dp(6));
+        clearCooldown.setOnClickListener(v -> clearNetworkCooldowns());
+        addWithTop(card, clearCooldown, 5);
+
+        networkCollectorLog = text(networkCollectRunning.get()
+                        ? "采集进行中；离开本页后仍会继续运行。"
+                        : networkCollectorRecentLogs(),
+                10, MUTED, Typeface.NORMAL);
+        networkCollectorLog.setLineSpacing(0, 1.3f);
+        networkCollectorLog.setTextIsSelectable(true);
+        addWithTop(card, networkCollectorLog, 7);
+        return card;
+    }
+
+    private LinearLayout collectorForumSwitch(String fname, String label) {
+        LinearLayout box = row();
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(7), dp(3), dp(4), dp(3));
+        TextView name = text(label, 11, TEXT, Typeface.BOLD);
+        box.addView(name, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Switch toggle = new Switch(this);
+        boolean checked = true;
+        try (Cursor cursor = db.rawQuery(
+                "SELECT enabled FROM collector_forums WHERE fname=?",
+                new String[]{fname})) {
+            if (cursor.moveToFirst()) {
+                checked = cursor.getInt(0) != 0;
+            }
+        }
+        toggle.setChecked(checked);
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        toggle.setThumbTintList(new ColorStateList(
+                states, new int[]{Color.WHITE, Color.WHITE}));
+        toggle.setTrackTintList(new ColorStateList(
+                states, new int[]{TEAL, LINE}));
+        toggle.setOnCheckedChangeListener((button, isChecked) ->
+                db.execSQL("UPDATE collector_forums SET enabled=? WHERE fname=?",
+                        new Object[]{isChecked ? 1 : 0, fname}));
+        box.addView(toggle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
+        return box;
+    }
+
+    private String networkCollectorSummary() {
+        StringBuilder result = new StringBuilder();
+        try (Cursor cursor = db.rawQuery(
+                "SELECT fname,last_thread_time,total_threads,total_floors," +
+                        "last_status,cooldown_until FROM collector_forums ORDER BY rowid", null)) {
+            while (cursor.moveToNext()) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                String fname = cursor.getString(0);
+                long watermark = cursor.getLong(1);
+                result.append(fname).append("：已采 ")
+                        .append(cursor.getLong(2)).append(" 帖 / ")
+                        .append(cursor.getLong(3)).append(" 楼");
+                if (watermark > 0) {
+                    result.append(" · 水位 ").append(formatCollectorTime(watermark));
+                } else {
+                    result.append(" · 冷启动");
+                }
+                long cooldown = cursor.getLong(5);
+                if (cooldown > System.currentTimeMillis()) {
+                    result.append(" · 冷却至 ")
+                            .append(formatCollectorTime(cooldown / 1000L));
+                } else if (!"never".equals(cursor.getString(4))) {
+                    result.append(" · ").append(cursor.getString(4));
+                }
+            }
+        }
+        return result.length() == 0 ? "尚未初始化采集状态" : result.toString();
+    }
+
+    private String networkCollectorRecentLogs() {
+        StringBuilder result = new StringBuilder();
+        try (Cursor cursor = db.rawQuery(
+                "SELECT fname,status,threads_added,floors_added,detail " +
+                        "FROM collector_logs ORDER BY id DESC LIMIT 3", null)) {
+            while (cursor.moveToNext()) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                result.append(cursor.getString(0)).append(" · ")
+                        .append(cursor.getString(1)).append(" · +")
+                        .append(cursor.getInt(2)).append(" 帖 +")
+                        .append(cursor.getInt(3)).append(" 楼");
+                String detail = safe(cursor.getString(4));
+                if (!detail.isEmpty()) {
+                    result.append("\n").append(previewText(detail, 120));
+                }
+            }
+        }
+        return result.length() == 0 ? "尚无采集日志" : result.toString();
+    }
+
+    private String formatCollectorTime(long epochSeconds) {
+        long millis = epochSeconds < 10_000_000_000L
+                ? epochSeconds * 1000L : epochSeconds;
+        SimpleDateFormat format = new SimpleDateFormat(
+                "MM-dd HH:mm", Locale.CHINA);
+        format.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+        return format.format(new Date(millis));
+    }
+
+    private void updateNetworkCollectorButtons() {
+        boolean running = networkCollectRunning.get();
+        if (networkCollectorStart != null) {
+            networkCollectorStart.setEnabled(!running);
+            networkCollectorStart.setAlpha(running ? 0.45f : 1f);
+        }
+        if (networkCollectorStop != null) {
+            networkCollectorStop.setEnabled(running);
+            networkCollectorStop.setAlpha(running ? 1f : 0.45f);
+        }
+    }
+
+    private void startNetworkCollection() {
+        if (db == null || !db.isOpen() || dataBusy
+                || !networkCollectRunning.compareAndSet(false, true)) {
+            if (networkCollectRunning.get()) {
+                toast("网络采集正在运行");
+            }
+            return;
+        }
+        dataBusy = true;
+        updateNetworkCollectorButtons();
+        if (networkCollectorStatus != null) {
+            networkCollectorStatus.setText("正在启动贴吧增量采集…");
+        }
+        if (networkCollectorLog != null) {
+            networkCollectorLog.setText("等待网络响应…");
+        }
+        activeNetworkCollector = new TiebaCollector(
+                db, preferences,
+                new TiebaCollector.Listener() {
+                    @Override
+                    public void onStatus(String message, int progress) {
+                        mainHandler.post(() -> {
+                            if (networkCollectorStatus != null) {
+                                networkCollectorStatus.setText(
+                                        message + "\n总进度 " + Math.max(0,
+                                                Math.min(100, progress)) + "%");
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onLog(String fname, String event, String detail) {
+                        mainHandler.post(() -> {
+                            if (networkCollectorLog != null) {
+                                networkCollectorLog.setText(fname + " · " + event +
+                                        " · " + detail + "\n" +
+                                        safe(networkCollectorLog.getText().toString()));
+                            }
+                        });
+                    }
+                },
+                this::ingestNetworkThread);
+        executor.execute(() -> {
+            try {
+                TiebaCollector.Result result = activeNetworkCollector.collect();
+                String message = "网络采集完成：新增 " + result.threadsAdded +
+                        " 帖，更新 " + result.threadsUpdated + " 帖，楼层 " +
+                        result.floorsAdded + "，请求 " + result.requests + " 次" +
+                        (result.failedForums > 0
+                                ? "；失败贴吧 " + result.failedForums + " 个。" : "。");
+                mainHandler.post(() -> finishNetworkCollection(message, false));
+            } catch (Exception error) {
+                String message = readableError(error);
+                if (message.contains("Canceled") || message.contains("已停止")) {
+                    message = "网络采集已停止";
+                } else if (message.contains("Budget") || message.contains("预算")) {
+                    message = "今日贴吧请求预算已用完";
+                } else {
+                    message = "网络采集结束：" + message;
+                }
+                String finalMessage = message;
+                mainHandler.post(() -> finishNetworkCollection(finalMessage, true));
+            }
+        });
+    }
+
+    private void stopNetworkCollection() {
+        TiebaCollector collector = activeNetworkCollector;
+        if (collector == null || !networkCollectRunning.get()) {
+            toast("当前没有运行中的采集");
+            return;
+        }
+        collector.cancel();
+        if (networkCollectorStatus != null) {
+            networkCollectorStatus.setText("正在停止采集，等待当前请求结束…");
+        }
+    }
+
+    private void finishNetworkCollection(String message, boolean error) {
+        networkCollectRunning.set(false);
+        activeNetworkCollector = null;
+        dataBusy = false;
+        preferences.edit().putString("last_data_message", message).apply();
+        if (networkCollectorStatus != null) {
+            networkCollectorStatus.setText(networkCollectorSummary());
+        }
+        if (networkCollectorLog != null) {
+            networkCollectorLog.setText(networkCollectorRecentLogs());
+        }
+        updateNetworkCollectorButtons();
+        if (currentTab == TAB_DATA && !detailOpen) {
+            switchTab(TAB_DATA);
+        } else {
+            toast(message);
+        }
+        if (error && !message.contains("已停止")) {
+            toast(message);
+        }
+    }
+
+    private void clearNetworkCooldowns() {
+        db.execSQL("UPDATE collector_forums SET cooldown_until=0," +
+                "consecutive_failures=0,last_status='never',last_error=NULL");
+        preferences.edit().putString("last_data_message",
+                "已清除网络采集失败冷却。").apply();
+        switchTab(TAB_DATA);
+        toast("已清除采集冷却");
+    }
+
+    private TiebaCollector.IngestResult ingestNetworkThread(
+            TiebaCollector.CollectedThread thread) {
+        String combined = thread.combinedText();
+        if (compact(combined).length() < 20) {
+            return new TiebaCollector.IngestResult(false, 0, 1);
+        }
+        String sourceUrl = "https://tieba.baidu.com/p/" + thread.tid;
+        String sourceRef = String.valueOf(thread.tid);
+        try (Cursor cursor = db.rawQuery(
+                "SELECT document_id FROM document_sources WHERE source_kind=? " +
+                        "AND source_ref=? LIMIT 1",
+                new String[]{TiebaCollector.SOURCE_KIND, sourceRef})) {
+            if (cursor.moveToFirst()) {
+                return new TiebaCollector.IngestResult(false, 0, 1);
+            }
+        }
+
+        String title = cleanDisplayTitle(thread.title);
+        LinkedHashSet<String> books = extractNetworkBooks(
+                safe(thread.title) + "\n" + combined);
+        String category = classifyNetworkPost(thread.title, combined);
+        if (books.isEmpty()) {
+            String candidate = networkTitleBookCandidate(title);
+            if (!candidate.isEmpty()) {
+                books.add(candidate);
+            }
+        }
+        if (books.isEmpty()) {
+            return new TiebaCollector.IngestResult(false, 0, 1);
+        }
+        title = books.iterator().next();
+        if (title.isEmpty() || "未命名内容".equals(title)) {
+            title = "贴吧主题 " + thread.tid;
+        }
+        String content = combined;
+        if (!content.startsWith(thread.title) && !thread.title.isEmpty()) {
+            content = thread.title + "\n\n" + content;
+        }
+        JSONArray mentioned = new JSONArray();
+        for (String book : books) {
+            mentioned.put(book);
+        }
+        String mentionedJson = mentioned.toString();
+        String date = networkDate(thread.createTime);
+        String canonicalKey = "tieba_network:" + thread.tid;
+        db.beginTransaction();
+        try {
+            Long existingId = documentIdForKey(canonicalKey);
+            if (existingId == null) {
+                try (Cursor sameUrl = db.rawQuery(
+                        "SELECT id FROM documents WHERE source_url=? LIMIT 1",
+                        new String[]{sourceUrl})) {
+                    if (sameUrl.moveToFirst()) {
+                        existingId = sameUrl.getLong(0);
+                    }
+                }
+            }
+            if (existingId == null) {
+                db.execSQL("INSERT INTO documents(" +
+                                "canonical_key,title,title_norm,author,author_norm," +
+                                "content,category,source_type,forum,mname,zname," +
+                                "published_at,source_url,word,hot_score," +
+                                "mentioned_books_json) " +
+                                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        new Object[]{canonicalKey, title, compact(title),
+                                safe(thread.author), compact(thread.author),
+                                content, category, "百度贴吧", thread.forum,
+                                "", "", date, sourceUrl, compact(content).length(),
+                                thread.maxAgree(), mentionedJson});
+                try (Cursor idCursor = db.rawQuery(
+                        "SELECT last_insert_rowid()", null)) {
+                    idCursor.moveToFirst();
+                    existingId = idCursor.getLong(0);
+                }
+                insertSourceIfMissing(existingId, TiebaCollector.SOURCE_KIND,
+                        sourceRef, sourceUrl);
+                indexDocumentSearch(existingId, title,
+                        safe(thread.author), mentionedJson);
+                adjustBookIndex(title, mentionedJson, "百度贴吧",
+                        date, existingId, compact(content).length(), 1);
+                db.execSQL("INSERT OR IGNORE INTO network_threads(" +
+                                "document_id,tid,forum,reply_count,view_count," +
+                                "agree_max,collected_at) VALUES(?,?,?,?,?,?,?)",
+                        new Object[]{existingId, thread.tid, thread.forum,
+                                thread.replyNum, thread.viewNum,
+                                thread.maxAgree(), isoNow()});
+                db.setTransactionSuccessful();
+                return new TiebaCollector.IngestResult(true,
+                        thread.floors.size(), 0);
+            }
+            insertSourceIfMissing(existingId, TiebaCollector.SOURCE_KIND,
+                    sourceRef, sourceUrl);
+            db.execSQL("INSERT OR IGNORE INTO network_threads(" +
+                            "document_id,tid,forum,reply_count,view_count," +
+                            "agree_max,collected_at) VALUES(?,?,?,?,?,?,?)",
+                    new Object[]{existingId, thread.tid, thread.forum,
+                            thread.replyNum, thread.viewNum,
+                            thread.maxAgree(), isoNow()});
+            db.setTransactionSuccessful();
+            return new TiebaCollector.IngestResult(false, 0,
+                    thread.floors.size());
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private LinkedHashSet<String> extractNetworkBooks(String text) {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        Matcher matcher = Pattern.compile("《([^《》\\n]{1,80})》").matcher(text);
+        while (matcher.find()) {
+            String book = matcher.group(1).trim();
+            if (book.length() >= 2) {
+                result.add(book);
+            }
+        }
+        Matcher named = Pattern.compile(
+                "(?m)^\\s*书名\\s*[:：]\\s*([^\\n]{2,80})").matcher(text);
+        while (named.find()) {
+            String book = named.group(1).trim();
+            if (book.length() >= 2 && book.length() <= 80) {
+                result.add(book);
+            }
+        }
+        return result;
+    }
+
+    private String networkTitleBookCandidate(String title) {
+        String value = safe(title).trim()
+                .replaceAll("^(?:扫书|推书|排雷|避雷|推荐|吐槽|书评)\\s*[:：\\-]?\\s*",
+                        "")
+                .trim();
+        if (value.length() < 2 || value.length() > 50) {
+            return "";
+        }
+        if (value.matches("(?s).*(?:吧规|吧务|专用贴|怎么|为什么|有人|求书|求推|"
+                + "推荐|记录|书单|合集|作者|问题|吗|？|\\?).*")) {
+            return "";
+        }
+        return value;
+    }
+
+    private String classifyNetworkPost(String title, String content) {
+        String text = safe(title) + "\n" + safe(content);
+        if (text.matches("(?s).*(排雷|避雷|雷点|毒点|郁闷点|防御建议).*")) {
+            return "排雷";
+        }
+        if (text.matches("(?s).*(求书|求扫|求推|书荒).*")) {
+            return "求书";
+        }
+        if (text.matches("(?s).*(推书|推荐|安利|值得一看).*")) {
+            return "推书";
+        }
+        return "扫书";
+    }
+
+    private String networkDate(int epochSeconds) {
+        if (epochSeconds <= 0) {
+            return "";
+        }
+        SimpleDateFormat format = new SimpleDateFormat(
+                "yyyy-MM-dd", Locale.ROOT);
+        format.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+        return format.format(new Date(epochSeconds * 1000L));
     }
 
     private LinearLayout buildUserBackupCard(WebDavConfig webDav) {
@@ -5143,6 +5634,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (activeNetworkCollector != null) {
+            activeNetworkCollector.cancel();
+        }
         if (pendingSearch != null) {
             mainHandler.removeCallbacks(pendingSearch);
         }
