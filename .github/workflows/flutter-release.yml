@@ -1,0 +1,73 @@
+name: Flutter release build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          channel: stable
+          cache: true
+
+      # 数据库与原生版一样不入库，从最近一个 Release 源码包还原到 Flutter assets。
+      - name: Restore saoshu.db into assets
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo "$GITHUB_REPOSITORY" -L 10 --json tagName -q 'first.tagName')
+          echo "restoring saoshu.db from $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*source.zip' -O /tmp/src.zip
+          unzip -j /tmp/src.zip 'app/src/main/assets/saoshu.db' -d flutter/assets/
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Sign APK
+        working-directory: .
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          BT="$ANDROID_HOME/build-tools/35.0.1"
+          echo "$DEBUG_KEYSTORE_B64" | base64 -d > /tmp/debug.keystore
+          "$BT/zipalign" -f -p 4 flutter/build/app/outputs/flutter-apk/app-release.apk /tmp/aligned.apk
+          "$BT/apksigner" sign --ks /tmp/debug.keystore --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out "saoshu-xindian-flutter-pre1.apk" /tmp/aligned.apk
+          "$BT/apksigner" verify "saoshu-xindian-flutter-pre1.apk"
+          "$BT/zipalign" -c -p 4 "saoshu-xindian-flutter-pre1.apk"
+
+      - name: Create prerelease
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v4.0.0-pre1" \
+            "saoshu-xindian-flutter-pre1.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "扫书新典 v4.0.0-pre1（Flutter 预览版）" \
+            --notes "Flutter 迁移首个预览版。同包名安装可继承原生版数据库与收藏；核心链路（首页随机、标题/全文搜索、正文阅读、书名聚合、收藏与简记、五套主题）已迁移；网络采集、WebDAV 备份、名词解释等后续版本补齐。Flutter 3.35.4 / CI 构建。"

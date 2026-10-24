@@ -22,3 +22,11 @@ noise_content_filter_report.json
 .DS_Store
 Thumbs.db
 *.swp
+
+# Flutter (数据库同原生版走 Release 分发)
+flutter/assets/saoshu.db
+flutter/.dart_tool/
+flutter/.flutter-plugins*
+flutter/build/
+flutter/android/.gradle/
+flutter/android/local.properties

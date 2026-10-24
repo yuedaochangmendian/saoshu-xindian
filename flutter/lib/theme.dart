@@ -1,0 +1,83 @@
+import 'package:flutter/material.dart';
+
+/// 五套主题的种子色（与原生版一致的识别色）。
+class AppThemeOption {
+  final String id;
+  final String label;
+  final int seed;
+  const AppThemeOption(this.id, this.label, this.seed);
+}
+
+const appThemes = <AppThemeOption>[
+  AppThemeOption('teal', '松石绿', 0xFF009688),
+  AppThemeOption('ocean', '海盐蓝', 0xFF1E88E5),
+  AppThemeOption('amber', '琥珀棕', 0xFFA66A2E),
+  AppThemeOption('rose', '樱雾粉', 0xFFC75B7A),
+  AppThemeOption('violet', '暮云紫', 0xFF7E57C2),
+];
+
+ThemeData buildTheme(String themeId, Brightness brightness) {
+  final option = appThemes.firstWhere(
+    (t) => t.id == themeId,
+    orElse: () => appThemes.first,
+  );
+  final scheme = ColorScheme.fromSeed(
+    seedColor: Color(option.seed),
+    brightness: brightness,
+  );
+  final isDark = brightness == Brightness.dark;
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor:
+        isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
+    appBarTheme: AppBarTheme(
+      backgroundColor:
+          isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        fontSize: 19,
+        fontWeight: FontWeight.w700,
+        color: scheme.onSurface,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor:
+          isDark ? scheme.surfaceContainer : scheme.surfaceContainerLow,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(26),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      ),
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+      side: BorderSide.none,
+    ),
+    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: isDark
+          ? scheme.surfaceContainerHigh.withValues(alpha: 0.98)
+          : scheme.surfaceContainerHigh.withValues(alpha: 0.98),
+      elevation: 0,
+      height: 64,
+      labelTextStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 0)),
+    ),
+  );
+}
