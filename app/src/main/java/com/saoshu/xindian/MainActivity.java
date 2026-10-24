@@ -186,6 +186,16 @@ public class MainActivity extends Activity {
     private ScrollView homeScroll;
     private final List<Document> homeRandomDocuments = new ArrayList<>();
     private final AtomicInteger homeRandomVersion = new AtomicInteger();
+    private final List<Long> homeCandidateScanIds = new ArrayList<>();
+    private final List<Long> homeCandidateRecommendIds = new ArrayList<>();
+    private final List<Long> homeCandidateWarningIds = new ArrayList<>();
+    private final Object homeCacheLock = new Object();
+    private boolean homeCandidatesLoaded;
+    private View cachedHomePage;
+    private boolean homePageDirty = true;
+    private long homeStatsDocuments = -1;
+    private long homeStatsBooks = -1;
+    private long homeStatsSources = -1;
     private ScrollView collectionScroll;
     private int restorePageTab = -1;
     private int restoreScrollY;
@@ -482,6 +492,7 @@ public class MainActivity extends Activity {
             }
             preferences.edit().putInt("db_asset_version", DB_VERSION).apply();
             mainHandler.post(this::showMainShell);
+            prewarmHomeRandomCandidates();
         } catch (Exception error) {
             mainHandler.post(() -> showFatalError(error));
         }
@@ -762,6 +773,8 @@ public class MainActivity extends Activity {
             bottomParams.setMargins(dp(12), 0, dp(12), dp(8));
             root.addView(bottomBar, bottomParams);
             setContentView(root);
+            cachedHomePage = null;
+            homePageDirty = true;
             switchTab(TAB_HOME);
         } catch (Exception error) {
             showFatalError(error);
@@ -770,9 +783,8 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackground(round((toolbarColor() & 0x00ffffff) | 0xf0000000, 20));
+        shell.setBackground(round((toolbarColor() & 0x00ffffff) | 0xf0000000, 26));
         shell.setClipToOutline(true);
-        shell.setElevation(dp(10));
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -823,14 +835,21 @@ public class MainActivity extends Activity {
             }
             navItems[i].setBackground(rippleRound(
                     i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
-                    Color.TRANSPARENT, 17, Color.argb(55, 255, 255, 255)));
+                    Color.TRANSPARENT, 24, Color.argb(55, 255, 255, 255)));
             navItems[i].animate().cancel();
             navItems[i].animate().scaleX(i == tab ? 1.08f : 1f)
                     .scaleY(i == tab ? 1.08f : 1f).setDuration(140).start();
         }
         View nextPage;
         if (tab == TAB_HOME) {
-            nextPage = buildHome();
+            if (cachedHomePage != null && !homePageDirty) {
+                nextPage = cachedHomePage;
+                restoreScrollPositionIfNeeded((ScrollView) nextPage, TAB_HOME);
+            } else {
+                nextPage = buildHome();
+                cachedHomePage = nextPage;
+                homePageDirty = false;
+            }
         } else if (tab == TAB_BOOKS) {
             nextPage = buildBooks();
         } else if (tab == TAB_COLLECTION) {
@@ -968,9 +987,9 @@ public class MainActivity extends Activity {
         titleRow.addView(edition);
         page.addView(titleRow);
 
-        long docs = localDocumentCount();
-        long booksCount = localBookCount();
-        long sourceRows = visibleSourceCount();
+        long docs = homeDocumentCount();
+        long booksCount = homeBookCount();
+        long sourceRows = homeSourceCount();
         TextView statsLine = text(formatCompact(docs) + " 条内容  ·  " +
                         formatCompact(booksCount) + " 本书名  ·  " +
                         formatCompact(sourceRows) + " 条来源",
@@ -1012,10 +1031,12 @@ public class MainActivity extends Activity {
             return;
         }
         final int version = homeRandomVersion.incrementAndGet();
-        container.removeAllViews();
-        TextView loading = text("正在随机挑选…", 13, MUTED, Typeface.NORMAL);
-        loading.setPadding(0, dp(10), 0, dp(10));
-        container.addView(loading);
+        if (homeRandomDocuments.isEmpty()) {
+            container.removeAllViews();
+            TextView loading = text("正在随机挑选…", 13, MUTED, Typeface.NORMAL);
+            loading.setPadding(0, dp(10), 0, dp(10));
+            container.addView(loading);
+        }
         executor.execute(() -> {
             try {
                 List<Document> random = queryRandomHomeDocuments();
@@ -1044,10 +1065,18 @@ public class MainActivity extends Activity {
         });
     }
 
-    private List<Document> queryRandomHomeDocuments() {
-        List<Long> scanIds = new ArrayList<>();
-        List<Long> recommendIds = new ArrayList<>();
-        List<Long> warningIds = new ArrayList<>();
+    private void ensureHomeRandomCandidates() {
+        if (db == null || !db.isOpen()) {
+            return;
+        }
+        synchronized (homeCacheLock) {
+            if (homeCandidatesLoaded) {
+                return;
+            }
+        }
+        List<Long> scan = new ArrayList<>();
+        List<Long> recommend = new ArrayList<>();
+        List<Long> warning = new ArrayList<>();
         try (Cursor cursor = db.rawQuery(
                 "SELECT id,category FROM documents d " +
                         "WHERE d.category IN ('扫书','推书','排雷') " +
@@ -1058,14 +1087,49 @@ public class MainActivity extends Activity {
                 long id = cursor.getLong(0);
                 String category = safe(cursor.getString(1));
                 if ("推书".equals(category)) {
-                    recommendIds.add(id);
+                    recommend.add(id);
                 } else if ("排雷".equals(category)) {
-                    warningIds.add(id);
+                    warning.add(id);
                 } else if ("扫书".equals(category)) {
-                    scanIds.add(id);
+                    scan.add(id);
                 }
             }
         }
+        synchronized (homeCacheLock) {
+            if (homeCandidatesLoaded) {
+                return;
+            }
+            homeCandidateScanIds.clear();
+            homeCandidateScanIds.addAll(scan);
+            homeCandidateRecommendIds.clear();
+            homeCandidateRecommendIds.addAll(recommend);
+            homeCandidateWarningIds.clear();
+            homeCandidateWarningIds.addAll(warning);
+            homeCandidatesLoaded = true;
+        }
+    }
+
+    private void prewarmHomeRandomCandidates() {
+        try {
+            ensureHomeRandomCandidates();
+        } catch (RuntimeException ignored) {
+            // 预热失败不影响首页，真正加载时会重试
+        }
+    }
+
+    private List<Document> queryRandomHomeDocuments() {
+        ensureHomeRandomCandidates();
+        List<Long> scanIds;
+        List<Long> recommendIds;
+        List<Long> warningIds;
+        synchronized (homeCacheLock) {
+            scanIds = new ArrayList<>(homeCandidateScanIds);
+            recommendIds = new ArrayList<>(homeCandidateRecommendIds);
+            warningIds = new ArrayList<>(homeCandidateWarningIds);
+        }
+        Collections.shuffle(scanIds);
+        Collections.shuffle(recommendIds);
+        Collections.shuffle(warningIds);
 
         List<Long> selectedIds = new ArrayList<>();
         appendRandomIds(selectedIds, scanIds, 8);
@@ -3866,12 +3930,6 @@ public class MainActivity extends Activity {
                 .replaceAll("看高清大图[，,]?\\s*打开贴吧App", "")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
-        Pattern knownLabel = Pattern.compile(
-                "^(书名|作者|平台|状态|字数|时长|简介|评语|剧情|剧情方面|" +
-                        "男主|男主方面|女主|女主方面|看点|优点|雷点|毒点|郁闷|" +
-                        "郁闷点|防御|防御建议|文笔|情节|感情|评分|综合评价|" +
-                        "CC|FC|标签|推荐|推荐指数)[：:]\\s*(.*)$",
-                Pattern.CASE_INSENSITIVE);
         SpannableStringBuilder formatted = new SpannableStringBuilder();
         boolean previousBlank = true;
         for (String sourceLine : raw.split("\n", -1)) {
@@ -3883,7 +3941,7 @@ public class MainActivity extends Activity {
                 }
                 continue;
             }
-            Matcher known = knownLabel.matcher(line);
+            Matcher known = KNOWN_LABEL.matcher(line);
             if (known.matches()) {
                 if (formatted.length() > 0 && !previousBlank) {
                     formatted.append("\n\n");
@@ -5546,8 +5604,7 @@ public class MainActivity extends Activity {
                             mainHandler.post(() -> {
                                 dataBusy = false;
                                 if (removed) {
-                                    homeRandomVersion.incrementAndGet();
-                                    homeRandomDocuments.clear();
+                                    invalidateHomeData();
                                     if (detailBackTab == TAB_SEARCH) {
                                         discardSearchPage();
                                     }
@@ -5662,6 +5719,7 @@ public class MainActivity extends Activity {
     private void finishDataOperation(String message, boolean error) {
         mainHandler.post(() -> {
             dataBusy = false;
+            invalidateHomeData();
             preferences.edit().putString("last_data_message", message).apply();
             if (currentTab == TAB_DATA && !detailOpen) {
                 switchTab(TAB_DATA);
@@ -5677,6 +5735,42 @@ public class MainActivity extends Activity {
                 dataStatus.setText(message);
             }
         });
+    }
+
+    private long homeDocumentCount() {
+        if (homeStatsDocuments < 0) {
+            homeStatsDocuments = localDocumentCount();
+        }
+        return homeStatsDocuments;
+    }
+
+    private long homeBookCount() {
+        if (homeStatsBooks < 0) {
+            homeStatsBooks = localBookCount();
+        }
+        return homeStatsBooks;
+    }
+
+    private long homeSourceCount() {
+        if (homeStatsSources < 0) {
+            homeStatsSources = visibleSourceCount();
+        }
+        return homeStatsSources;
+    }
+
+    private void invalidateHomeData() {
+        synchronized (homeCacheLock) {
+            homeRandomVersion.incrementAndGet();
+            homeRandomDocuments.clear();
+            homeCandidateScanIds.clear();
+            homeCandidateRecommendIds.clear();
+            homeCandidateWarningIds.clear();
+            homeCandidatesLoaded = false;
+        }
+        homeStatsDocuments = -1;
+        homeStatsBooks = -1;
+        homeStatsSources = -1;
+        homePageDirty = true;
     }
 
     private long localDocumentCount() {
@@ -6051,20 +6145,20 @@ public class MainActivity extends Activity {
         }
 
         LinearLayout pager = row();
-        Document newer = adjacentDocument(document, true);
-        Document older = adjacentDocument(document, false);
-        TextView previous = actionButton(newer == null ? "‹ 没有上一篇" : "‹ 上一篇",
-                TEAL_PALE, newer == null ? MUTED : TEAL_DARK);
-        previous.setEnabled(newer != null);
-        if (newer != null) {
-            previous.setOnClickListener(v -> openDocument(newer.id));
+        long newerId = adjacentDocumentId(document, true);
+        long olderId = adjacentDocumentId(document, false);
+        TextView previous = actionButton(newerId < 0 ? "‹ 没有上一篇" : "‹ 上一篇",
+                TEAL_PALE, newerId < 0 ? MUTED : TEAL_DARK);
+        previous.setEnabled(newerId >= 0);
+        if (newerId >= 0) {
+            previous.setOnClickListener(v -> openDocument(newerId));
         }
         pager.addView(previous, weightedAction());
-        TextView next = actionButton(older == null ? "下一篇 没有 ›" : "下一篇 ›",
-                TEAL_PALE, older == null ? MUTED : TEAL_DARK);
-        next.setEnabled(older != null);
-        if (older != null) {
-            next.setOnClickListener(v -> openDocument(older.id));
+        TextView next = actionButton(olderId < 0 ? "下一篇 没有 ›" : "下一篇 ›",
+                TEAL_PALE, olderId < 0 ? MUTED : TEAL_DARK);
+        next.setEnabled(olderId >= 0);
+        if (olderId >= 0) {
+            next.setOnClickListener(v -> openDocument(olderId));
         }
         pager.addView(next, weightedAction());
         addWithTop(article, pager, 10);
@@ -6080,6 +6174,7 @@ public class MainActivity extends Activity {
 
         favorite.setOnClickListener(v -> {
             boolean now = toggleFavorite(document.id);
+            homePageDirty = true;
             favorite.setText(now ? "★ 已收藏" : "☆ 收藏");
             favorite.setTextColor(now ? PINK_DARK : TEAL_DARK);
             favorite.setBackground(rippleRound(now ? PINK_PALE : TEAL_PALE,
@@ -6134,23 +6229,24 @@ public class MainActivity extends Activity {
         switchTab(detailBackTab);
     }
 
-    private Document adjacentDocument(Document current, boolean newer) {
+    private long adjacentDocumentId(Document current, boolean newer) {
         String date = current.date == null ? "" : current.date;
         String sql;
         if (newer) {
-            sql = "SELECT * FROM documents WHERE " +
+            sql = "SELECT id FROM documents WHERE " +
                     "(published_at>? OR (published_at=? AND id<?)) " +
                     "AND id NOT IN (SELECT document_id FROM local_deleted) " +
                     "ORDER BY published_at ASC,id DESC LIMIT 1";
         } else {
-            sql = "SELECT * FROM documents WHERE " +
+            sql = "SELECT id FROM documents WHERE " +
                     "(published_at<? OR (published_at=? AND id>?)) " +
                     "AND id NOT IN (SELECT document_id FROM local_deleted) " +
                     "ORDER BY published_at DESC,id ASC LIMIT 1";
         }
-        List<Document> result = queryDocuments(sql,
-                new String[]{date, date, String.valueOf(current.id)});
-        return result.isEmpty() ? null : result.get(0);
+        try (Cursor cursor = db.rawQuery(sql,
+                new String[]{date, date, String.valueOf(current.id)})) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : -1;
+        }
     }
 
     private boolean toggleFavorite(long id) {
@@ -6267,15 +6363,20 @@ public class MainActivity extends Activity {
                 11, MUTED, Typeface.NORMAL);
         footer.addView(authorView, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView read = text(isFavorite(d.id) ? "★ 已收藏" : "阅读 ›", 12,
-                isFavorite(d.id) ? PINK_DARK : TEAL_DARK, Typeface.BOLD);
+        boolean favored = isFavorite(d.id);
+        TextView read = text(favored ? "★ 已收藏" : "阅读 ›", 12,
+                favored ? PINK_DARK : TEAL_DARK, Typeface.BOLD);
         footer.addView(read);
         card.addView(footer);
         return card;
     }
 
     private String previewText(String content, int limit) {
-        String text = stripSourceMetadata(content == null ? "" : content)
+        String source = content == null ? "" : content;
+        if (source.length() > PREVIEW_SOURCE_LIMIT) {
+            source = source.substring(0, PREVIEW_SOURCE_LIMIT);
+        }
+        String text = stripSourceMetadata(source)
                 .replace("\r", " ")
                 .replace("\n", " ")
                 .replace("\t", " ")
@@ -6287,13 +6388,24 @@ public class MainActivity extends Activity {
         return text.substring(0, limit).trim() + "…";
     }
 
+    private static final int PREVIEW_SOURCE_LIMIT = 800;
+    private static final Pattern SOURCE_META_LINE = Pattern.compile(
+            "(?m)^\\s*(?:来源|原始来源|合并记录|来源链接)\\s*[:：].*$");
+    private static final Pattern HTTP_URL = Pattern.compile("https?://\\S+");
+    private static final Pattern AT_NOTE = Pattern.compile("\\(@[^\\n)]*#[^\\n)]*\\)");
+    private static final Pattern KNOWN_LABEL = Pattern.compile(
+            "^(书名|作者|平台|状态|字数|时长|简介|评语|剧情|剧情方面|" +
+                    "男主|男主方面|女主|女主方面|看点|优点|雷点|毒点|郁闷|" +
+                    "郁闷点|防御|防御建议|文笔|情节|感情|评分|综合评价|" +
+                    "CC|FC|标签|推荐|推荐指数)[：:]\\s*(.*)$",
+            Pattern.CASE_INSENSITIVE);
+
     private static String stripSourceMetadata(String value) {
-        return safe(value)
-                .replaceAll("(?m)^\\s*(?:来源|原始来源|合并记录|来源链接)" +
-                        "\\s*[:：].*$", "")
-                .replaceAll("https?://\\S+", "")
-                .replaceAll("\\(@[^\\n)]*#[^\\n)]*\\)", "")
-                .trim();
+        String text = safe(value);
+        text = SOURCE_META_LINE.matcher(text).replaceAll("");
+        text = HTTP_URL.matcher(text).replaceAll("");
+        text = AT_NOTE.matcher(text).replaceAll("");
+        return text.trim();
     }
 
     private List<Document> queryDocuments(String sql, String[] args) {

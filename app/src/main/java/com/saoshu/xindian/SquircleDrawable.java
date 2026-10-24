@@ -2,6 +2,7 @@ package com.saoshu.xindian;
 
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
@@ -17,7 +18,7 @@ import android.graphics.drawable.Drawable;
  */
 public class SquircleDrawable extends Drawable {
     private static final float CORNER_EXPONENT = 0.5f;
-    private static final int CORNER_STEPS = 10;
+    private static final int CORNER_STEPS = 20;
 
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -123,6 +124,22 @@ public class SquircleDrawable extends Drawable {
         fillPaint.setAlpha(scaleAlpha(fillColor));
         strokePaint.setAlpha(scaleAlpha(strokeColor));
         invalidateSelf();
+    }
+
+    /**
+     * 提供圆角矩形 Outline，让 elevation 阴影和 setClipToOutline
+     * 跟随形状（圆形圆角近似超椭圆，仅在角部略小于绘制路径）。
+     */
+    @Override
+    public void getOutline(Outline outline) {
+        Rect bounds = getBounds();
+        if (bounds.isEmpty()) {
+            outline.setEmpty();
+            return;
+        }
+        float radius = Math.min(radiusPx,
+                Math.min(bounds.width(), bounds.height()) / 2f);
+        outline.setRoundRect(bounds, radius);
     }
 
     @Override

@@ -10,8 +10,8 @@ android {
         applicationId "com.saoshu.xindian"
         minSdk 23
         targetSdk 34
-        versionCode 58
-        versionName "3.37"
+        versionCode 59
+        versionName "3.38"
     }
 
     buildTypes {
