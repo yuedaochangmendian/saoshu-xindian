@@ -82,13 +82,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 12),
             _SwitchCard(
-              title: '底栏磨砂',
-              hint: '开启后底栏呈半透明悬浮效果',
-              value: scope.frosted,
-              onChanged: (checked) => scope.toggleFrosted(),
-            ),
-            const SizedBox(height: 10),
-            _SwitchCard(
               title: '点击震动',
               hint: '默认关闭；开启后仅提供轻微触感',
               value: haptic,

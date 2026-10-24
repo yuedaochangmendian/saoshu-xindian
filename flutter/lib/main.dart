@@ -21,7 +21,6 @@ class SaoshuApp extends StatefulWidget {
 
 class _SaoshuAppState extends State<SaoshuApp> {
   late String _themeId;
-  late bool _frosted;
   late Favorites _favorites;
 
   @override
@@ -29,7 +28,6 @@ class _SaoshuAppState extends State<SaoshuApp> {
     super.initState();
     _themeId = widget.prefs.getString('theme_id') ?? 'teal';
     if (!appThemes.any((t) => t.id == _themeId)) _themeId = 'teal';
-    _frosted = widget.prefs.getBool('dock_frosted') ?? false;
     _favorites = Favorites(widget.prefs);
     _favorites.addListener(_rebuild);
   }
@@ -47,20 +45,13 @@ class _SaoshuAppState extends State<SaoshuApp> {
     widget.prefs.setString('theme_id', id);
   }
 
-  void _toggleFrosted() {
-    setState(() => _frosted = !_frosted);
-    widget.prefs.setBool('dock_frosted', _frosted);
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppScope(
       prefs: widget.prefs,
       favorites: _favorites,
-      frosted: _frosted,
       themeId: _themeId,
       changeTheme: _changeTheme,
-      toggleFrosted: _toggleFrosted,
       child: MaterialApp(
         title: '扫书新典',
         debugShowCheckedModeBanner: false,
