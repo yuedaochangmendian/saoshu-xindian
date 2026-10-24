@@ -32,7 +32,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release list --repo "$GITHUB_REPOSITORY" -L 10 --json tagName -q 'first.tagName')
+          TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=20"             --jq '[.[] | select(any(.assets[]; .name | endswith("source.zip")))][0].tag_name')
           echo "restoring saoshu.db from $TAG"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*source.zip' -O /tmp/src.zip
           unzip -j /tmp/src.zip 'app/src/main/assets/saoshu.db' -d flutter/assets/
