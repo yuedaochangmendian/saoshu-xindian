@@ -724,7 +724,7 @@ public class MainActivity extends Activity {
             bottomBar.setElevation(dp(12));
             FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(52), Gravity.BOTTOM);
-            bottomParams.setMargins(dp(12), 0, dp(12), dp(8));
+            bottomParams.setMargins(dp(24), 0, dp(24), dp(8));
             root.addView(bottomBar, bottomParams);
             setContentView(root);
             cachedHomePage = null;
@@ -737,7 +737,13 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackground(round((toolbarColor() & 0x00ffffff) | 0xf0000000, 26));
+        Drawable dock = round(CARD, 26);
+        if (dock instanceof GradientDrawable) {
+            ((GradientDrawable) dock).setStroke(dp(1), LINE);
+        } else if (dock instanceof SquircleDrawable) {
+            ((SquircleDrawable) dock).setStroke(dp(1), LINE);
+        }
+        shell.setBackground(dock);
         shell.setClipToOutline(true);
 
         LinearLayout bar = new LinearLayout(this);
@@ -754,7 +760,7 @@ public class MainActivity extends Activity {
             item.setClickable(true);
             item.setFocusable(true);
             item.setOnClickListener(v -> switchTab(tab));
-            TextView icon = text(icons[i], 18, Color.WHITE, Typeface.BOLD);
+            TextView icon = text(icons[i], 18, MUTED, Typeface.BOLD);
             icon.setGravity(Gravity.CENTER);
             icon.setTag("nav_icon");
             icon.setClickable(false);
@@ -782,14 +788,13 @@ public class MainActivity extends Activity {
             if (navItems[i] == null) {
                 continue;
             }
-            int color = i == tab ? Color.WHITE : Color.argb(178, 255, 255, 255);
+            int color = i == tab ? (darkMode ? TEAL : TEAL_DARK) : MUTED;
             View icon = navItems[i].findViewWithTag("nav_icon");
             if (icon instanceof TextView) {
                 ((TextView) icon).setTextColor(color);
             }
             navItems[i].setBackground(rippleRound(
-                    i == tab ? Color.argb(34, 255, 255, 255) : Color.TRANSPARENT,
-                    Color.TRANSPARENT, 24, Color.argb(55, 255, 255, 255)));
+                    Color.TRANSPARENT, Color.TRANSPARENT, 24, Color.argb(40, 0, 0, 0)));
             navItems[i].animate().cancel();
             navItems[i].animate().scaleX(i == tab ? 1.08f : 1f)
                     .scaleY(i == tab ? 1.08f : 1f).setDuration(140).start();
