@@ -1709,7 +1709,7 @@ public class MainActivity extends Activity {
         LinearLayout switcher = row();
         switcher.setGravity(Gravity.CENTER_VERTICAL);
         switcher.setPadding(dp(4), dp(4), dp(4), dp(4));
-        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 13));
+        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 26));
         bookModeButton = libraryModeButton("网络采集");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
@@ -1798,7 +1798,7 @@ public class MainActivity extends Activity {
         LinearLayout switcher = row();
         switcher.setGravity(Gravity.CENTER_VERTICAL);
         switcher.setPadding(dp(4), dp(4), dp(4), dp(4));
-        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 13));
+        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 26));
         bookModeButton = libraryModeButton("书名聚合");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
@@ -2031,7 +2031,7 @@ public class MainActivity extends Activity {
         button.setBackground(rippleRound(
                 selected ? CARD : Color.TRANSPARENT,
                 selected ? TEAL_PALE : Color.TRANSPARENT,
-                10, Color.argb(46, 0, 0, 0)));
+                22, Color.argb(46, 0, 0, 0)));
     }
 
     private void loadBooks(boolean reset) {
