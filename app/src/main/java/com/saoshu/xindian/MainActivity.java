@@ -242,12 +242,19 @@ public class MainActivity extends Activity {
         window.setStatusBarColor(toolbarColor());
         window.setNavigationBarColor(toolbarColor());
         if (android.os.Build.VERSION.SDK_INT >= 28) {
-            window.setNavigationBarDividerColor(TEAL_DEEP);
+            window.setNavigationBarDividerColor(LINE);
         }
         int flags = window.getDecorView().getSystemUiVisibility();
-        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        if (darkMode) {
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+        } else {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
         }
         window.getDecorView().setSystemUiVisibility(flags);
     }
@@ -296,14 +303,14 @@ public class MainActivity extends Activity {
         PINK_PALE = TEAL_PALE;
     }
 
+    /** 系统栏与工具栏统一用页面表面色（M3 风格扁平表面，图标按深浅色自适应）。 */
     private int toolbarColor() {
-        return darkMode ? TEAL_DEEP : TEAL_DARK;
+        return BG;
     }
 
+    /** 页题不再用彩色渐变条：返回与页面一致的表面色（M3 扁平风）。 */
     private GradientDrawable titleGradient(float radiusDp) {
-        return darkMode
-                ? gradient(TEAL_DEEP, blend(TEAL_DEEP, TEAL, 0.34f), radiusDp)
-                : gradient(TEAL_DARK, TEAL, radiusDp);
+        return gradient(BG, BG, radiusDp);
     }
 
     private static int blend(int from, int to, float amount) {
@@ -710,7 +717,7 @@ public class MainActivity extends Activity {
         FrameLayout shell = new FrameLayout(this);
         int dockColor = preferences.getBoolean("dock_frosted", false)
                 ? (CARD & 0x00ffffff) | 0xD8000000
-                : CARD;
+                : (CARD & 0x00ffffff) | 0xFA000000;
         Drawable dock = round(dockColor, 26);
         if (dock instanceof GradientDrawable) {
             ((GradientDrawable) dock).setStroke(dp(1), LINE);
@@ -1160,7 +1167,7 @@ public class MainActivity extends Activity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         Button back = toolbarBackButton(this::leaveSearchPage);
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
-        TextView title = blockText("搜索", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = text("搜索", 19, TEXT, Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         header.addView(titleRow);
@@ -1193,7 +1200,7 @@ public class MainActivity extends Activity {
 
         searchHistorySection = column();
         searchHistorySection.setPadding(dp(13), dp(9), dp(8), dp(10));
-        searchHistorySection.setBackground(round(CARD, 14));
+        searchHistorySection.setBackground(round(CARD, 20));
         searchHistorySection.setElevation(dp(1));
         LinearLayout historyTitleRow = row();
         historyTitleRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1442,7 +1449,7 @@ public class MainActivity extends Activity {
         LinearLayout card = column();
         card.setPadding(dp(15), dp(13), dp(15), dp(12));
         card.setMinimumHeight(dp(82));
-        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 20,
                 Color.argb(34, 0, 0, 0)));
         card.setElevation(dp(1));
         bindWholeCardClick(card, v -> showGlossaryDetail(glossary));
@@ -1648,13 +1655,13 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(titleGradient(0));
-        TextView title = blockText("书库", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = text("书库", 19, TEXT, Typeface.BOLD);
         header.addView(title);
 
         LinearLayout switcher = row();
         switcher.setGravity(Gravity.CENTER_VERTICAL);
         switcher.setPadding(dp(4), dp(4), dp(4), dp(4));
-        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 26));
+        switcher.setBackground(round(TEAL_PALE, 26));
         bookModeButton = libraryModeButton("网络采集");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
@@ -1737,13 +1744,13 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(titleGradient(0));
-        TextView title = blockText("书库", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = text("书库", 19, TEXT, Typeface.BOLD);
         header.addView(title);
 
         LinearLayout switcher = row();
         switcher.setGravity(Gravity.CENTER_VERTICAL);
         switcher.setPadding(dp(4), dp(4), dp(4), dp(4));
-        switcher.setBackground(round(Color.argb(30, 255, 255, 255), 26));
+        switcher.setBackground(round(TEAL_PALE, 26));
         bookModeButton = libraryModeButton("书名聚合");
         glossaryModeButton = libraryModeButton("名词解释");
         switcher.addView(bookModeButton, new LinearLayout.LayoutParams(
@@ -1856,7 +1863,7 @@ public class MainActivity extends Activity {
         button.setGravity(Gravity.CENTER);
         button.setTextSize(12);
         button.setTypeface(Typeface.create("sans", Typeface.BOLD));
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(TEXT);
         button.setMinHeight(0);
         button.setMinimumHeight(dp(44));
         button.setMinWidth(0);
@@ -1871,7 +1878,7 @@ public class MainActivity extends Activity {
         button.setText("‹");
         button.setAllCaps(false);
         button.setTextSize(30);
-        button.setTextColor(Color.WHITE);
+        button.setTextColor(TEXT);
         button.setTypeface(Typeface.create("sans", Typeface.NORMAL));
         button.setIncludeFontPadding(false);
         button.setGravity(Gravity.CENTER);
@@ -1972,7 +1979,7 @@ public class MainActivity extends Activity {
         if (button == null) {
             return;
         }
-        button.setTextColor(selected ? TEAL_DARK : Color.WHITE);
+        button.setTextColor(selected ? TEAL_DARK : MUTED);
         button.setBackground(rippleRound(
                 selected ? CARD : Color.TRANSPARENT,
                 selected ? TEAL_PALE : Color.TRANSPARENT,
@@ -2046,17 +2053,17 @@ public class MainActivity extends Activity {
 
         LinearLayout hero = column();
         hero.setPadding(dp(18), dp(16), dp(18), dp(16));
-        hero.setBackground(titleGradient(0));
-        TextView title = blockText(book.displayTitle(), 22, Color.WHITE, Typeface.BOLD);
+        hero.setBackground(round(TEAL_PALE, 20));
+        TextView title = text(book.displayTitle(), 22, TEAL_DEEP, Typeface.BOLD);
         title.setLineSpacing(0, 1.15f);
         hero.addView(title);
         TextView meta = text("评论聚合 " + book.reviewCount + " 条 · " +
                 (book.latestAt.isEmpty() ? "日期未知" : "最近 " + book.latestAt),
-                12, Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+                12, blend(TEAL_DEEP, TEAL_PALE, 0.22f), Typeface.NORMAL);
         addWithTop(hero, meta, 6);
-        TextView sources = text(book.sourcesText(), 12, Color.WHITE, Typeface.BOLD);
+        TextView sources = text(book.sourcesText(), 12, TEAL_DEEP, Typeface.BOLD);
         sources.setPadding(dp(9), dp(5), dp(9), dp(5));
-        sources.setBackground(round(Color.argb(38, 255, 255, 255), 11));
+        sources.setBackground(round(Color.argb(140, 255, 255, 255), 11));
         addWithTop(hero, sources, 8);
         page.addView(hero);
 
@@ -2223,7 +2230,7 @@ public class MainActivity extends Activity {
             LinearLayout empty = column();
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(25), dp(16), dp(20));
-            empty.setBackground(round(CARD, 14));
+            empty.setBackground(round(CARD, 20));
             TextView hint = text(needle.isEmpty() ? "还没有收藏或简记" : "没有匹配的内容",
                     17, TEXT, Typeface.BOLD);
             hint.setGravity(Gravity.CENTER);
@@ -2278,7 +2285,7 @@ public class MainActivity extends Activity {
     private View createNoteCard(Note note) {
         LinearLayout card = column();
         card.setPadding(dp(14), dp(12), dp(14), dp(10));
-        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+        card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 20,
                 Color.argb(30, 0, 0, 0)));
         card.setElevation(dp(1));
         card.setClickable(true);
@@ -2581,7 +2588,7 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(10), dp(12), dp(9));
         header.setBackground(titleGradient(0));
-        TextView title = blockText("数据管理", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = text("数据管理", 19, TEXT, Typeface.BOLD);
         header.addView(title);
         TextView subtitle = text(formatCompact(localDocumentCount()) + " 条内容 · " +
                         formatCompact(localBookCount()) + " 本书名 · " +
@@ -2615,7 +2622,7 @@ public class MainActivity extends Activity {
         LinearLayout hapticCard = row();
         hapticCard.setGravity(Gravity.CENTER_VERTICAL);
         hapticCard.setPadding(dp(16), dp(12), dp(12), dp(12));
-        hapticCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+        hapticCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 20,
                 Color.argb(28, 0, 0, 0)));
         LinearLayout hapticText = column();
         TextView hapticTitle = text("点击震动", 14, TEXT, Typeface.BOLD);
@@ -2650,7 +2657,7 @@ public class MainActivity extends Activity {
         LinearLayout frostedCard = row();
         frostedCard.setGravity(Gravity.CENTER_VERTICAL);
         frostedCard.setPadding(dp(16), dp(12), dp(12), dp(12));
-        frostedCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+        frostedCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 20,
                 Color.argb(28, 0, 0, 0)));
         LinearLayout frostedText = column();
         TextView frostedTitle = text("底栏磨砂", 14, TEXT, Typeface.BOLD);
@@ -2712,7 +2719,7 @@ public class MainActivity extends Activity {
 
         LinearLayout statusCard = column();
         statusCard.setPadding(dp(15), dp(14), dp(15), dp(14));
-        statusCard.setBackground(round(TEAL_SOFT, 14));
+        statusCard.setBackground(round(TEAL_SOFT, 20));
         TextView statusTitle = text("操作状态", 13, TEAL_DARK, Typeface.BOLD);
         statusCard.addView(statusTitle);
         dataStatus = text(preferences.getString("last_data_message",
@@ -2819,7 +2826,7 @@ public class MainActivity extends Activity {
                                          View.OnClickListener[] listeners) {
         LinearLayout card = column();
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(CARD, 14));
+        card.setBackground(round(CARD, 20));
         card.setElevation(dp(1));
         TextView heading = text(title, 16, TEXT, Typeface.BOLD);
         card.addView(heading);
@@ -2845,7 +2852,7 @@ public class MainActivity extends Activity {
     private LinearLayout buildNetworkCollectorCard() {
         LinearLayout card = column();
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(CARD, 14));
+        card.setBackground(round(CARD, 20));
         card.setElevation(dp(1));
 
         TextView heading = text("贴吧增量采集", 16, TEXT, Typeface.BOLD);
@@ -6004,7 +6011,7 @@ public class MainActivity extends Activity {
 
         LinearLayout headline = column();
         headline.setPadding(dp(17), dp(16), dp(17), dp(16));
-        headline.setBackground(titleGradient(15));
+        headline.setBackground(round(TEAL_PALE, 20));
         LinearLayout badgeRow = row();
         badgeRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView badge = text(document.category, 12, TEAL_DEEP, Typeface.BOLD);
@@ -6012,23 +6019,23 @@ public class MainActivity extends Activity {
         badge.setBackground(round(GOLD, 11));
         badgeRow.addView(badge);
         TextView date = text(document.date.isEmpty() ? "日期未知" : document.date,
-                12, Color.argb(220, 255, 255, 255), Typeface.NORMAL);
+                12, blend(TEAL_DEEP, TEAL_PALE, 0.22f), Typeface.NORMAL);
         date.setPadding(dp(10), 0, 0, 0);
         badgeRow.addView(date, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         headline.addView(badgeRow);
-        TextView title = text(document.title, 22, Color.WHITE, Typeface.BOLD);
+        TextView title = text(document.title, 22, TEAL_DEEP, Typeface.BOLD);
         title.setLineSpacing(0, 1.16f);
         addWithTop(headline, title, 13);
         String author = document.author.isEmpty() ? "作者/发帖人未知" : "作者/发帖人  " + document.author;
-        TextView authorView = text(author, 12, Color.argb(218, 255, 255, 255),
+        TextView authorView = text(author, 12, blend(TEAL_DEEP, TEAL_PALE, 0.22f),
                 Typeface.NORMAL);
         addWithTop(headline, authorView, 7);
         article.addView(headline);
 
         LinearLayout actionCard = row();
         actionCard.setPadding(dp(10), dp(11), dp(10), dp(11));
-        actionCard.setBackground(round(CARD, 14));
+        actionCard.setBackground(round(CARD, 20));
         actionCard.setElevation(dp(2));
         boolean favored = isFavorite(document.id);
         TextView favorite = actionButton(favored ? "★ 已收藏" : "☆ 收藏",
@@ -6061,8 +6068,8 @@ public class MainActivity extends Activity {
         if (!mentioned.isEmpty()) {
             LinearLayout booksCard = column();
             booksCard.setPadding(dp(16), dp(14), dp(16), dp(13));
-            booksCard.setBackground(round(CARD, 14));
-            TextView heading = text("文中提及书名", 14, TEXT, Typeface.BOLD);
+            booksCard.setBackground(round(CARD, 20));
+            TextView heading = text("文中提及书名", 20, TEXT, Typeface.BOLD);
             booksCard.addView(heading);
             LinearLayout chips = row();
             chips.setPadding(0, dp(8), 0, 0);
@@ -6151,10 +6158,10 @@ public class MainActivity extends Activity {
         bar.setBackgroundColor(toolbarColor());
         Button back = toolbarBackButton(backAction);
         bar.addView(back, new LinearLayout.LayoutParams(dp(45), dp(48)));
-        TextView title = text(label, 16, Color.WHITE, Typeface.BOLD);
+        TextView title = text(label, 16, TEXT, Typeface.BOLD);
         bar.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView archived = text("本地资料库", 11, Color.argb(210, 255, 255, 255),
+        TextView archived = text("本地资料库", 11, MUTED,
                 Typeface.NORMAL);
         bar.addView(archived);
         return bar;
@@ -6756,7 +6763,7 @@ public class MainActivity extends Activity {
             card.setMinimumHeight(dp(70));
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setPadding(dp(14), dp(13), dp(13), dp(13));
-            card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+            card.setBackground(rippleRound(CARD, Color.TRANSPARENT, 20,
                     Color.argb(35, 0, 0, 0)));
             card.setElevation(dp(1));
             bindWholeCardClick(card, v -> showBookDetail(book));
