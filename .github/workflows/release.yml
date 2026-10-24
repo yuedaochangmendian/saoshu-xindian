@@ -1,0 +1,95 @@
+name: Release build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Install SDK packages
+        run: |
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.1" > /dev/null
+
+      - name: Set up Gradle 8.14.5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.14.5'
+
+      # saoshu.db 不入库（332 MiB 超过 GitHub 单文件限制），
+      # 从最近一个 Release 的源码包里还原，保证 APK 带库。
+      - name: Restore saoshu.db from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo "$GITHUB_REPOSITORY" -L 10 --json tagName -q 'first.tagName')
+          echo "restoring saoshu.db from $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*source.zip' -O /tmp/src.zip
+          unzip -j /tmp/src.zip 'app/src/main/assets/saoshu.db' -d app/src/main/assets/
+
+      - name: Build and lint
+        run: gradle --no-daemon --console=plain assembleDebug lintDebug
+
+      - name: Read version from build.gradle
+        run: echo "VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle)" >> "$GITHUB_ENV"
+
+      - name: Sign APK
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          BT="$ANDROID_HOME/build-tools/35.0.1"
+          echo "$DEBUG_KEYSTORE_B64" | base64 -d > /tmp/debug.keystore
+          "$BT/zipalign" -f -p 4 app/build/outputs/apk/debug/app-debug.apk apk-aligned.apk
+          "$BT/apksigner" sign --ks /tmp/debug.keystore --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out "saoshu-xindian-v${VERSION}.apk" apk-aligned.apk
+          "$BT/apksigner" verify "saoshu-xindian-v${VERSION}.apk"
+          "$BT/zipalign" -c -p 4 "saoshu-xindian-v${VERSION}.apk"
+
+      - name: Package source zip (fixed 27-file manifest)
+        run: |
+          zip -X "saoshu-xindian-v${VERSION}-source.zip" \
+            .github/workflows/android.yml .github/workflows/release.yml \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/assets/database_report.json \
+            app/src/main/assets/glossary_terms.json \
+            app/src/main/assets/saoshu.db \
+            app/src/main/java/com/saoshu/xindian/MainActivity.java \
+            app/src/main/java/com/saoshu/xindian/SquircleDrawable.java \
+            app/src/main/java/com/saoshu/xindian/TiebaCollector.java \
+            app/src/main/java/com/saoshu/xindian/TiebaProto.java \
+            app/src/main/res/drawable/bg_dialog_dark.xml \
+            app/src/main/res/drawable/bg_dialog_light.xml \
+            app/src/main/res/drawable/ic_launcher.xml \
+            app/src/main/res/values/colors.xml \
+            app/src/main/res/values/styles.xml \
+            app/build.gradle app/proguard-rules.pro \
+            tools/dedupe_app_content.py tools/filter_meaningless_replies.py \
+            tools/filter_noise_content.py tools/filter_recent_short.py \
+            tools/filter_serialized_artifacts.py tools/strip_app_search_index.py \
+            .gitignore build.gradle gradle.properties README.md settings.gradle
+          unzip -t "saoshu-xindian-v${VERSION}-source.zip" > /dev/null && echo "zip OK"
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${VERSION}" \
+            "saoshu-xindian-v${VERSION}.apk" \
+            "saoshu-xindian-v${VERSION}-source.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "扫书新典 v${VERSION}" \
+            --notes "CI 构建版本（预发布）。构建与签名全部在 GitHub Actions 完成：compileSdk 35 / Gradle 8.14.5 / JDK 21，数据库从上一版源码包还原（DB_VERSION 15，数据截止 2026-10-23）。"

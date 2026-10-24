@@ -311,55 +311,9 @@ public class MainActivity extends Activity {
                 LINE = Color.rgb(225, 232, 230);
             }
         }
-        if (miuixTheme && miuixDynamicEnabled()) {
-            applyMiuixDynamicPalette();
-        }
         PINK = TEAL;
         PINK_DARK = TEAL_DARK;
         PINK_PALE = TEAL_PALE;
-    }
-
-    /** Miuix 动态取色是否可用：Android 12+ 且用户未关闭。 */
-    private boolean miuixDynamicEnabled() {
-        return android.os.Build.VERSION.SDK_INT >= 31
-                && preferences.getBoolean("miuix_dynamic_color", true);
-    }
-
-    private int systemColorOr(int resId, int fallback) {
-        try {
-            return getColor(resId);
-        } catch (RuntimeException error) {
-            return fallback;
-        }
-    }
-
-    /**
-     * 读取系统 Monet 调色板（壁纸取色），替换 Miuix 主题的强调色与表面色。
-     * 资源在 Android 12 以下不存在，由调用方与 systemColorOr 兜底。
-     */
-    @android.annotation.TargetApi(31)
-    private void applyMiuixDynamicPalette() {
-        int accent = systemColorOr(android.R.color.system_accent1_400, TEAL);
-        int accentDeep = systemColorOr(android.R.color.system_accent1_700, TEAL_DEEP);
-        if (darkMode) {
-            BG = systemColorOr(android.R.color.system_neutral1_900, BG);
-            CARD = systemColorOr(android.R.color.system_neutral1_800, CARD);
-            LINE = systemColorOr(android.R.color.system_neutral2_700, LINE);
-            TEAL = accent;
-            TEAL_DARK = accent;
-            TEAL_DEEP = accentDeep;
-            TEAL_PALE = blend(accent, CARD, 0.30f);
-            TEAL_SOFT = BG;
-        } else {
-            BG = systemColorOr(android.R.color.system_neutral1_50, BG);
-            CARD = systemColorOr(android.R.color.system_neutral1_10, CARD);
-            LINE = systemColorOr(android.R.color.system_neutral2_200, LINE);
-            TEAL = accent;
-            TEAL_DARK = systemColorOr(android.R.color.system_accent1_600, TEAL_DARK);
-            TEAL_DEEP = accentDeep;
-            TEAL_PALE = systemColorOr(android.R.color.system_accent2_100, TEAL_PALE);
-            TEAL_SOFT = BG;
-        }
     }
 
     private int toolbarColor() {
@@ -999,7 +953,7 @@ public class MainActivity extends Activity {
         LinearLayout searchCard = row();
         searchCard.setGravity(Gravity.CENTER_VERTICAL);
         searchCard.setPadding(dp(13), dp(9), dp(11), dp(9));
-        searchCard.setBackground(rippleRound(TEAL_PALE, LINE, 12,
+        searchCard.setBackground(rippleRound(TEAL_PALE, LINE, 26,
                 Color.argb(35, 0, 0, 0)));
         TextView searchIcon = text("⌕", 20, TEAL_DARK, Typeface.BOLD);
         searchCard.addView(searchIcon);
@@ -1010,7 +964,7 @@ public class MainActivity extends Activity {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView go = text("搜索 ›", 12, Color.WHITE, Typeface.BOLD);
         go.setPadding(dp(10), dp(5), dp(10), dp(5));
-        go.setBackground(round(TEAL, 10));
+        go.setBackground(round(TEAL, 26));
         searchCard.addView(go);
         searchCard.setOnClickListener(v -> openSearchPage());
         addWithTop(page, searchCard, 10);
@@ -1223,7 +1177,7 @@ public class MainActivity extends Activity {
         LinearLayout inputRow = row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(dp(12), 0, dp(8), 0);
-        inputRow.setBackground(round(CARD, 13));
+        inputRow.setBackground(round(CARD, 26));
         searchField = new EditText(this);
         searchField.setSingleLine(true);
         searchField.setText(searchQuery);
@@ -1725,7 +1679,7 @@ public class MainActivity extends Activity {
         librarySearchContainer = row();
         librarySearchContainer.setGravity(Gravity.CENTER_VERTICAL);
         librarySearchContainer.setPadding(dp(12), 0, dp(12), 0);
-        librarySearchContainer.setBackground(round(CARD, 13));
+        librarySearchContainer.setBackground(round(CARD, 26));
         librarySearchContainer.setElevation(dp(2));
         TextView icon = text("⌕", 20, TEAL, Typeface.BOLD);
         librarySearchContainer.addView(icon);
@@ -1816,7 +1770,7 @@ public class MainActivity extends Activity {
         LinearLayout input = row();
         input.setGravity(Gravity.CENTER_VERTICAL);
         input.setPadding(dp(12), 0, dp(12), 0);
-        input.setBackground(round(CARD, 13));
+        input.setBackground(round(CARD, 26));
         input.setElevation(dp(2));
         TextView icon = text("⌕", 20, TEAL, Typeface.BOLD);
         input.addView(icon);
@@ -2703,53 +2657,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hapticParams.setMargins(dp(16), dp(10), dp(16), 0);
         page.addView(hapticCard, hapticParams);
-
-        if (miuixTheme) {
-            boolean dynamicSupported = android.os.Build.VERSION.SDK_INT >= 31;
-            LinearLayout dynamicCard = row();
-            dynamicCard.setGravity(Gravity.CENTER_VERTICAL);
-            dynamicCard.setPadding(dp(16), dp(12), dp(12), dp(12));
-            dynamicCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
-                    Color.argb(28, 0, 0, 0)));
-            LinearLayout dynamicText = column();
-            TextView dynamicTitle = text("壁纸取色", 14, TEXT, Typeface.BOLD);
-            dynamicText.addView(dynamicTitle);
-            TextView dynamicHint = text(
-                    dynamicSupported
-                            ? "跟随系统强调色（Android 12+）；关闭则使用固定 Miuix 蓝"
-                            : "需要 Android 12 及以上系统",
-                    11, MUTED, Typeface.NORMAL);
-            addWithTop(dynamicText, dynamicHint, 3);
-            dynamicCard.addView(dynamicText, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            Switch dynamicSwitch = new Switch(this);
-            dynamicSwitch.setChecked(dynamicSupported
-                    && preferences.getBoolean("miuix_dynamic_color", true));
-            dynamicSwitch.setEnabled(dynamicSupported);
-            dynamicSwitch.setThumbTintList(new ColorStateList(
-                    switchStates, new int[]{Color.WHITE, Color.WHITE}));
-            dynamicSwitch.setTrackTintList(new ColorStateList(
-                    switchStates, new int[]{TEAL, LINE}));
-            dynamicSwitch.setOnCheckedChangeListener((button, checked) -> {
-                preferences.edit().putBoolean("miuix_dynamic_color", checked).apply();
-                applySelectedTheme();
-                configureWindow();
-                showMainShell();
-                switchTab(TAB_DATA);
-                toast(checked ? "已开启壁纸取色" : "已使用固定 Miuix 蓝");
-            });
-            dynamicCard.addView(dynamicSwitch, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)));
-            dynamicCard.setOnClickListener(v -> {
-                if (dynamicSupported) {
-                    dynamicSwitch.toggle();
-                }
-            });
-            LinearLayout.LayoutParams dynamicParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            dynamicParams.setMargins(dp(16), dp(10), dp(16), 0);
-            page.addView(dynamicCard, dynamicParams);
-        }
 
         TextView section = text("备份、导入与恢复", 17, TEXT, Typeface.BOLD);
         section.setPadding(dp(14), dp(12), dp(14), dp(2));
