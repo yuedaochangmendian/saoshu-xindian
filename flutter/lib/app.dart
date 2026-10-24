@@ -124,16 +124,31 @@ class _Dock extends StatelessWidget {
             children: [
               for (var i = 0; i < 4; i++)
                 Expanded(
-                  child: IconButton(
-                    onPressed: () => onTap(i),
-                    icon: Icon(
-                      i == index ? _dockSelectedIcons[i] : _dockIcons[i],
-                      size: 24,
-                      color: i == index
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () => onTap(i),
+                        child: SizedBox.expand(
+                          child: Center(
+                            child: Icon(
+                              i == index
+                                  ? _dockSelectedIcons[i]
+                                  : _dockIcons[i],
+                              size: 24,
+                              color: i == index
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant,
+                              semanticLabel: _dockLabels[i],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    tooltip: _dockLabels[i],
                   ),
                 ),
             ],
