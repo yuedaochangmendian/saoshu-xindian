@@ -305,6 +305,48 @@ class AppDatabase {
     return rows.map(Document.fromRow).toList();
   }
 
+  // ---------- 分类浏览（来源 / 帖子类型） ----------
+
+  Future<List<Map<String, Object?>>> forumsWithCounts() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT forum, count(*) c FROM documents WHERE forum != '' '
+        'AND id NOT IN (SELECT document_id FROM local_deleted) '
+        'GROUP BY forum ORDER BY c DESC');
+    return rows;
+  }
+
+  Future<List<Map<String, Object?>>> categoriesWithCounts() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT category, count(*) c FROM documents '
+        'WHERE id NOT IN (SELECT document_id FROM local_deleted) '
+        'GROUP BY category ORDER BY c DESC');
+    return rows;
+  }
+
+  Future<List<Document>> documentsByForum(String forum,
+      {int limit = 40, int offset = 0}) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT * FROM documents WHERE forum=? '
+        'AND id NOT IN (SELECT document_id FROM local_deleted) '
+        'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
+        [forum, limit, offset]);
+    return rows.map(Document.fromRow).toList();
+  }
+
+  Future<List<Document>> documentsByCategory(String category,
+      {int limit = 40, int offset = 0}) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT * FROM documents WHERE category=? '
+        'AND id NOT IN (SELECT document_id FROM local_deleted) '
+        'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
+        [category, limit, offset]);
+    return rows.map(Document.fromRow).toList();
+  }
+
   Future<List<Document>> favoritesDocuments(List<int> ids) async {
     if (ids.isEmpty) return const [];
     final db = await database;

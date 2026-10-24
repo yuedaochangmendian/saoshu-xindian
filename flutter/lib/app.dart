@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -66,6 +67,7 @@ class _HomeShellState extends State<HomeShell> {
       SettingsPage(),
     ];
     return Scaffold(
+      extendBody: true,
       body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: _Dock(
         frosted: scope.frosted,
@@ -94,32 +96,38 @@ class _Dock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = frosted
-        ? scheme.surfaceContainerHigh.withValues(alpha: 0.85)
+        ? scheme.surfaceContainerHigh.withValues(alpha: 0.55)
         : scheme.surfaceContainerHigh.withValues(alpha: 0.98);
+    final radius = BorderRadius.circular(28);
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-        child: Container(
-          height: 56,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.5)),
-            boxShadow: [
-              BoxShadow(
-                blurRadius: 24,
-                offset: const Offset(0, 6),
-                color: scheme.shadow.withValues(alpha: 0.08),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(
+                sigmaX: frosted ? 24 : 0.1, sigmaY: frosted ? 24 : 0.1),
+            child: Container(
+              height: 56,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: radius,
+                border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    blurRadius: 24,
+                    offset: const Offset(0, 6),
+                    color: scheme.shadow.withValues(alpha: 0.08),
+                  ),
+                  BoxShadow(
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                    color: scheme.shadow.withValues(alpha: 0.04),
+                  ),
+                ],
               ),
-              BoxShadow(
-                blurRadius: 3,
-                offset: const Offset(0, 1),
-                color: scheme.shadow.withValues(alpha: 0.04),
-              ),
-            ],
-          ),
           child: Row(
             children: [
               for (var i = 0; i < 4; i++)
@@ -152,6 +160,8 @@ class _Dock extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
+            ),
           ),
         ),
       ),
