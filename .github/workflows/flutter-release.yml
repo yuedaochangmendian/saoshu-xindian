@@ -44,7 +44,17 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build.log
+
+      - name: Dump build log on failure
+        if: failure()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ci-log-${GITHUB_RUN_ID}"             --repo "$GITHUB_REPOSITORY" --prerelease             --title "CI log ${{ github.run_id }}"             --notes "auto log dump"             "flutter/build.log" || true
 
       - name: Sign APK
         working-directory: .
