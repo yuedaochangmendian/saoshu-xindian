@@ -126,7 +126,6 @@ public class MainActivity extends Activity {
     private int MUTED;
     private int LINE;
     private boolean darkMode;
-    private boolean miuixTheme;
     private static final String PREFS = "saoshu_prefs";
     private static final String WEBDAV_KEY_ALIAS = "saoshu_webdav_password";
     private static final String TIEBA_BDUSS_KEY_ALIAS = "saoshu_tieba_bduss";
@@ -266,50 +265,31 @@ public class MainActivity extends Activity {
 
     private void applySelectedTheme() {
         String themeId = preferences.getString("theme_id", "teal");
+        if ("miuix".equals(themeId)) {
+            themeId = "teal";
+        }
         int[] palette = themePalette(themeId);
         darkMode = isSystemDarkMode();
-        miuixTheme = "miuix".equals(themeId);
         TEAL = palette[0];
         TEAL_DEEP = palette[2];
         if (darkMode) {
-            if (miuixTheme) {
-                BG = Color.rgb(36, 36, 36);
-                CARD = Color.rgb(45, 45, 45);
-                TEXT = Color.rgb(235, 239, 247);
-                MUTED = Color.rgb(149, 149, 149);
-                LINE = Color.rgb(64, 64, 64);
-                TEAL = Color.rgb(39, 122, 247);
-                TEAL_DARK = TEAL;
-                TEAL_DEEP = Color.rgb(15, 78, 160);
-                TEAL_PALE = Color.rgb(43, 59, 84);
-                TEAL_SOFT = Color.rgb(36, 36, 36);
-            } else {
-                BG = Color.rgb(17, 22, 25);
-                CARD = Color.rgb(27, 34, 38);
-                TEXT = Color.rgb(237, 244, 242);
-                MUTED = Color.rgb(166, 181, 177);
-                LINE = Color.rgb(55, 70, 67);
-                TEAL_DARK = blend(palette[0], Color.WHITE, 0.18f);
-                TEAL_PALE = blend(palette[0], CARD, 0.17f);
-                TEAL_SOFT = blend(palette[0], BG, 0.09f);
-            }
+            BG = Color.rgb(17, 22, 25);
+            CARD = Color.rgb(27, 34, 38);
+            TEXT = Color.rgb(237, 244, 242);
+            MUTED = Color.rgb(166, 181, 177);
+            LINE = Color.rgb(55, 70, 67);
+            TEAL_DARK = blend(palette[0], Color.WHITE, 0.18f);
+            TEAL_PALE = blend(palette[0], CARD, 0.17f);
+            TEAL_SOFT = blend(palette[0], BG, 0.09f);
         } else {
             TEAL_DARK = palette[1];
             TEAL_PALE = palette[3];
             TEAL_SOFT = palette[4];
-            if (miuixTheme) {
-                BG = Color.rgb(247, 247, 247);
-                CARD = Color.WHITE;
-                TEXT = Color.BLACK;
-                MUTED = Color.rgb(124, 130, 148);
-                LINE = Color.rgb(224, 224, 224);
-            } else {
-                BG = Color.rgb(245, 247, 246);
-                CARD = Color.WHITE;
-                TEXT = Color.rgb(38, 50, 56);
-                MUTED = Color.rgb(111, 121, 119);
-                LINE = Color.rgb(225, 232, 230);
-            }
+            BG = Color.rgb(245, 247, 246);
+            CARD = Color.WHITE;
+            TEXT = Color.rgb(38, 50, 56);
+            MUTED = Color.rgb(111, 121, 119);
+            LINE = Color.rgb(225, 232, 230);
         }
         PINK = TEAL;
         PINK_DARK = TEAL_DARK;
@@ -369,15 +349,6 @@ public class MainActivity extends Activity {
                     Color.rgb(46, 26, 71),
                     Color.rgb(238, 232, 247),
                     Color.rgb(249, 247, 252)
-            };
-        }
-        if ("miuix".equals(themeId)) {
-            return new int[]{
-                    Color.rgb(52, 130, 255),
-                    Color.rgb(0, 115, 221),
-                    Color.rgb(12, 67, 132),
-                    Color.rgb(234, 242, 255),
-                    Color.rgb(247, 247, 247)
             };
         }
         return new int[]{
@@ -737,7 +708,10 @@ public class MainActivity extends Activity {
 
     private FrameLayout buildBottomBar() {
         FrameLayout shell = new FrameLayout(this);
-        Drawable dock = round(CARD, 26);
+        int dockColor = preferences.getBoolean("dock_frosted", false)
+                ? (CARD & 0x00ffffff) | 0xD8000000
+                : CARD;
+        Drawable dock = round(dockColor, 26);
         if (dock instanceof GradientDrawable) {
             ((GradientDrawable) dock).setStroke(dp(1), LINE);
         } else if (dock instanceof SquircleDrawable) {
@@ -851,6 +825,18 @@ public class MainActivity extends Activity {
             resetSearchInput();
         }
         switchTab(TAB_SEARCH);
+        if (searchField != null) {
+            searchField.post(() -> {
+                searchField.requestFocus();
+                android.view.inputmethod.InputMethodManager imm =
+                        (android.view.inputmethod.InputMethodManager)
+                                getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(searchField,
+                            android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                }
+            });
+        }
     }
 
     private void leaveSearchPage() {
@@ -939,7 +925,7 @@ public class MainActivity extends Activity {
         TextView brand = text("扫书新典", 23, TEAL_DARK, Typeface.BOLD);
         titleRow.addView(brand, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView edition = text("v3.37", 11, MUTED, Typeface.BOLD);
+        TextView edition = blockText(appVersionLabel(), 11, MUTED, Typeface.BOLD);
         edition.setGravity(Gravity.CENTER);
         edition.setPadding(dp(8), dp(4), dp(8), dp(4));
         edition.setBackground(round(TEAL_PALE, 9));
@@ -967,7 +953,7 @@ public class MainActivity extends Activity {
         searchPrompt.setPadding(dp(8), 0, 0, 0);
         searchCard.addView(searchPrompt, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView go = text("搜索 ›", 12, Color.WHITE, Typeface.BOLD);
+        TextView go = blockText("搜索 ›", 12, Color.WHITE, Typeface.BOLD);
         go.setPadding(dp(10), dp(5), dp(10), dp(5));
         go.setBackground(round(TEAL, 26));
         searchCard.addView(go);
@@ -1174,7 +1160,7 @@ public class MainActivity extends Activity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         Button back = toolbarBackButton(this::leaveSearchPage);
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(38), dp(42)));
-        TextView title = text("搜索", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = blockText("搜索", 19, Color.WHITE, Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         header.addView(titleRow);
@@ -1662,7 +1648,7 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(titleGradient(0));
-        TextView title = text("书库", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = blockText("书库", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
 
         LinearLayout switcher = row();
@@ -1751,7 +1737,7 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(9), dp(12), dp(8));
         header.setBackground(titleGradient(0));
-        TextView title = text("书库", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = blockText("书库", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
 
         LinearLayout switcher = row();
@@ -2061,7 +2047,7 @@ public class MainActivity extends Activity {
         LinearLayout hero = column();
         hero.setPadding(dp(18), dp(16), dp(18), dp(16));
         hero.setBackground(titleGradient(0));
-        TextView title = text(book.displayTitle(), 22, Color.WHITE, Typeface.BOLD);
+        TextView title = blockText(book.displayTitle(), 22, Color.WHITE, Typeface.BOLD);
         title.setLineSpacing(0, 1.15f);
         hero.addView(title);
         TextView meta = text("评论聚合 " + book.reviewCount + " 条 · " +
@@ -2595,7 +2581,7 @@ public class MainActivity extends Activity {
         LinearLayout header = column();
         header.setPadding(dp(12), dp(10), dp(12), dp(9));
         header.setBackground(titleGradient(0));
-        TextView title = text("数据管理", 19, Color.WHITE, Typeface.BOLD);
+        TextView title = blockText("数据管理", 19, Color.WHITE, Typeface.BOLD);
         header.addView(title);
         TextView subtitle = text(formatCompact(localDocumentCount()) + " 条内容 · " +
                         formatCompact(localBookCount()) + " 本书名 · " +
@@ -2622,8 +2608,6 @@ public class MainActivity extends Activity {
                 Color.rgb(199, 91, 122)), themeOptionParams());
         themeRow.addView(themeOption("violet", "暮云紫", currentTheme,
                 Color.rgb(126, 87, 194)), themeOptionParams());
-        themeRow.addView(themeOption("miuix", "Miuix 蓝", currentTheme,
-                Color.rgb(52, 130, 255)), themeOptionParams());
         themeScroll.addView(themeRow);
         page.addView(themeScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -2662,6 +2646,38 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hapticParams.setMargins(dp(16), dp(10), dp(16), 0);
         page.addView(hapticCard, hapticParams);
+
+        LinearLayout frostedCard = row();
+        frostedCard.setGravity(Gravity.CENTER_VERTICAL);
+        frostedCard.setPadding(dp(16), dp(12), dp(12), dp(12));
+        frostedCard.setBackground(rippleRound(CARD, Color.TRANSPARENT, 14,
+                Color.argb(28, 0, 0, 0)));
+        LinearLayout frostedText = column();
+        TextView frostedTitle = text("底栏磨砂", 14, TEXT, Typeface.BOLD);
+        frostedText.addView(frostedTitle);
+        TextView frostedHint = text("开启后底栏呈半透明悬浮效果", 11, MUTED,
+                Typeface.NORMAL);
+        addWithTop(frostedText, frostedHint, 3);
+        frostedCard.addView(frostedText, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Switch frostedSwitch = new Switch(this);
+        frostedSwitch.setChecked(preferences.getBoolean("dock_frosted", false));
+        frostedSwitch.setThumbTintList(new ColorStateList(
+                switchStates, new int[]{Color.WHITE, Color.WHITE}));
+        frostedSwitch.setTrackTintList(new ColorStateList(
+                switchStates, new int[]{TEAL, LINE}));
+        frostedSwitch.setOnCheckedChangeListener((button, checked) -> {
+            preferences.edit().putBoolean("dock_frosted", checked).apply();
+            showMainShell();
+            switchTab(TAB_DATA);
+        });
+        frostedCard.addView(frostedSwitch, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)));
+        frostedCard.setOnClickListener(v -> frostedSwitch.toggle());
+        LinearLayout.LayoutParams frostedParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        frostedParams.setMargins(dp(16), dp(10), dp(16), 0);
+        page.addView(frostedCard, frostedParams);
 
         TextView section = text("备份、导入与恢复", 17, TEXT, Typeface.BOLD);
         section.setPadding(dp(14), dp(12), dp(14), dp(2));
@@ -4800,7 +4816,7 @@ public class MainActivity extends Activity {
             throw new IllegalArgumentException("备份中缺少 settings");
         }
         String theme = settings.optString("theme_id", "teal");
-        if (!theme.matches("teal|ocean|amber|rose|violet|miuix")) {
+        if (!theme.matches("teal|ocean|amber|rose|violet")) {
             theme = "teal";
         }
         boolean haptic = settings.optBoolean("haptic_enabled", false);
@@ -5649,6 +5665,15 @@ public class MainActivity extends Activity {
         });
     }
 
+    private String appVersionLabel() {
+        try {
+            return "v" + getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
     private long homeDocumentCount() {
         if (homeStatsDocuments < 0) {
             homeStatsDocuments = localDocumentCount();
@@ -6449,6 +6474,14 @@ public class MainActivity extends Activity {
         return view;
     }
 
+    /** 色块（渐变标题条、彩色按钮）上的文字：轻投影提升白字边缘对比，微字距更舒展。 */
+    private TextView blockText(String value, float size, int color, int style) {
+        TextView view = text(value, size, color, style);
+        view.setShadowLayer(0.75f, 0f, 0.5f, Color.argb(60, 0, 0, 0));
+        view.setLetterSpacing(0.02f);
+        return view;
+    }
+
     private void addWithTop(LinearLayout parent, View child, int topDp) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -6457,16 +6490,7 @@ public class MainActivity extends Activity {
     }
 
     private Drawable round(int color, float radiusDp) {
-        float themedRadius = miuixTheme && radiusDp > 0
-                ? Math.min(28f, radiusDp * 1.12f + 1f)
-                : radiusDp;
-        if (miuixTheme && themedRadius > 0) {
-            return new SquircleDrawable(color, dp(themedRadius));
-        }
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(dp(themedRadius));
-        return drawable;
+        return new SquircleDrawable(color, dp(radiusDp));
     }
 
     private RippleDrawable rippleRound(int fillColor, int strokeColor,
