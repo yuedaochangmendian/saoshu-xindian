@@ -1,8 +1,7 @@
 // 独立网络层自检：dart run tool/network_check.dart [贴吧名]
-// 仅用相对导入（不依赖 Flutter 运行时）。
 import 'dart:io';
 
-import '../lib/network/tieba_client.dart';
+import 'package:saoshu_xindian/network/tieba_client.dart';
 
 Future<void> main(List<String> args) async {
   final forum = args.isNotEmpty ? args[0] : 'yy小说吧';
