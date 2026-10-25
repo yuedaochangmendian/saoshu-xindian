@@ -120,10 +120,7 @@ class _BooksPageState extends State<BooksPage> {
       case 0:
         return NetworkSection(key: ValueKey('page-$index'));
       case 1:
-        return SingleChildScrollView(
-            key: ValueKey('page-$index'),
-            padding: const EdgeInsets.only(bottom: 140),
-            child: BrowseSection());
+        return BrowseSection(key: ValueKey('page-\$index'));
       default:
         return SingleChildScrollView(
             key: ValueKey('page-$index'),
