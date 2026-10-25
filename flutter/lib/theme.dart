@@ -31,8 +31,7 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surfaceContainer,
     appBarTheme: AppBarTheme(
-      backgroundColor:
-          isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
+      backgroundColor: scheme.surfaceContainer,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       centerTitle: false,

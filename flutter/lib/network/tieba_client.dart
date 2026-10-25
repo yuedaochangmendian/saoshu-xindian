@@ -20,12 +20,14 @@ class ThreadSummary {
   final int createTime;
   final int lastTime;
   final int replyCount;
+  final int viewCount;
   final bool top;
   final bool deleted;
   final bool masked;
 
   const ThreadSummary(this.tid, this.title, this.author, this.createTime,
-      this.lastTime, this.replyCount, this.top, this.deleted, this.masked);
+      this.lastTime, this.replyCount, this.viewCount, this.top,
+      this.deleted, this.masked);
 }
 
 class Floor {
@@ -90,6 +92,8 @@ class PostsPage {
 }
 
 class TiebaClient {
+  TiebaClient({String bduss = ''}) : _bduss = bduss;
+  final String _bduss;
   static const _host = 'https://tiebac.baidu.com';
   static const _userAgent = 'aiotieba/22.12.1.0';
   static const _clientVersion = '12.64.1.1';
@@ -117,6 +121,9 @@ class TiebaClient {
     final common = PbWriter()
       ..varintField(1, 2)
       ..textField(2, _clientVersion);
+    if (_bduss.isNotEmpty) {
+      common.textField(10, _bduss);
+    }
     final data = PbWriter()
       ..messageField(39, common)
       ..textField(1, fname)
@@ -170,6 +177,9 @@ class TiebaClient {
     final common = PbWriter()
       ..varintField(1, 2)
       ..textField(2, _clientVersion);
+    if (_bduss.isNotEmpty) {
+      common.textField(10, _bduss);
+    }
     final data = PbWriter()
       ..messageField(25, common)
       ..varintField(4, tid)
@@ -242,7 +252,7 @@ class TiebaClient {
       var author = users[authorId] ?? '';
       if (author.isEmpty) author = _userDisplay(item.message(18));
       threads.add(ThreadSummary(tid, item.text(3), author, item.varint(45),
-          item.varint(7), item.varint(4), item.varint(9) != 0,
+          item.varint(7), item.varint(4), item.varint(5), item.varint(9) != 0,
           item.varint(181) != 0, item.varint(198) != 0));
     }
     return ThreadsPage(fid, hasMore, threads);

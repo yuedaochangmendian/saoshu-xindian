@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -54,10 +56,27 @@ class AppDatabase {
     return db;
   }
 
+  /// 资产以 gzip 存储（130MB，约为原始 33%），流式解压写盘，
+  /// 避免一次性载入 332MB 原始字节（低内存设备友好）。
   Future<void> _copyFromAssets(String target) async {
-    final data = await rootBundle.load('assets/saoshu.db');
-    final buffer = data.buffer.asUint8List();
-    await File(target).writeAsBytes(buffer, flush: true);
+    _status('正在解压随包数据库…');
+    final data = await rootBundle.load('assets/saoshu.db.gz');
+    final compressed = data.buffer.asUint8List(
+        data.offsetInBytes, data.lengthInBytes);
+    final sink = File(target).openWrite();
+    try {
+      await ZLibDecoder()
+          .bind(Stream<Uint8List>.fromIterable([compressed]))
+          .pipe(sink);
+    } catch (error) {
+      await sink.close();
+      final partial = File(target);
+      if (partial.existsSync()) {
+        await partial.delete();
+      }
+      rethrow;
+    }
+    _status('数据库就绪');
   }
 
   Future<void> _initializeLocalSchema(Database db) async {

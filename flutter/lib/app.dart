@@ -15,12 +15,16 @@ class AppScope extends InheritedWidget {
   final String themeId;
   final ValueChanged<String> changeTheme;
 
+  /// dock 滚动隐藏开关（书库页下滑隐藏、上滑出现，切页自动复位）。
+  final ValueNotifier<bool> dockHidden;
+
   const AppScope({
     super.key,
     required this.prefs,
     required this.favorites,
     required this.themeId,
     required this.changeTheme,
+    required this.dockHidden,
     required super.child,
   });
 
@@ -84,16 +88,29 @@ class _HomeShellState extends State<HomeShell> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: AppDock(
-              index: _index,
-              count: 4,
-              icons: _icons,
-              selectedIcons: _selectedIcons,
-              labels: _labels,
-              hapticEnabled: scope.prefs.getBool('haptic_enabled') ?? false,
-              onTap: (i) {
-                if (i != _index) setState(() => _index = i);
-              },
+            child: ValueListenableBuilder<bool>(
+              valueListenable: scope.dockHidden,
+              builder: (context, hidden, child) => AnimatedSlide(
+                offset: hidden ? const Offset(0, 1.6) : Offset.zero,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: IgnorePointer(ignoring: hidden, child: child),
+              ),
+              child: AppDock(
+                index: _index,
+                count: 4,
+                icons: _icons,
+                selectedIcons: _selectedIcons,
+                labels: _labels,
+                hapticEnabled:
+                    scope.prefs.getBool('haptic_enabled') ?? false,
+                onTap: (i) {
+                  if (i != _index) {
+                    scope.dockHidden.value = false;
+                    setState(() => _index = i);
+                  }
+                },
+              ),
             ),
           ),
         ],

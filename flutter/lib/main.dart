@@ -32,8 +32,11 @@ class _SaoshuAppState extends State<SaoshuApp> {
     _favorites.addListener(_rebuild);
   }
 
+  final ValueNotifier<bool> _dockHidden = ValueNotifier<bool>(false);
+
   @override
   void dispose() {
+    _dockHidden.dispose();
     _favorites.removeListener(_rebuild);
     super.dispose();
   }
@@ -52,6 +55,7 @@ class _SaoshuAppState extends State<SaoshuApp> {
       favorites: _favorites,
       themeId: _themeId,
       changeTheme: _changeTheme,
+      dockHidden: _dockHidden,
       child: MaterialApp(
         title: '扫书新典',
         debugShowCheckedModeBanner: false,

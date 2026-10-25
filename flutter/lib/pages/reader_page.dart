@@ -75,29 +75,35 @@ class _ReaderPageState extends State<ReaderPage> {
     final style =
         document == null ? null : categoryStyleOf(document.category);
     return Scaffold(
-      appBar: AppBar(
-        leading: const BackButton(),
-        title: Text('正文详情', style: TextStyle(fontSize: 16)),
-        actions: [
-          if (document != null)
-            IconButton(
-              onPressed: _toggleFavorite,
-              icon: Icon(
-                AppScope.of(context).favorites.contains(document.id)
-                    ? Icons.star
-                    : Icons.star_border,
-                color: scheme.primary,
-              ),
-              tooltip: '收藏',
-            ),
-          if (document != null)
-            IconButton(
-              onPressed: _copyContent,
-              icon: const Icon(Icons.copy_rounded),
-              tooltip: '复制正文',
-            ),
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerScrolled) => [
+          SliverAppBar(
+            leading: const BackButton(),
+            title: Text('正文详情', style: TextStyle(fontSize: 16)),
+            floating: true,
+            snap: true,
+            pinned: false,
+            actions: [
+              if (document != null)
+                IconButton(
+                  onPressed: _toggleFavorite,
+                  icon: Icon(
+                    AppScope.of(context).favorites.contains(document.id)
+                        ? Icons.star
+                        : Icons.star_border,
+                    color: scheme.primary,
+                  ),
+                  tooltip: '收藏',
+                ),
+              if (document != null)
+                IconButton(
+                  onPressed: _copyContent,
+                  icon: const Icon(Icons.copy_rounded),
+                  tooltip: '复制正文',
+                ),
+            ],
+          ),
         ],
-      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : document == null
@@ -244,6 +250,7 @@ class _ReaderPageState extends State<ReaderPage> {
                     ),
                   ],
                 ),
+              ),
     );
   }
 }

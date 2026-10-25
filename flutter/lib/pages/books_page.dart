@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app.dart';
+
 import 'browse_page.dart';
 import 'glossary_page.dart';
 import 'network_page.dart';
@@ -70,17 +72,33 @@ class _BooksPageState extends State<BooksPage>
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: TabBarView(
-                  controller: _tabController,
-                  children: const [
-                    NetworkSection(),
-                    SingleChildScrollView(
-                        padding: EdgeInsets.only(bottom: 140),
-                        child: BrowseSection()),
-                    SingleChildScrollView(
-                        padding: EdgeInsets.only(bottom: 140),
-                        child: GlossarySection()),
-                  ],
+                child: NotificationListener<ScrollUpdateNotification>(
+                  onNotification: (notification) {
+                    // 下滑隐藏 dock（一级导航），上滑立即出现；二级页签常驻。
+                    final hidden = AppScope.of(context).dockHidden;
+                    if (notification.scrollDelta == null) return false;
+                    final delta = notification.scrollDelta!;
+                    if (delta > 6 &&
+                        notification.metrics.pixels > 60 &&
+                        !hidden.value) {
+                      hidden.value = true;
+                    } else if (delta < -6 && hidden.value) {
+                      hidden.value = false;
+                    }
+                    return false;
+                  },
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: const [
+                      NetworkSection(),
+                      SingleChildScrollView(
+                          padding: EdgeInsets.only(bottom: 140),
+                          child: BrowseSection()),
+                      SingleChildScrollView(
+                          padding: EdgeInsets.only(bottom: 140),
+                          child: GlossarySection()),
+                    ],
+                  ),
                 ),
               ),
             ),

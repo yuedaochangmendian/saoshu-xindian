@@ -25,6 +25,7 @@ Thumbs.db
 
 # Flutter (数据库同原生版走 Release 分发)
 flutter/assets/saoshu.db
+flutter/assets/saoshu.db.gz
 flutter/.dart_tool/
 flutter/.flutter-plugins*
 flutter/build/
