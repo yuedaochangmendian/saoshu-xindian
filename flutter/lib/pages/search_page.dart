@@ -101,8 +101,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                   const SizedBox(width: 8),
                   TextButton(
-                    onPressed: () =>
-                        _runSearch(_controller.text),
+                    onPressed: () => _runSearch(_controller.text),
                     child: const Text('搜索'),
                   ),
                 ],

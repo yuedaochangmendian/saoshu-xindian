@@ -72,8 +72,7 @@ class _ReaderPageState extends State<ReaderPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final document = _document;
-    final style =
-        document == null ? null : categoryStyleOf(document.category);
+    final style = document == null ? null : categoryStyleOf(document.category);
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
@@ -104,145 +103,153 @@ class _ReaderPageState extends State<ReaderPage> {
               ? Center(
                   child: Text('内容不存在',
                       style: TextStyle(color: scheme.onSurfaceVariant)))
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(17),
-                      decoration: BoxDecoration(
-                        color: style!.container.withValues(alpha: 0.42),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  switchInCurve: Curves.easeOutCubic,
+                  child: KeyedSubtree(
+                    key: ValueKey('doc-${document.id}'),
+                    child: ListView(
+                      key: ValueKey('doc-list-${document.id}'),
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(17),
+                          decoration: BoxDecoration(
+                            color: style!.container.withValues(alpha: 0.42),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 9, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: style.container,
-                                  borderRadius: BorderRadius.circular(11),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(style.icon,
-                                        size: 13, color: style.onContainer),
-                                    const SizedBox(width: 4),
-                                    Text(document.category,
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: style.onContainer)),
-                                  ],
-                                ),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 9, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: style.container,
+                                      borderRadius: BorderRadius.circular(11),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(style.icon,
+                                            size: 13, color: style.onContainer),
+                                        const SizedBox(width: 4),
+                                        Text(document.category,
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: style.onContainer)),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      document.date.isEmpty
+                                          ? '日期未知'
+                                          : document.date,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: style.onContainer
+                                              .withValues(alpha: 0.85)),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  document.date.isEmpty
-                                      ? '日期未知'
-                                      : document.date,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: style.onContainer
-                                          .withValues(alpha: 0.85)),
-                                ),
+                              const SizedBox(height: 13),
+                              Text(
+                                document.displayTitle,
+                                style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.2,
+                                    color: style.onContainer),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                document.author.isEmpty
+                                    ? '作者/发帖人未知'
+                                    : '作者/发帖人  ${document.author}',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: style.onContainer
+                                        .withValues(alpha: 0.85)),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 13),
-                          Text(
-                            document.displayTitle,
-                            style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                height: 1.2,
-                                color: style.onContainer),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ActionButton(
+                                icon: AppScope.of(context)
+                                        .favorites
+                                        .contains(document.id)
+                                    ? Icons.star
+                                    : Icons.star_border,
+                                label: AppScope.of(context)
+                                        .favorites
+                                        .contains(document.id)
+                                    ? '已收藏'
+                                    : '收藏',
+                                onTap: _toggleFavorite,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ActionButton(
+                                icon: Icons.copy_rounded,
+                                label: '复制正文',
+                                onTap: _copyContent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(17),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          const SizedBox(height: 7),
-                          Text(
-                            document.author.isEmpty
-                                ? '作者/发帖人未知'
-                                : '作者/发帖人  ${document.author}',
+                          child: SelectableText(
+                            document.content,
                             style: TextStyle(
-                                fontSize: 12,
-                                color: style.onContainer
-                                    .withValues(alpha: 0.85)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ActionButton(
-                            icon: AppScope.of(context)
-                                    .favorites
-                                    .contains(document.id)
-                                ? Icons.star
-                                : Icons.star_border,
-                            label: AppScope.of(context)
-                                    .favorites
-                                    .contains(document.id)
-                                ? '已收藏'
-                                : '收藏',
-                            onTap: _toggleFavorite,
+                                fontSize: 15,
+                                height: 1.65,
+                                color: scheme.onSurface),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _ActionButton(
-                            icon: Icons.copy_rounded,
-                            label: '复制正文',
-                            onTap: _copyContent,
-                          ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _NavButton(
+                                label: '上一篇',
+                                enabled: _olderId != null,
+                                onTap: _olderId == null
+                                    ? null
+                                    : () => _load(_olderId!),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _NavButton(
+                                label: '下一篇',
+                                enabled: _newerId != null,
+                                onTap: _newerId == null
+                                    ? null
+                                    : () => _load(_newerId!),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(17),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: SelectableText(
-                        document.content,
-                        style: TextStyle(
-                            fontSize: 15,
-                            height: 1.65,
-                            color: scheme.onSurface),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _NavButton(
-                            label: '上一篇',
-                            enabled: _olderId != null,
-                            onTap: _olderId == null
-                                ? null
-                                : () => _load(_olderId!),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _NavButton(
-                            label: '下一篇',
-                            enabled: _newerId != null,
-                            onTap: _newerId == null
-                                ? null
-                                : () => _load(_newerId!),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
     );
   }

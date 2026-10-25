@@ -30,6 +30,10 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surfaceContainer,
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
     appBarTheme: AppBarTheme(
       backgroundColor:
           isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
@@ -42,12 +46,6 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
         color: scheme.onSurface,
       ),
     ),
-    cardTheme: CardThemeData(
-      color: isDark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLow,
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: scheme.surfaceContainerLow,
@@ -59,8 +57,7 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
       ),
     ),
     chipTheme: ChipThemeData(

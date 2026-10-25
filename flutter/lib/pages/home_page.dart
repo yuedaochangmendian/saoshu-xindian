@@ -21,6 +21,7 @@ class _HomePageState extends State<HomePage> {
   int _docs = 0;
   int _books = 0;
   int _sources = 0;
+  int _randomSeed = 0;
   List<Document> _random = const [];
 
   late final void Function(String) _statusListener;
@@ -60,6 +61,7 @@ class _HomePageState extends State<HomePage> {
           _books = books;
           _sources = sources;
           _random = random;
+          _randomSeed++;
           _loading = false;
           _dbPreparing = false;
         });
@@ -82,7 +84,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openSearch() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchPage()));
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SearchPage()));
   }
 
   @override
@@ -145,8 +148,8 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(26),
                 onTap: _openSearch,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 13, vertical: 11),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
                   child: Row(
                     children: [
                       Icon(Icons.search, color: scheme.primary, size: 22),
@@ -190,24 +193,47 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_random.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Text('暂无内容',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.onSurfaceVariant)),
-              )
-            else
-              ..._random.map((d) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child:
-                        DocumentCard(document: d, onTap: () => _openReader(d)),
-                  )),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 280),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                          begin: const Offset(0, 0.015), end: Offset.zero)
+                      .animate(animation),
+                  child: child,
+                ),
+              ),
+              child: _loading
+                  ? const Padding(
+                      key: ValueKey('random-loading'),
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : _random.isEmpty
+                      ? Padding(
+                          key: const ValueKey('random-empty'),
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text('暂无内容',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: scheme.onSurfaceVariant)),
+                        )
+                      : KeyedSubtree(
+                          key: ValueKey('random-$_randomSeed'),
+                          child: Column(
+                            children: [
+                              for (final d in _random)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: DocumentCard(
+                                      document: d, onTap: () => _openReader(d)),
+                                ),
+                            ],
+                          ),
+                        ),
+            ),
           ],
         ),
       ),

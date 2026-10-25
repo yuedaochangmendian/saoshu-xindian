@@ -42,40 +42,14 @@ class Document {
     try {
       final decoded = jsonDecode(mentionedJson);
       if (decoded is List) {
-        return decoded.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+        return decoded
+            .map((e) => e.toString())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
     return const [];
   }
 
   String get displayTitle => title.isEmpty ? '（无标题）' : title;
-}
-
-class Book {
-  final int id;
-  final String title;
-  final String titleNorm;
-  final int reviewCount;
-  final int bestDocumentId;
-  final String latestAt;
-
-  const Book({
-    required this.id,
-    required this.title,
-    required this.titleNorm,
-    required this.reviewCount,
-    required this.bestDocumentId,
-    required this.latestAt,
-  });
-
-  static Book fromRow(Map<String, Object?> row) => Book(
-        id: (row['id'] ?? 0) as int,
-        title: (row['title'] ?? '') as String,
-        titleNorm: (row['title_norm'] ?? '') as String,
-        reviewCount: (row['review_count'] ?? 0) as int,
-        bestDocumentId: (row['best_document_id'] ?? 0) as int,
-        latestAt: (row['latest_at'] is String)
-            ? row['latest_at'] as String
-            : (row['published_at'] ?? '') as String,
-      );
 }

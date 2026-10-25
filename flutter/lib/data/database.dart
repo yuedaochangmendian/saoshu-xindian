@@ -142,8 +142,8 @@ class AppDatabase {
           ..write(' ')
           ..write(row['author'] ?? '');
         try {
-          final decoded = jsonDecode(
-              (row['mentioned_books_json'] ?? '') as String);
+          final decoded =
+              jsonDecode((row['mentioned_books_json'] ?? '') as String);
           if (decoded is List) {
             for (final book in decoded) {
               searchable.write(' ');
@@ -191,9 +191,9 @@ class AppDatabase {
 
   Future<int> documentCount() async {
     final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT count(*) c FROM documents WHERE id NOT IN '
-        '(SELECT document_id FROM local_deleted)');
+    final rows =
+        await db.rawQuery('SELECT count(*) c FROM documents WHERE id NOT IN '
+            '(SELECT document_id FROM local_deleted)');
     return rows.first['c'] as int? ?? 0;
   }
 
@@ -215,14 +215,15 @@ class AppDatabase {
         "SELECT * FROM documents WHERE category IN ('扫书','推书','排雷') "
         'AND length(content)>=20 '
         'AND id NOT IN (SELECT document_id FROM local_deleted) '
-        'ORDER BY RANDOM() LIMIT ?', [limit]);
+        'ORDER BY RANDOM() LIMIT ?',
+        [limit]);
     return rows.map(Document.fromRow).toList();
   }
 
   Future<Document?> loadDocument(int id) async {
     final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT * FROM documents WHERE id=? LIMIT 1', [id]);
+    final rows =
+        await db.rawQuery('SELECT * FROM documents WHERE id=? LIMIT 1', [id]);
     return rows.isEmpty ? null : Document.fromRow(rows.first);
   }
 
@@ -268,10 +269,12 @@ class AppDatabase {
       sql += ' AND s.tokens MATCH ?';
       args.add(tokens);
     } else {
-      sql += ' AND (d.title LIKE ? OR d.author LIKE ? OR d.mentioned_books_json LIKE ?)';
+      sql +=
+          ' AND (d.title LIKE ? OR d.author LIKE ? OR d.mentioned_books_json LIKE ?)';
       args.addAll([like, like, like]);
     }
-    sql += ' ORDER BY CASE WHEN d.title LIKE ? THEN 0 WHEN d.author LIKE ? THEN 1 ELSE 2 END,'
+    sql +=
+        ' ORDER BY CASE WHEN d.title LIKE ? THEN 0 WHEN d.author LIKE ? THEN 1 ELSE 2 END,'
         ' d.published_at DESC,d.hot_score DESC,d.id DESC LIMIT ? OFFSET ?';
     args.addAll([like, like, limit, offset]);
     var rows = await db.rawQuery(sql, args);
@@ -287,70 +290,14 @@ class AppDatabase {
     return rows.map(Document.fromRow).toList();
   }
 
-  Future<List<Book>> searchBooks(String query,
-      {int limit = 60, int offset = 0}) async {
-    final db = await database;
-    final like = '%$query%';
-    final rows = await db.rawQuery(
-        'SELECT $_bookColumns FROM books WHERE title LIKE ? OR title_norm LIKE ? '
-        'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
-        [like, like, limit, offset]);
-    return rows.map(Book.fromRow).toList();
-  }
-
-  static const _bookColumns =
-      'id,title,title_norm,review_count,best_document_id,latest_at';
-
-  Future<List<Book>> latestBooks({int limit = 60, int offset = 0}) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT $_bookColumns FROM books '
-        'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
-        [limit, offset]);
-    return rows.map(Book.fromRow).toList();
-  }
-
-  Future<List<Document>> documentsForBook(Book book,
-      {int limit = 200}) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT d.* FROM documents d WHERE (d.title_norm=? '
-        'OR instr(d.mentioned_books_json, ?)>0) '
-        'AND d.id NOT IN (SELECT document_id FROM local_deleted) '
-        'ORDER BY d.published_at DESC,d.hot_score DESC,d.id DESC LIMIT ?',
-        [book.titleNorm, book.title, limit]);
-    return rows.map(Document.fromRow).toList();
-  }
-
-  // ---------- 分类浏览（来源 / 帖子类型） ----------
-
-  Future<List<Map<String, Object?>>> forumsWithCounts() async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT forum, count(*) c FROM documents WHERE forum != '' '
-        'AND id NOT IN (SELECT document_id FROM local_deleted) '
-        'GROUP BY forum ORDER BY c DESC');
-    return rows;
-  }
+  // ---------- 分类浏览（帖子类型） ----------
 
   Future<List<Map<String, Object?>>> categoriesWithCounts() async {
     final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT category, count(*) c FROM documents '
+    final rows = await db.rawQuery('SELECT category, count(*) c FROM documents '
         'WHERE id NOT IN (SELECT document_id FROM local_deleted) '
         'GROUP BY category ORDER BY c DESC');
     return rows;
-  }
-
-  Future<List<Document>> documentsByForum(String forum,
-      {int limit = 40, int offset = 0}) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT * FROM documents WHERE forum=? '
-        'AND id NOT IN (SELECT document_id FROM local_deleted) '
-        'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
-        [forum, limit, offset]);
-    return rows.map(Document.fromRow).toList();
   }
 
   Future<List<Document>> documentsByCategory(String category,
@@ -371,7 +318,8 @@ class AppDatabase {
     final rows = await db.rawQuery(
         'SELECT * FROM documents WHERE id IN ($placeholders) '
         'AND id NOT IN (SELECT document_id FROM local_deleted) '
-        'ORDER BY published_at DESC,id DESC', ids);
+        'ORDER BY published_at DESC,id DESC',
+        ids);
     return rows.map(Document.fromRow).toList();
   }
 

@@ -50,8 +50,8 @@ class CollectedThread {
   const CollectedThread(this.forum, this.tid, this.title, this.author,
       this.createTime, this.replyNum, this.viewNum, this.floors);
 
-  int get maxAgree =>
-      floors.fold(0, (value, floor) => value > floor.agree ? value : floor.agree);
+  int get maxAgree => floors.fold(
+      0, (value, floor) => value > floor.agree ? value : floor.agree);
 
   String combinedText() {
     final builder = StringBuffer();
@@ -126,14 +126,12 @@ class TiebaClient {
       ..varintField(15, apiPage)
       ..varintField(47, 1);
     final request = (PbWriter()..messageField(1, data)).toBytes();
-    final response =
-        await _postProto('/c/f/frs/page?cmd=$_frsCmd', request);
+    final response = await _postProto('/c/f/frs/page?cmd=$_frsCmd', request);
     return _parseThreads(response);
   }
 
   Future<CollectedThread> fetchThread(String fname, int tid,
-      {int maxFloors = 100,
-      void Function(String status)? onStatus}) async {
+      {int maxFloors = 100, void Function(String status)? onStatus}) async {
     var title = '';
     var author = '';
     var createTime = 0;
@@ -162,8 +160,8 @@ class TiebaClient {
       floors.removeRange(maxFloors, floors.length);
     }
     floors.sort((a, b) => a.seq.compareTo(b.seq));
-    return CollectedThread(fname, tid, title, author, createTime, replyNum,
-        viewNum, floors);
+    return CollectedThread(
+        fname, tid, title, author, createTime, replyNum, viewNum, floors);
   }
 
   Future<PostsPage> _requestPosts(int tid, int page) async {
@@ -200,11 +198,12 @@ class TiebaClient {
       request.headers.set('x_bd_data_type', 'protobuf');
       request.headers.set('Accept-Encoding', 'identity');
       request.headers.set('Connection', 'keep-alive');
-      request.headers.set('Content-Type', 'multipart/form-data; boundary=$_boundary');
+      request.headers
+          .set('Content-Type', 'multipart/form-data; boundary=$_boundary');
       request.contentLength = body.length;
       request.add(body);
-      final response = await request.close()
-          .timeout(const Duration(seconds: 30));
+      final response =
+          await request.close().timeout(const Duration(seconds: 30));
       final bytes = <int>[];
       await for (final chunk in response) {
         bytes.addAll(chunk);
@@ -241,9 +240,16 @@ class TiebaClient {
       final authorId = item.varint(56);
       var author = users[authorId] ?? '';
       if (author.isEmpty) author = _userDisplay(item.message(18));
-      threads.add(ThreadSummary(tid, item.text(3), author, item.varint(45),
-          item.varint(7), item.varint(4), item.varint(9) != 0,
-          item.varint(181) != 0, item.varint(198) != 0));
+      threads.add(ThreadSummary(
+          tid,
+          item.text(3),
+          author,
+          item.varint(45),
+          item.varint(7),
+          item.varint(4),
+          item.varint(9) != 0,
+          item.varint(181) != 0,
+          item.varint(198) != 0));
     }
     return ThreadsPage(fid, hasMore, threads);
   }
@@ -276,8 +282,8 @@ class TiebaClient {
       floors.add(Floor(pid, post.varint(3), agree, floorAuthor,
           _assembleContent(post.messages(5))));
     }
-    return PostsPage(hasMore, title, author, createTime, replyNum, viewNum,
-        floors);
+    return PostsPage(
+        hasMore, title, author, createTime, replyNum, viewNum, floors);
   }
 
   Map<int, String> _parseUsers(List<PbMessage> list) {
@@ -303,8 +309,15 @@ class TiebaClient {
     for (final fragment in fragments) {
       final type = fragment.varint(1);
       var text = fragment.text(2);
-      if (type == 0 || type == 1 || type == 2 || type == 4 || type == 9
-          || type == 11 || type == 18 || type == 27 || type == 40) {
+      if (type == 0 ||
+          type == 1 ||
+          type == 2 ||
+          type == 4 ||
+          type == 9 ||
+          type == 11 ||
+          type == 18 ||
+          type == 27 ||
+          type == 40) {
         if (type == 1 && text.isEmpty) text = fragment.text(3);
         builder.write(text);
       } else if (type == 3 || type == 20) {

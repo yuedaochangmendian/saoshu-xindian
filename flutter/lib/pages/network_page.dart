@@ -60,8 +60,7 @@ class _NetworkSectionState extends State<NetworkSection> {
       if (mounted) {
         setState(() {
           _page++;
-          _threads.addAll(page.threads
-              .where((t) => !t.deleted && !t.masked));
+          _threads.addAll(page.threads.where((t) => !t.deleted && !t.masked));
           _hasMore = page.hasMore;
           _loading = false;
         });
@@ -108,7 +107,8 @@ class _NetworkSectionState extends State<NetworkSection> {
         final thread = await _client.fetchThread(_forum, targets[i].tid,
             onStatus: (status) {
           if (mounted) {
-            setState(() => _fetchStatus = '(${i + 1}/${targets.length}) $status');
+            setState(
+                () => _fetchStatus = '(${i + 1}/${targets.length}) $status');
           }
         });
         collected.add(thread);
@@ -213,7 +213,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                         borderRadius: BorderRadius.circular(20),
                         onTap: () => setState(() {
                           if (!done) {
-                            checked ? _selected.remove(thread.tid)
+                            checked
+                                ? _selected.remove(thread.tid)
                                 : _selected.add(thread.tid);
                           }
                         }),
@@ -226,9 +227,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                                 value: done ? true : checked,
                                 tristate: true,
                                 fillColor: WidgetStateProperty.resolveWith(
-                                    (states) => done
-                                        ? scheme.primary
-                                        : null),
+                                    (states) => done ? scheme.primary : null),
                                 onChanged: done
                                     ? null
                                     : (value) => setState(() {
@@ -239,8 +238,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                               ),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       thread.title.isEmpty
