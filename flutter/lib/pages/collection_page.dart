@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app.dart';
+import '../prefs.dart';
 import '../data/database.dart';
 import '../data/models.dart';
 import '../widgets/document_card.dart';
@@ -20,16 +21,21 @@ class _CollectionPageState extends State<CollectionPage> {
   List<Map<String, Object?>> _notes = const [];
   bool _loading = true;
 
+  Favorites? _favoritesNotifier;
+
   @override
-  void initState() {
-    super.initState();
-    AppScope.of(context).favorites.addListener(_reload);
-    _reload();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_favoritesNotifier == null) {
+      _favoritesNotifier = AppScope.of(context).favorites;
+      _favoritesNotifier!.addListener(_reload);
+      _reload();
+    }
   }
 
   @override
   void dispose() {
-    AppScope.of(context).favorites.removeListener(_reload);
+    _favoritesNotifier?.removeListener(_reload);
     super.dispose();
   }
 

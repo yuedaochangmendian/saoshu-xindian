@@ -67,6 +67,7 @@ class _HomeShellState extends State<HomeShell> {
     ];
     return Scaffold(
       extendBody: true,
+      backgroundColor: Colors.transparent,
       body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: AppDock(
         index: _index,

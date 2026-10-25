@@ -108,6 +108,12 @@ class AppDatabase {
         "INSERT OR IGNORE INTO collector_forums(fname,enabled) VALUES('yy小说吧',1)");
     await db.execute(
         "INSERT OR IGNORE INTO collector_forums(fname,enabled) VALUES('哀伤雪刃',1)");
+    await db.execute('CREATE INDEX IF NOT EXISTS documents_forum_idx '
+        'ON documents(forum)');
+    await db.execute('CREATE INDEX IF NOT EXISTS documents_category_idx '
+        'ON documents(category)');
+    await db.execute('CREATE INDEX IF NOT EXISTS books_review_id_idx '
+        'ON books(review_count DESC,id DESC)');
     final hasIndex = await db.rawQuery(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_idx' LIMIT 1");
     if (hasIndex.isEmpty) {
@@ -279,16 +285,20 @@ class AppDatabase {
     final db = await database;
     final like = '%$query%';
     final rows = await db.rawQuery(
-        'SELECT * FROM books WHERE title LIKE ? OR title_norm LIKE ? '
+        'SELECT $_bookColumns FROM books WHERE title LIKE ? OR title_norm LIKE ? '
         'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
         [like, like, limit, offset]);
     return rows.map(Book.fromRow).toList();
   }
 
+  static const _bookColumns =
+      'id,title,title_norm,review_count,best_document_id,latest_at';
+
   Future<List<Book>> latestBooks({int limit = 60, int offset = 0}) async {
     final db = await database;
     final rows = await db.rawQuery(
-        'SELECT * FROM books ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
+        'SELECT $_bookColumns FROM books '
+        'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
         [limit, offset]);
     return rows.map(Book.fromRow).toList();
   }

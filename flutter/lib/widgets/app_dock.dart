@@ -36,6 +36,8 @@ class _AppDockState extends State<AppDock>
   late final AnimationController _pos = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 200),
+    lowerBound: 0,
+    upperBound: (widget.count - 1).toDouble(),
   );
   int? _activePointer;
   Offset? _downPosition;
