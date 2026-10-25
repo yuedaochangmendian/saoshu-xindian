@@ -23,11 +23,23 @@ class _SettingsPageState extends State<SettingsPage> {
   int _docs = 0;
   int _books = 0;
   int _sources = 0;
+  String _appVersionLabel = '';
 
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await SystemBridge.appVersion();
+    if (mounted) {
+      setState(() {
+        final version = info?['version'] as String? ?? '';
+        _appVersionLabel = version.isEmpty ? 'v4.1' : 'v$version';
+      });
+    }
   }
 
   Future<void> _loadStats() async {
@@ -108,13 +120,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('扫书新典 v4.0（Flutter 版）',
+                    Text('扫书新典 $_appVersionLabel',
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     Text(
-                      '由原生 Java 版迁移至 Flutter 的首个预览版。'
-                      '数据与原生版共用同一私有数据库，收藏与主题设置自动迁移；'
-                      '网络采集、WebDAV 备份等功能将在后续版本补齐。',
+                      '离线扫书资料阅读器（Flutter 版）。数据与原生版共用同一'
+                      '私有数据库；支持本地与 WebDAV 备份、贴吧网络浏览抓取、'
+                      '应用内检查更新。',
                       style: TextStyle(
                           fontSize: 12,
                           height: 1.5,
@@ -437,12 +449,18 @@ class _BackupSectionState extends State<_BackupSection> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('本地备份',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: _MiniAction(
                     icon: Icons.save_rounded,
-                    label: '本地备份',
+                    label: '备份到本机',
                     onTap: _busy ? null : _localBackup,
                   ),
                 ),
@@ -450,19 +468,25 @@ class _BackupSectionState extends State<_BackupSection> {
                 Expanded(
                   child: _MiniAction(
                     icon: Icons.restore_rounded,
-                    label: '本地恢复',
+                    label: '从本机恢复',
                     onTap: _busy ? null : _localRestore,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const Divider(height: 24),
+            Text('WebDAV 云备份',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: _MiniAction(
                     icon: Icons.cloud_upload_rounded,
-                    label: 'WebDAV 备份',
+                    label: '上传备份',
                     onTap: _busy ? null : () => _webdavFlow(restore: false),
                   ),
                 ),
@@ -470,7 +494,7 @@ class _BackupSectionState extends State<_BackupSection> {
                 Expanded(
                   child: _MiniAction(
                     icon: Icons.cloud_download_rounded,
-                    label: 'WebDAV 恢复',
+                    label: '恢复云端备份',
                     onTap: _busy ? null : () => _webdavFlow(restore: true),
                   ),
                 ),
