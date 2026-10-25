@@ -40,8 +40,7 @@ class TiebaImporter {
     final sourceRef = thread.tid.toString();
     final existing = await db.rawQuery(
         'SELECT document_id FROM document_sources WHERE source_kind=? '
-        'AND source_ref=? LIMIT 1',
-        [sourceKind, sourceRef]);
+        'AND source_ref=? LIMIT 1', [sourceKind, sourceRef]);
     if (existing.isNotEmpty) return false;
 
     var title = cleanDisplayTitle(thread.title);
@@ -66,10 +65,8 @@ class TiebaImporter {
     return await db.transaction((txn) async {
       var documentId = await _idForKey(txn, canonicalKey);
       if (documentId == null) {
-        final row = await txn.rawQuery(
-            'SELECT id FROM documents '
-            'WHERE source_url=? LIMIT 1',
-            [sourceUrl]);
+        final row = await txn.rawQuery('SELECT id FROM documents '
+            'WHERE source_url=? LIMIT 1', [sourceUrl]);
         documentId = row.isEmpty ? null : row.first['id'] as int;
       }
       if (documentId != null) return false;
@@ -103,8 +100,8 @@ class TiebaImporter {
       await txn.execute('DELETE FROM search_idx WHERE rowid=?', [documentId]);
       await txn.execute('INSERT INTO search_idx(rowid,tokens) VALUES(?,?)',
           [documentId, AppDatabase.buildFtsQuery(searchable.toString())]);
-      await _adjustBookIndex(
-          txn, title, mentionedJson, '百度贴吧', date, documentId);
+      await _adjustBookIndex(txn, title, mentionedJson, '百度贴吧', date,
+          documentId);
       await txn.execute(
           'INSERT OR IGNORE INTO network_threads('
           'document_id,tid,forum,reply_count,view_count,agree_max,collected_at) '
@@ -123,23 +120,18 @@ class TiebaImporter {
   }
 
   Future<int?> _idForKey(DatabaseExecutor txn, String key) async {
-    final rows = await txn.rawQuery(
-        'SELECT id FROM documents WHERE canonical_key=? LIMIT 1', [key]);
+    final rows = await txn
+        .rawQuery('SELECT id FROM documents WHERE canonical_key=? LIMIT 1', [key]);
     return rows.isEmpty ? null : rows.first['id'] as int;
   }
 
-  Future<void> _adjustBookIndex(
-      DatabaseExecutor txn,
-      String title,
-      String mentionedJson,
-      String sourceType,
-      String date,
-      int documentId) async {
+  Future<void> _adjustBookIndex(DatabaseExecutor txn, String title,
+      String mentionedJson, String sourceType, String date, int documentId) async {
     for (final entry in _candidateBookTitles(title, mentionedJson).entries) {
       final norm = entry.key;
       final display = entry.value;
-      final exists = await txn
-          .rawQuery('SELECT 1 FROM books WHERE title_norm=? LIMIT 1', [norm]);
+      final exists = await txn.rawQuery(
+          'SELECT 1 FROM books WHERE title_norm=? LIMIT 1', [norm]);
       if (exists.isEmpty) {
         await txn.insert('books', {
           'title_norm': norm,
@@ -162,8 +154,8 @@ class TiebaImporter {
   Map<String, String> _candidateBookTitles(String title, String mentionedJson) {
     final candidates = <String, String>{};
     final cleanTitle = title.replaceAll(RegExp(r'^《|》$'), '').trim();
-    final looksLikePost =
-        RegExp('(近期|记录|书单|推荐|求书|合集|杂谈|吐槽|楼中楼)').hasMatch(cleanTitle);
+    final looksLikePost = RegExp('(近期|记录|书单|推荐|求书|合集|杂谈|吐槽|楼中楼)')
+        .hasMatch(cleanTitle);
     if (cleanTitle.length >= 2 && cleanTitle.length <= 80 && !looksLikePost) {
       candidates[compact(cleanTitle)] = cleanTitle;
     }
@@ -186,7 +178,8 @@ class TiebaImporter {
 
   static Set<String> extractBooks(String text) {
     final result = <String>{};
-    for (final match in RegExp('《([^《》\\n]{1,80})》').allMatches(text)) {
+    for (final match
+        in RegExp('《([^《》\\n]{1,80})》').allMatches(text)) {
       final book = match.group(1)!.trim();
       if (book.length >= 2) result.add(book);
     }
@@ -201,9 +194,8 @@ class TiebaImporter {
 
   static String titleBookCandidate(String title) {
     var value = title.trim();
-    value = value
-        .replaceFirst(RegExp(r'^(?:扫书|推书|排雷|避雷|推荐|吐槽|书评)\s*[:：\-]?\s*'), '')
-        .trim();
+    value = value.replaceFirst(
+        RegExp(r'^(?:扫书|推书|排雷|避雷|推荐|吐槽|书评)\s*[:：\-]?\s*'), '').trim();
     if (value.length < 2 || value.length > 50) return '';
     if (RegExp('(吧规|吧务|专用贴|怎么|为什么|有人|求书|求推|推荐|记录|书单|合集|作者|问题|吗|？|\\?)')
         .hasMatch(value)) {
@@ -222,15 +214,15 @@ class TiebaImporter {
 
   static String networkDate(int epochSeconds) {
     if (epochSeconds <= 0) return '';
-    return DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000, isUtc: true)
+    return DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000,
+            isUtc: true)
         .add(const Duration(hours: 8))
         .toIso8601String()
         .substring(0, 10);
   }
 
-  static String compact(String value) => value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[\p{P}\p{S}\s]+', unicode: true), '');
+  static String compact(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[\p{P}\p{S}\s]+', unicode: true), '');
 
   static String cleanDisplayTitle(String value) {
     var title = value
@@ -243,7 +235,8 @@ class TiebaImporter {
     title = title.replaceFirst(RegExp(r'^\s*[（(]?再补档[）)]?\s*'), '');
     title = title.replaceFirst(RegExp(r'^\s*【\s*Time\s*[:：].*?】\s*'), '');
     title = title.replaceAll(
-        RegExp(r'\[(?:图片|image)\]|看高清大图[，,]?\s*打开贴吧App', caseSensitive: false),
+        RegExp(r'\[(?:图片|image)\]|看高清大图[，,]?\s*打开贴吧App',
+            caseSensitive: false),
         '');
     title = title.replaceAll(RegExp(r'_20\d{6}_\d{6}\s*$'), '');
     title = title.replaceAll(RegExp(r'\s+'), ' ').trim();

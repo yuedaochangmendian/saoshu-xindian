@@ -36,8 +36,8 @@ class DocumentCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
                       color: style.container,
                       borderRadius: BorderRadius.circular(11),
@@ -84,7 +84,9 @@ class DocumentCard extends StatelessWidget {
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: 13, height: 1.45, color: scheme.onSurfaceVariant),
+                    fontSize: 13,
+                    height: 1.45,
+                    color: scheme.onSurfaceVariant),
               ),
             ],
           ),

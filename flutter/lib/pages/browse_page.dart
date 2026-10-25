@@ -32,7 +32,8 @@ class _BrowseSectionState extends State<BrowseSection> {
     if (mounted) {
       setState(() {
         _values = values;
-        _selected = values.isEmpty ? null : _labelOf(values.first);
+        _selected =
+            values.isEmpty ? null : _labelOf(values.first);
         _loading = false;
       });
       _loadDocuments();
@@ -70,7 +71,8 @@ class _BrowseSectionState extends State<BrowseSection> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: FilterChip(
-                    label: Text('${_labelOf(entry)} ${entry['c']}'),
+                    label: Text(
+                        '${_labelOf(entry)} ${entry['c']}'),
                     selected: _selected == _labelOf(entry),
                     onSelected: (_) {
                       setState(() => _selected = _labelOf(entry));

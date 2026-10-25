@@ -108,8 +108,7 @@ class PbWriter {
     _output.add(value);
   }
 
-  void messageField(int tag, PbWriter value) =>
-      bytesField(tag, value.toBytes());
+  void messageField(int tag, PbWriter value) => bytesField(tag, value.toBytes());
 
   Uint8List toBytes() => _output.toBytes();
 

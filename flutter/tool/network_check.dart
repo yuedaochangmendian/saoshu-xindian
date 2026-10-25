@@ -14,7 +14,8 @@ Future<void> main(List<String> args) async {
       stdout.writeln('  tid=${thread.tid} replies=${thread.replyCount} '
           'author=${thread.author} ${thread.title.substring(0, thread.title.length.clamp(0, 30))}');
     }
-    final target = page.threads.firstWhere((t) => !t.top && t.replyCount > 3,
+    final target = page.threads.firstWhere(
+        (t) => !t.top && t.replyCount > 3,
         orElse: () => page.threads.first);
     stdout.writeln('抓取目标 tid=${target.tid}');
     final collected = await client.fetchThread(forum, target.tid,
