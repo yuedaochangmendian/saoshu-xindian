@@ -263,7 +263,43 @@ class _NetworkSectionState extends State<NetworkSection> {
                         '${collected.isEmpty ? '' : ' · ${collected.substring(0, collected.length.clamp(0, 10))}'}',
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant)),
-                    trailing: const Icon(Icons.chevron_right_rounded),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete_outline,
+                          size: 20, color: scheme.onSurfaceVariant),
+                      tooltip: '删除导入',
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: sheetContext,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('删除导入'),
+                            content: Text('将从本地库删除「${row['title']}」及其书目计数，确定？'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('取消')),
+                              FilledButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('删除')),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true) {
+                          await deleteImportedThread(db, row['doc_id'] as int);
+                          if (sheetContext.mounted) {
+                            Navigator.of(sheetContext).pop();
+                          }
+                          if (outerContext.mounted) {
+                            _showHistory();
+                            ScaffoldMessenger.of(outerContext)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                  const SnackBar(content: Text('导入已删除')));
+                          }
+                        }
+                      },
+                    ),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
                       Navigator.of(outerContext).push(MaterialPageRoute(

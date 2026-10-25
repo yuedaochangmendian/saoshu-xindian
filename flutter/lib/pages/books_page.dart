@@ -20,6 +20,17 @@ class _BooksPageState extends State<BooksPage>
       TabController(length: 3, vsync: this);
 
   @override
+  void initState() {
+    super.initState();
+    // 切换二级页签时复位隐藏状态：页签只随滑动隐藏，切页必回显。
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging && mounted) {
+        AppScope.of(context).dockHidden.value = false;
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _tabController.dispose();
     super.dispose();

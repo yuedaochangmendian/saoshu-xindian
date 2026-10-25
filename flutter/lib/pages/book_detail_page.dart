@@ -88,8 +88,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Text('暂无相关内容',
                         textAlign: TextAlign.center,
-                        style:
-                            TextStyle(color: scheme.onSurfaceVariant)),
+                        style: TextStyle(color: scheme.onSurfaceVariant)),
                   )
                 else
                   ..._documents.map((d) => Padding(
@@ -98,8 +97,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           document: d,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
-                                builder: (_) =>
-                                    ReaderPage(documentId: d.id)),
+                                builder: (_) => ReaderPage(documentId: d.id)),
                           ),
                         ),
                       )),

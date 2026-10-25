@@ -54,8 +54,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     color: scheme.onSurface)),
             const SizedBox(height: 4),
             Text('$_docs 条内容 · $_books 本书名 · $_sources 条来源',
-                style: TextStyle(
-                    fontSize: 11, color: scheme.onSurfaceVariant)),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 16),
             Text('主题与外观',
                 style: TextStyle(
@@ -207,8 +206,7 @@ class _SwitchCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 3, bottom: 8),
                     child: Text(hint,
                         style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onSurfaceVariant)),
+                            fontSize: 11, color: scheme.onSurfaceVariant)),
                   ),
                 ],
               ),

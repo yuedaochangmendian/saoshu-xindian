@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../data/database.dart';
-import '../prefs.dart';
 import '../data/models.dart';
+import '../network/tieba_client.dart';
+import '../network/tieba_import.dart';
+import '../prefs.dart';
 import '../widgets/document_card.dart';
 import 'reader_page.dart';
+import 'thread_preview_page.dart';
 
-/// 搜索页：进入自动弹出输入法，标题/全文双模式，最近 10 条记录。
+/// 搜索页：进入自动弹出输入法，本地标题/全文 + 网络三模式，最近 10 条记录。
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
 
@@ -14,18 +17,23 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
+enum _SearchMode { localTitle, localFullText, network }
+
 class _SearchPageState extends State<SearchPage> {
   final _db = AppDatabase.instance;
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
-  bool _fullText = false;
+  _SearchMode _mode = _SearchMode.localTitle;
   bool _searching = false;
   bool _searched = false;
   bool _hasMore = false;
   int _offset = 0;
   List<Document> _results = const [];
+  List<ThreadSummary> _networkResults = const [];
   List<String> _history = [];
   String _lastQuery = '';
+  final TiebaClient _client = TiebaClient();
+  String _networkError = '';
 
   @override
   void initState() {
@@ -40,6 +48,7 @@ class _SearchPageState extends State<SearchPage> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _client.close();
     super.dispose();
   }
 
@@ -47,9 +56,13 @@ class _SearchPageState extends State<SearchPage> {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     setState(() => _searching = true);
+    if (_mode == _SearchMode.network) {
+      await _runNetworkSearch(query.trim(), append: append);
+      return;
+    }
     final offset = append ? _offset : 0;
     final results = await _db.searchDocuments(query.trim(),
-        fullText: _fullText, offset: offset);
+        fullText: _mode == _SearchMode.localFullText, offset: offset);
     if (!append) {
       AppHistory.push(query.trim());
     }
@@ -67,6 +80,45 @@ class _SearchPageState extends State<SearchPage> {
         _searching = false;
         _history = AppHistory.load();
       });
+    }
+  }
+
+  /// 网络搜索：与网络浏览同一接口——抓两吧前 3 页列表，按标题过滤。
+  Future<void> _runNetworkSearch(String query, {bool append = false}) async {
+    const forums = ['yy小说吧', '哀伤雪刃'];
+    var matches = <ThreadSummary>[];
+    try {
+      for (final forum in forums) {
+        for (var page = 1; page <= 3; page++) {
+          final result = await _client.requestThreads(forum, page);
+          matches.addAll(result.threads.where(
+              (t) => !t.deleted && !t.masked && t.title.contains(query)));
+          if (!result.hasMore) break;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _networkResults = matches;
+          _networkError = '';
+          _searched = true;
+          _lastQuery = query;
+          _hasMore = false;
+          _searching = false;
+          if (!append) {
+            AppHistory.push(query);
+            _history = AppHistory.load();
+          }
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _networkError = '网络搜索失败：$error';
+          _searching = false;
+          _searched = true;
+          _hasMore = false;
+        });
+      }
     }
   }
 
@@ -93,7 +145,9 @@ class _SearchPageState extends State<SearchPage> {
                       textInputAction: TextInputAction.search,
                       onSubmitted: _runSearch,
                       decoration: InputDecoration(
-                        hintText: '例如：世子很凶 / 作者名 / 西幻',
+                        hintText: _mode == _SearchMode.network
+                            ? '搜索贴吧帖子标题'
+                            : '例如：世子很凶 / 作者名 / 西幻',
                         prefixIcon: Icon(Icons.search, color: scheme.primary),
                         isDense: true,
                       ),
@@ -101,8 +155,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                   const SizedBox(width: 8),
                   TextButton(
-                    onPressed: () =>
-                        _runSearch(_controller.text),
+                    onPressed: () => _runSearch(_controller.text),
                     child: const Text('搜索'),
                   ),
                 ],
@@ -114,14 +167,23 @@ class _SearchPageState extends State<SearchPage> {
                 children: [
                   FilterChip(
                     label: const Text('标题/书名'),
-                    selected: !_fullText,
-                    onSelected: (_) => setState(() => _fullText = false),
+                    selected: _mode == _SearchMode.localTitle,
+                    onSelected: (_) =>
+                        setState(() => _mode = _SearchMode.localTitle),
                   ),
                   const SizedBox(width: 8),
                   FilterChip(
                     label: const Text('全文'),
-                    selected: _fullText,
-                    onSelected: (_) => setState(() => _fullText = true),
+                    selected: _mode == _SearchMode.localFullText,
+                    onSelected: (_) =>
+                        setState(() => _mode = _SearchMode.localFullText),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('网络'),
+                    selected: _mode == _SearchMode.network,
+                    onSelected: (_) =>
+                        setState(() => _mode = _SearchMode.network),
                   ),
                 ],
               ),
@@ -168,53 +230,100 @@ class _SearchPageState extends State<SearchPage> {
                             ],
                           ],
                         )
-                      : _results.isEmpty
-                          ? Center(
-                              child: Text('没有找到相关内容',
-                                  style: TextStyle(
-                                      color: scheme.onSurfaceVariant)),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _results.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index == _results.length) {
-                                  if (!_hasMore) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Center(
-                                      child: OutlinedButton(
-                                        onPressed: _searching
-                                            ? null
-                                            : () => _runSearch(_lastQuery,
-                                                append: true),
-                                        child: Text(_searching
-                                            ? '加载中…'
-                                            : '加载更多（已显示 ${_results.length} 条）'),
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: DocumentCard(
-                                    document: _results[index],
-                                    onTap: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => ReaderPage(
-                                            documentId: _results[index].id),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                      : _mode == _SearchMode.network
+                          ? _buildNetworkResults(scheme)
+                          : _buildLocalResults(scheme),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildNetworkResults(ColorScheme scheme) {
+    if (_networkError.isNotEmpty) {
+      return Center(
+          child: Text(_networkError,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant)));
+    }
+    if (_networkResults.isEmpty) {
+      return Center(
+          child: Text('贴吧前 3 页未找到含该关键词的帖子',
+              style: TextStyle(color: scheme.onSurfaceVariant)));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _networkResults.length,
+      itemBuilder: (context, index) {
+        final thread = _networkResults[index];
+        final date = TiebaImporter.networkDate(thread.createTime);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              title: Text(thread.title,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                  '${thread.author} · 回复 ${thread.replyCount}'
+                  '${date.isEmpty ? '' : ' · $date'}',
+                  style:
+                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    ThreadPreviewPage(forum: thread.forum, thread: thread),
+              )),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLocalResults(ColorScheme scheme) {
+    if (_results.isEmpty) {
+      return Center(
+          child: Text('没有找到相关内容',
+              style: TextStyle(color: scheme.onSurfaceVariant)));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _results.length + 1,
+      itemBuilder: (context, index) {
+        if (index == _results.length) {
+          if (!_hasMore) {
+            return const SizedBox.shrink();
+          }
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Center(
+              child: OutlinedButton(
+                onPressed: _searching
+                    ? null
+                    : () => _runSearch(_lastQuery, append: true),
+                child: Text(
+                    _searching ? '加载中…' : '加载更多（已显示 ${_results.length} 条）'),
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: DocumentCard(
+            document: _results[index],
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReaderPage(documentId: _results[index].id),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -102,8 +102,7 @@ class _HomeShellState extends State<HomeShell> {
                 icons: _icons,
                 selectedIcons: _selectedIcons,
                 labels: _labels,
-                hapticEnabled:
-                    scope.prefs.getBool('haptic_enabled') ?? false,
+                hapticEnabled: scope.prefs.getBool('haptic_enabled') ?? false,
                 onTap: (i) {
                   if (i != _index) {
                     scope.dockHidden.value = false;

@@ -42,7 +42,10 @@ class Document {
     try {
       final decoded = jsonDecode(mentionedJson);
       if (decoded is List) {
-        return decoded.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+        return decoded
+            .map((e) => e.toString())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
     return const [];

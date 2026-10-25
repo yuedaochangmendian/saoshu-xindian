@@ -63,8 +63,7 @@ class _GlossarySectionState extends State<GlossarySection> {
       _filtered = q.isEmpty
           ? _all
           : _all
-              .where((e) =>
-                  e.term.contains(q) || e.explanation.contains(q))
+              .where((e) => e.term.contains(q) || e.explanation.contains(q))
               .toList();
     });
   }
@@ -76,8 +75,7 @@ class _GlossarySectionState extends State<GlossarySection> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Text(_error!,
-          style: TextStyle(color: scheme.onSurfaceVariant));
+      return Text(_error!, style: TextStyle(color: scheme.onSurfaceVariant));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -58,8 +58,7 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
       ),
     ),
     chipTheme: ChipThemeData(

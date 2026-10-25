@@ -204,6 +204,45 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                                 fontSize: 14,
                                                 height: 1.55,
                                                 color: scheme.onSurface)),
+                                        for (final url in floor.images) ...[
+                                          const SizedBox(height: 8),
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                            child: Image.network(url,
+                                                fit: BoxFit.cover,
+                                                cacheWidth: 540,
+                                                loadingBuilder:
+                                                    (context, child, progress) {
+                                                  if (progress == null) {
+                                                    return child;
+                                                  }
+                                                  return Container(
+                                                    height: 160,
+                                                    color: scheme
+                                                        .surfaceContainerHigh,
+                                                    alignment: Alignment.center,
+                                                    child:
+                                                        const CircularProgressIndicator(
+                                                            strokeWidth: 2),
+                                                  );
+                                                },
+                                                errorBuilder:
+                                                    (context, error, stack) =>
+                                                        Container(
+                                                          height: 60,
+                                                          color: scheme
+                                                              .surfaceContainerHigh,
+                                                          alignment:
+                                                              Alignment.center,
+                                                          child: Text('图片加载失败',
+                                                              style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  color: scheme
+                                                                      .onSurfaceVariant)),
+                                                        )),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),

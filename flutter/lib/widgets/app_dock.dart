@@ -31,8 +31,7 @@ class AppDock extends StatefulWidget {
   State<AppDock> createState() => _AppDockState();
 }
 
-class _AppDockState extends State<AppDock>
-    with SingleTickerProviderStateMixin {
+class _AppDockState extends State<AppDock> with SingleTickerProviderStateMixin {
   late final AnimationController _pos = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 200),
@@ -241,8 +240,7 @@ class _AppDockState extends State<AppDock>
                                     icon: widget.icons[i],
                                     selectedIcon: widget.selectedIcons[i],
                                     label: widget.labels[i],
-                                    selectFactor:
-                                        _factorFor(position, i),
+                                    selectFactor: _factorFor(position, i),
                                     baseColor: scheme.onSurfaceVariant,
                                     selectColor: scheme.primary,
                                   ),

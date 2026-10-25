@@ -24,8 +24,8 @@ class AppPrefs {
     if (prefs.getBool(_migratedKey) ?? false) return;
     try {
       final support = await getApplicationSupportDirectory();
-      final native = File(
-          '${support.parent.path}/shared_prefs/saoshu_prefs.xml');
+      final native =
+          File('${support.parent.path}/shared_prefs/saoshu_prefs.xml');
       if (native.existsSync()) {
         final xml = native.readAsStringSync();
         _migrateFavoriteIds(prefs, xml);
@@ -52,8 +52,8 @@ class AppPrefs {
     }
   }
 
-  void _migrateString(SharedPreferences prefs, String xml, String nativeKey,
-      String key) {
+  void _migrateString(
+      SharedPreferences prefs, String xml, String nativeKey, String key) {
     final match =
         RegExp('<string name="$nativeKey">([^<]*)</string>').firstMatch(xml);
     if (match != null) {
@@ -61,11 +61,10 @@ class AppPrefs {
     }
   }
 
-  void _migrateBool(SharedPreferences prefs, String xml, String nativeKey,
-      String key) {
-    final match =
-        RegExp('<boolean name="$nativeKey" value="(true|false)" />')
-            .firstMatch(xml);
+  void _migrateBool(
+      SharedPreferences prefs, String xml, String nativeKey, String key) {
+    final match = RegExp('<boolean name="$nativeKey" value="(true|false)" />')
+        .firstMatch(xml);
     if (match != null) {
       prefs.setBool(key, match.group(1) == 'true');
     }

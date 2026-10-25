@@ -138,7 +138,8 @@ class _CollectionPageState extends State<CollectionPage> {
     );
     if (confirmed != true) return;
     final db = await _db.database;
-    await db.update('user_notes', {'deleted_at': DateTime.now().toIso8601String()},
+    await db.update(
+        'user_notes', {'deleted_at': DateTime.now().toIso8601String()},
         where: 'id=?', whereArgs: [note['id']]);
     _reload();
   }
@@ -182,8 +183,7 @@ class _CollectionPageState extends State<CollectionPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text('收藏的扫书会出现在这里',
-                          style:
-                              TextStyle(color: scheme.onSurfaceVariant)),
+                          style: TextStyle(color: scheme.onSurfaceVariant)),
                     )
                   else
                     ..._favorites.map((d) => Padding(
@@ -192,8 +192,7 @@ class _CollectionPageState extends State<CollectionPage> {
                             document: d,
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
-                                  builder: (_) =>
-                                      ReaderPage(documentId: d.id)),
+                                  builder: (_) => ReaderPage(documentId: d.id)),
                             ),
                           ),
                         )),
@@ -207,8 +206,7 @@ class _CollectionPageState extends State<CollectionPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text('还没有简记',
-                          style:
-                              TextStyle(color: scheme.onSurfaceVariant)),
+                          style: TextStyle(color: scheme.onSurfaceVariant)),
                     )
                   else
                     ..._notes.map((note) => Padding(
@@ -229,13 +227,11 @@ class _CollectionPageState extends State<CollectionPage> {
                               borderRadius: BorderRadius.circular(20),
                               child: ListTile(
                                 shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(20)),
+                                    borderRadius: BorderRadius.circular(20)),
                                 title: Text(note['title'] as String? ?? '',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis),
-                                subtitle: Text(
-                                    note['content'] as String? ?? '',
+                                subtitle: Text(note['content'] as String? ?? '',
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis),
                                 onTap: () => _editNote(note),

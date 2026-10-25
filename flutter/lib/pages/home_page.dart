@@ -82,7 +82,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openSearch() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchPage()));
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SearchPage()));
   }
 
   @override
@@ -145,8 +146,8 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(26),
                 onTap: _openSearch,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 13, vertical: 11),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
                   child: Row(
                     children: [
                       Icon(Icons.search, color: scheme.primary, size: 22),
