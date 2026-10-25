@@ -151,7 +151,7 @@ class _CollectionPageState extends State<CollectionPage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                 children: [
                   Text('收藏与简记',
                       style: TextStyle(

@@ -59,26 +59,44 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
+    final scheme = Theme.of(context).colorScheme;
     final pages = const [
       HomePage(),
       BooksPage(),
       CollectionPage(),
       SettingsPage(),
     ];
+    // Bettbox 悬浮方案：页面铺满全屏，dock 以 Positioned 直接叠在内容上，
+    // 不用 Scaffold.bottomNavigationBar 槽位（杜绝槽位区域的色带/遮罩）。
     return Scaffold(
-      extendBody: true,
-      backgroundColor: Colors.transparent,
-      body: IndexedStack(index: _index, children: pages),
-      bottomNavigationBar: AppDock(
-        index: _index,
-        count: 4,
-        icons: _icons,
-        selectedIcons: _selectedIcons,
-        labels: _labels,
-        hapticEnabled: scope.prefs.getBool('haptic_enabled') ?? false,
-        onTap: (i) {
-          if (i != _index) setState(() => _index = i);
-        },
+      backgroundColor: scheme.surfaceContainer,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: MediaQuery.removePadding(
+              removeLeft: true,
+              removeRight: true,
+              context: context,
+              child: IndexedStack(index: _index, children: pages),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AppDock(
+              index: _index,
+              count: 4,
+              icons: _icons,
+              selectedIcons: _selectedIcons,
+              labels: _labels,
+              hapticEnabled: scope.prefs.getBool('haptic_enabled') ?? false,
+              onTap: (i) {
+                if (i != _index) setState(() => _index = i);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
