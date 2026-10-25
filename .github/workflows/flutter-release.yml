@@ -26,17 +26,35 @@ jobs:
           channel: stable
           cache: true
 
-      # 数据库与原生版一样不入库，从最近一个 Release 源码包还原到 Flutter assets。
+      # 数据库不入库（332 MiB），从带源码包的原生版 Release 还原。
+      # Flutter 版 Release 只发布 APK，所以向前翻页查找最近一个带 source.zip 的版本；
+      # 全部找不到时回退到已知带 zip 的原生版 v3.43（数据自该版起未变）。
       - name: Restore saoshu.db into assets
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=20"             --jq '[.[] | select(any(.assets[]; .name | endswith("source.zip")))][0].tag_name')
+          set -euo pipefail
+          TAG=""
+          for PAGE in 1 2 3; do
+            TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100&page=$PAGE" \
+              --jq '[.[] | select(any(.assets[]; .name | endswith("source.zip")))][0].tag_name // empty')
+            if [ -n "$TAG" ] && [ "$TAG" != "null" ]; then
+              echo "found source zip release: $TAG (page $PAGE)"
+              break
+            fi
+            TAG=""
+          done
+          if [ -z "$TAG" ]; then
+            TAG="v3.43"
+            echo "fallback to $TAG"
+          fi
           echo "restoring saoshu.db from $TAG"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p '*source.zip' -O /tmp/src.zip
           unzip -j /tmp/src.zip 'app/src/main/assets/saoshu.db' -d /tmp/
+          ls -l /tmp/saoshu.db
           gzip -9 -c /tmp/saoshu.db > flutter/assets/saoshu.db.gz
+          ls -l flutter/assets/saoshu.db.gz
 
       - name: Read version from pubspec
         working-directory: .
