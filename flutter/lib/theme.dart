@@ -29,8 +29,7 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor:
-        isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
+    scaffoldBackgroundColor: scheme.surfaceContainer,
     appBarTheme: AppBarTheme(
       backgroundColor:
           isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
@@ -44,15 +43,14 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
       ),
     ),
     cardTheme: CardThemeData(
-      color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
+      color: isDark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLow,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor:
-          isDark ? scheme.surfaceContainer : scheme.surfaceContainerLow,
+      fillColor: scheme.surfaceContainerLow,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(26),
         borderSide: BorderSide.none,

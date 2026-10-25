@@ -5,7 +5,7 @@ import '../data/models.dart';
 import '../widgets/document_card.dart';
 import 'reader_page.dart';
 
-/// 分类浏览：按「来源」或「帖子类型」两个维度过滤内容。
+/// 分类浏览：按帖子类型过滤内容。
 class BrowseSection extends StatefulWidget {
   const BrowseSection({super.key});
 
@@ -13,11 +13,8 @@ class BrowseSection extends StatefulWidget {
   State<BrowseSection> createState() => _BrowseSectionState();
 }
 
-enum _Dimension { source, category }
-
 class _BrowseSectionState extends State<BrowseSection> {
   final _db = AppDatabase.instance;
-  _Dimension _dimension = _Dimension.source;
   List<Map<String, Object?>> _values = const [];
   String? _selected;
   List<Document> _documents = const [];
@@ -31,9 +28,7 @@ class _BrowseSectionState extends State<BrowseSection> {
 
   Future<void> _loadValues() async {
     setState(() => _loading = true);
-    final values = _dimension == _Dimension.source
-        ? await _db.forumsWithCounts()
-        : await _db.categoriesWithCounts();
+    final values = await _db.categoriesWithCounts();
     if (mounted) {
       setState(() {
         _values = values;
@@ -49,9 +44,7 @@ class _BrowseSectionState extends State<BrowseSection> {
     final selected = _selected;
     if (selected == null) return;
     setState(() => _loading = true);
-    final documents = _dimension == _Dimension.source
-        ? await _db.documentsByForum(selected)
-        : await _db.documentsByCategory(selected);
+    final documents = await _db.documentsByCategory(selected);
     if (mounted) {
       setState(() {
         _documents = documents;
@@ -69,20 +62,6 @@ class _BrowseSectionState extends State<BrowseSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SegmentedButton<_Dimension>(
-          segments: const [
-            ButtonSegment(
-                value: _Dimension.source, label: Text('按来源')),
-            ButtonSegment(
-                value: _Dimension.category, label: Text('按类型')),
-          ],
-          selected: {_dimension},
-          onSelectionChanged: (selection) {
-            setState(() => _dimension = selection.first);
-            _loadValues();
-          },
-        ),
-        const SizedBox(height: 10),
         SizedBox(
           height: 40,
           child: ListView(
