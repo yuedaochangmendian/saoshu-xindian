@@ -134,6 +134,8 @@ class AppDatabase {
         'ON documents(forum)');
     await db.execute('CREATE INDEX IF NOT EXISTS documents_category_idx '
         'ON documents(category)');
+    await db.execute('CREATE INDEX IF NOT EXISTS documents_category_date_idx '
+        'ON documents(category, published_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS books_review_id_idx '
         'ON books(review_count DESC,id DESC)');
     final hasIndex = await db.rawQuery(
@@ -374,16 +376,18 @@ class AppDatabase {
     return rows.map(Document.fromRow).toList();
   }
 
-  /// since: 'yyyy-MM-dd' 日期下限（published_at 为同格式字符串，可直接比较）。
+  /// since/until: 'yyyy-MM-dd' 日期上下限（published_at 同格式，字符串比较）。
+  /// until 为开区间下界（次月 1 日），可完整覆盖所选月份。
   Future<List<Document>> documentsByCategory(String category,
-      {int limit = 20, int offset = 0, String? since}) async {
+      {int limit = 20, int offset = 0, String? since, String? until}) async {
     final db = await database;
     final rows = await db.rawQuery(
         'SELECT * FROM documents WHERE category=? '
         'AND id NOT IN (SELECT document_id FROM local_deleted) '
         "AND (? IS NULL OR published_at >= ?) "
+        "AND (? IS NULL OR published_at < ?) "
         'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
-        [category, since, since, limit, offset]);
+        [category, since, since, until, until, limit, offset]);
     return rows.map(Document.fromRow).toList();
   }
 

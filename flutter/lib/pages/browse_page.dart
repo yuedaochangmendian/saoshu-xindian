@@ -29,6 +29,9 @@ class _BrowseSectionState extends State<BrowseSection> {
   List<Map<String, Object?>> _values = const [];
   String? _selected;
   int _rangeDays = 0;
+
+  /// 按月筛选（'yyyy-MM'）；非空时区间筛选失效（两者互斥）。
+  String? _monthFilter;
   final List<Document> _documents = [];
   int _offset = 0;
   bool _hasMore = true;
@@ -80,7 +83,7 @@ class _BrowseSectionState extends State<BrowseSection> {
     if (selected == null || _loading || !_hasMore) return;
     setState(() => _loading = true);
     final documents = await _db.documentsByCategory(selected,
-        offset: _offset, since: _sinceDate());
+        offset: _offset, since: _sinceDate(), until: _untilDate());
     if (mounted) {
       setState(() {
         _documents.addAll(documents);
@@ -91,13 +94,93 @@ class _BrowseSectionState extends State<BrowseSection> {
     }
   }
 
-  /// 日期下限（yyyy-MM-dd）；不限时返回 null。
+  /// 日历式月份选择面板：切换年份 + 12 宫格，返回 'yyyy-MM'。
+  Future<String?> _pickMonth() async {
+    final scheme = Theme.of(context).colorScheme;
+    var year = _monthFilter != null
+        ? int.parse(_monthFilter!.split('-').first)
+        : DateTime.now().year;
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                      onPressed: () => setSheetState(() => year--),
+                      icon: const Icon(Icons.chevron_left_rounded)),
+                  Text('$year',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                  IconButton(
+                      onPressed: () => setSheetState(() => year++),
+                      icon: const Icon(Icons.chevron_right_rounded)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              GridView.count(
+                crossAxisCount: 4,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.6,
+                children: [
+                  for (var month = 1; month <= 12; month++)
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                            color:
+                                scheme.outlineVariant.withValues(alpha: 0.5)),
+                      ),
+                      onPressed: () => Navigator.pop(sheetContext,
+                          '$year-${month.toString().padLeft(2, '0')}'),
+                      child: Text('$month 月'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return result;
+  }
+
+  /// 日期下限（yyyy-MM-dd）；按月筛选或不限时返回 null。
   String? _sinceDate() {
+    if (_monthFilter != null) return '$_monthFilter-01';
     if (_rangeDays <= 0) return null;
     final date = DateTime.now().subtract(Duration(days: _rangeDays));
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
+  }
+
+  /// 日期上限开区间（次月 1 日）；仅按月筛选时非空。
+  String? _untilDate() {
+    if (_monthFilter == null) return null;
+    final parts = _monthFilter!.split('-');
+    final year = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+    final nextYear = month == 12 ? year + 1 : year;
+    final nextMonth = month == 12 ? 1 : month + 1;
+    return '$nextYear-${nextMonth.toString().padLeft(2, '0')}-01';
+  }
+
+  void _setMonth(String? month) {
+    setState(() {
+      _monthFilter = month;
+      if (month != null) _rangeDays = 0;
+    });
+    _resetDocuments();
   }
 
   static String _labelOf(Map<String, Object?> row) =>
@@ -144,6 +227,17 @@ class _BrowseSectionState extends State<BrowseSection> {
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
+                    if (_monthFilter != null) ...[
+                      InputChip(
+                        avatar: Icon(Icons.event_rounded,
+                            size: 14, color: scheme.primary),
+                        label: Text(_monthFilter!),
+                        labelStyle:
+                            TextStyle(fontSize: 12, color: scheme.primary),
+                        onDeleted: () => _setMonth(null),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
                     for (final entry in _rangeOptions.entries)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
@@ -157,7 +251,10 @@ class _BrowseSectionState extends State<BrowseSection> {
                           selected: _rangeDays == entry.key,
                           visualDensity: VisualDensity.compact,
                           onSelected: (_) {
-                            setState(() => _rangeDays = entry.key);
+                            setState(() {
+                              _rangeDays = entry.key;
+                              _monthFilter = null;
+                            });
                             _resetDocuments();
                           },
                         ),
@@ -165,6 +262,16 @@ class _BrowseSectionState extends State<BrowseSection> {
                   ],
                 ),
               ),
+            ),
+            ActionChip(
+              avatar: Icon(Icons.calendar_today_rounded,
+                  size: 14, color: scheme.onSurfaceVariant),
+              label: const Text('按月', style: TextStyle(fontSize: 12)),
+              visualDensity: VisualDensity.compact,
+              onPressed: () async {
+                final picked = await _pickMonth();
+                if (picked != null) _setMonth(picked);
+              },
             ),
           ],
         ),
