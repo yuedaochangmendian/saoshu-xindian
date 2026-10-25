@@ -37,6 +37,9 @@ class _BrowseSectionState extends State<BrowseSection> {
   bool _hasMore = true;
   bool _loading = false;
 
+  /// 请求进行中标记：与 _loading 分离，避免在「重置 → 加载」链路里自我阻塞。
+  bool _fetching = false;
+
   @override
   void initState() {
     super.initState();
@@ -58,7 +61,6 @@ class _BrowseSectionState extends State<BrowseSection> {
   }
 
   Future<void> _loadValues() async {
-    setState(() => _loading = true);
     final values = await _db.categoriesWithCounts();
     if (mounted) {
       setState(() {
@@ -74,25 +76,36 @@ class _BrowseSectionState extends State<BrowseSection> {
       _documents.clear();
       _offset = 0;
       _hasMore = true;
+      _loading = false;
+      _fetching = false;
     });
     await _loadMore();
   }
 
   Future<void> _loadMore() async {
     final selected = _selected;
-    if (selected == null || _loading || !_hasMore) return;
+    if (selected == null || _fetching || !_hasMore) return;
+    _fetching = true;
+    final generation = ++_generation;
     setState(() => _loading = true);
-    final documents = await _db.documentsByCategory(selected,
-        offset: _offset, since: _sinceDate(), until: _untilDate());
-    if (mounted) {
-      setState(() {
-        _documents.addAll(documents);
-        _offset += documents.length;
-        _hasMore = documents.length >= _pageSize;
-        _loading = false;
-      });
+    try {
+      final documents = await _db.documentsByCategory(selected,
+          offset: _offset, since: _sinceDate(), until: _untilDate());
+      if (mounted && generation == _generation) {
+        setState(() {
+          _documents.addAll(documents);
+          _offset += documents.length;
+          _hasMore = documents.length >= _pageSize;
+          _loading = false;
+        });
+      }
+    } finally {
+      _fetching = false;
     }
   }
+
+  /// 请求代号：筛选切换时递增，丢弃过期响应。
+  int _generation = 0;
 
   /// 日历式月份选择面板：切换年份 + 12 宫格，返回 'yyyy-MM'。
   Future<String?> _pickMonth() async {
