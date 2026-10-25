@@ -25,6 +25,9 @@ class AppDatabase {
   void onStatus(void Function(String message) listener) =>
       _statusListeners.add(listener);
 
+  void removeStatusListener(void Function(String message) listener) =>
+      _statusListeners.remove(listener);
+
   void _status(String message) {
     for (final listener in _statusListeners) {
       listener(message);
@@ -131,6 +134,7 @@ class AppDatabase {
     await db.transaction((txn) async {
       final rows = await txn.query('documents',
           columns: ['id', 'title', 'author', 'mentioned_books_json']);
+      var batch = txn.batch();
       for (final row in rows) {
         final id = row['id'] as int;
         final searchable = StringBuffer()
@@ -147,13 +151,16 @@ class AppDatabase {
             }
           }
         } catch (_) {}
-        await txn.execute('INSERT INTO search_idx(rowid,tokens) VALUES(?,?)',
+        batch.execute('INSERT INTO search_idx(rowid,tokens) VALUES(?,?)',
             [id, buildFtsQuery(searchable.toString())]);
         done++;
         if (done % 2000 == 0) {
+          await batch.commit(noResult: true);
+          batch = txn.batch();
           _status('正在生成本地搜索索引 ${done * 100 ~/ total}%');
         }
       }
+      await batch.commit(noResult: true);
     });
     _status('搜索索引完成');
   }

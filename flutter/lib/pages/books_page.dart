@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/database.dart';
@@ -105,6 +107,14 @@ class _BookListState extends State<_BookList> {
   int _offset = 0;
   bool _loading = false;
   bool _hasMore = true;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -116,12 +126,6 @@ class _BookListState extends State<_BookList> {
       }
     });
     _loadMore();
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadMore({bool reset = false}) async {
@@ -143,9 +147,12 @@ class _BookListState extends State<_BookList> {
   }
 
   void _onQuery(String query) {
-    _query = query.trim();
-    _hasMore = true;
-    _loadMore(reset: true);
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      _query = query.trim();
+      _hasMore = true;
+      _loadMore(reset: true);
+    });
   }
 
   @override

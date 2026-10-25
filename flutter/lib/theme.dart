@@ -71,13 +71,5 @@ ThemeData buildTheme(String themeId, Brightness brightness) {
     ),
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
     dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1),
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: isDark
-          ? scheme.surfaceContainerHigh.withValues(alpha: 0.98)
-          : scheme.surfaceContainerHigh.withValues(alpha: 0.98),
-      elevation: 0,
-      height: 64,
-      labelTextStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 0)),
-    ),
   );
 }

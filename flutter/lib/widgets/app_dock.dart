@@ -100,9 +100,9 @@ class _AppDockState extends State<AppDock>
     _anchorSlot = slot.toDouble();
     _lastSnapped = slot;
     if (slot != widget.index) {
+      // Bettbox 行为：按下仅做药丸预览滑动与触感，切页等抬起再提交。
       _haptic();
       _glideTo(slot.toDouble(), 200);
-      widget.onTap(slot);
     }
   }
 
@@ -143,7 +143,7 @@ class _AppDockState extends State<AppDock>
       _velocity = null;
       return;
     }
-    var target = widget.index;
+    var target = _slotFromDx(event.localPosition.dx);
     if (_dragging && _slotWidth > 0) {
       final velocity = _velocity?.getVelocity().pixelsPerSecond.dx ?? 0.0;
       final current = _anchorSlot + _dragOffset;

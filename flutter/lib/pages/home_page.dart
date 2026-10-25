@@ -23,13 +23,22 @@ class _HomePageState extends State<HomePage> {
   int _sources = 0;
   List<Document> _random = const [];
 
+  late final void Function(String) _statusListener;
+
   @override
   void initState() {
     super.initState();
-    _db.onStatus((message) {
+    _statusListener = (message) {
       if (mounted) setState(() => _prepareStatus = message);
-    });
+    };
+    _db.onStatus(_statusListener);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _db.removeStatusListener(_statusListener);
+    super.dispose();
   }
 
   Future<void> _load({bool refresh = false}) async {
@@ -39,9 +48,11 @@ class _HomePageState extends State<HomePage> {
       setState(() => _dbPreparing = true);
     }
     try {
-      final docs = await _db.documentCount();
-      final books = await _db.bookCount();
-      final sources = await _db.sourceCount();
+      final stats = await Future.wait(
+          [_db.documentCount(), _db.bookCount(), _db.sourceCount()]);
+      final docs = stats[0];
+      final books = stats[1];
+      final sources = stats[2];
       final random = await _db.randomHomeDocuments(limit: 12);
       if (mounted) {
         setState(() {

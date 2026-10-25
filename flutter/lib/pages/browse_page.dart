@@ -37,7 +37,8 @@ class _BrowseSectionState extends State<BrowseSection> {
     if (mounted) {
       setState(() {
         _values = values;
-        _selected = values.isEmpty ? null : values.first.values.first as String;
+        _selected =
+            values.isEmpty ? null : _labelOf(values.first);
         _loading = false;
       });
       _loadDocuments();
@@ -58,6 +59,9 @@ class _BrowseSectionState extends State<BrowseSection> {
       });
     }
   }
+
+  static String _labelOf(Map<String, Object?> row) =>
+      (row['forum'] ?? row['category'] ?? '') as String;
 
   @override
   Widget build(BuildContext context) {
@@ -89,10 +93,10 @@ class _BrowseSectionState extends State<BrowseSection> {
                   padding: const EdgeInsets.only(right: 8),
                   child: FilterChip(
                     label: Text(
-                        '${entry.values.first} ${entry.values.last}'),
-                    selected: _selected == entry.values.first,
+                        '${_labelOf(entry)} ${entry['c']}'),
+                    selected: _selected == _labelOf(entry),
                     onSelected: (_) {
-                      setState(() => _selected = entry.values.first as String);
+                      setState(() => _selected = _labelOf(entry));
                       _loadDocuments();
                     },
                   ),

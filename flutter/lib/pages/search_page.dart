@@ -21,8 +21,11 @@ class _SearchPageState extends State<SearchPage> {
   bool _fullText = false;
   bool _searching = false;
   bool _searched = false;
+  bool _hasMore = false;
+  int _offset = 0;
   List<Document> _results = const [];
   List<String> _history = [];
+  String _lastQuery = '';
 
   @override
   void initState() {
@@ -40,17 +43,27 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  Future<void> _runSearch(String query) async {
+  Future<void> _runSearch(String query, {bool append = false}) async {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     setState(() => _searching = true);
-    final results =
-        await _db.searchDocuments(query.trim(), fullText: _fullText);
-    AppHistory.push(query.trim());
+    final offset = append ? _offset : 0;
+    final results = await _db.searchDocuments(query.trim(),
+        fullText: _fullText, offset: offset);
+    if (!append) {
+      AppHistory.push(query.trim());
+    }
     if (mounted) {
       setState(() {
-        _results = results;
-        _searched = true;
+        if (append) {
+          _results = [..._results, ...results];
+        } else {
+          _results = results;
+          _lastQuery = query.trim();
+          _searched = true;
+        }
+        _offset = offset + results.length;
+        _hasMore = results.length >= 50;
         _searching = false;
         _history = AppHistory.load();
       });
@@ -163,19 +176,40 @@ class _SearchPageState extends State<SearchPage> {
                             )
                           : ListView.builder(
                               padding: const EdgeInsets.all(16),
-                              itemCount: _results.length,
-                              itemBuilder: (context, index) => Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: DocumentCard(
-                                  document: _results[index],
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => ReaderPage(
-                                          documentId: _results[index].id),
+                              itemCount: _results.length + 1,
+                              itemBuilder: (context, index) {
+                                if (index == _results.length) {
+                                  if (!_hasMore) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Center(
+                                      child: OutlinedButton(
+                                        onPressed: _searching
+                                            ? null
+                                            : () => _runSearch(_lastQuery,
+                                                append: true),
+                                        child: Text(_searching
+                                            ? '加载中…'
+                                            : '加载更多（已显示 ${_results.length} 条）'),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: DocumentCard(
+                                    document: _results[index],
+                                    onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => ReaderPage(
+                                            documentId: _results[index].id),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                             ),
             ),
           ],
