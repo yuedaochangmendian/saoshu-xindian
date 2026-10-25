@@ -1,7 +1,7 @@
 name: saoshu_xindian
 description: 扫书新典 —— 离线扫书资料阅读器（Flutter 版）
 publish_to: 'none'
-version: 4.1.1-pre5+92
+version: 4.1.1-pre6+93
 
 environment:
   sdk: ^3.0.0
@@ -24,3 +24,7 @@ flutter:
   assets:
     - assets/saoshu.db.gz
     - assets/glossary_terms.json
+    - assets/icons/preview_default.png
+    - assets/icons/preview_photo.png
+    - assets/icons/preview_book.png
+    - assets/icons/preview_reading.png

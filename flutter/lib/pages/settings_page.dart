@@ -122,6 +122,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   scope.prefs.setBool('haptic_enabled', checked),
             ),
             const SizedBox(height: 20),
+            Text('桌面图标',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 10),
+            _IconSection(),
+            const SizedBox(height: 20),
             Text('关于',
                 style: TextStyle(
                     fontSize: 15,
@@ -742,6 +750,136 @@ class _MiniAction extends StatelessWidget {
                       color: scheme.onSurface)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 桌面图标选择区块：四款预置图标（activity-alias 切换）。
+class _IconSection extends StatefulWidget {
+  @override
+  State<_IconSection> createState() => _IconSectionState();
+}
+
+class _IconChoice {
+  final String id;
+  final String alias;
+  final String asset;
+  final String label;
+  const _IconChoice(this.id, this.alias, this.asset, this.label);
+}
+
+const _iconChoices = <_IconChoice>[
+  _IconChoice(
+      'default', 'LauncherDefault', 'assets/icons/preview_default.png', '经典'),
+  _IconChoice('photo', 'LauncherPhoto', 'assets/icons/preview_photo.png', '绿书'),
+  _IconChoice('book', 'LauncherBook', 'assets/icons/preview_book.png', '蓝脊'),
+  _IconChoice(
+      'reading', 'LauncherReading', 'assets/icons/preview_reading.png', '灰页'),
+];
+
+class _IconSectionState extends State<_IconSection> {
+  String _selected = 'default';
+  bool _applying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected =
+        AppScope.of(context).prefs.getString('launcher_icon') ?? 'default';
+  }
+
+  Future<void> _apply(_IconChoice choice) async {
+    if (_applying || choice.id == _selected) return;
+    setState(() {
+      _applying = true;
+      _selected = choice.id;
+    });
+    await AppScope.of(context).prefs.setString('launcher_icon', choice.id);
+    await SystemBridge.setLauncherIcon(choice.alias);
+    if (mounted) {
+      setState(() => _applying = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('桌面图标已切换，启动器将在几秒内刷新'),
+            duration: Duration(seconds: 2)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (var i = 0; i < _iconChoices.length; i++)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _applying ? null : () => _apply(_iconChoices[i]),
+                      child: Column(
+                        children: [
+                          Stack(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(
+                                      width: 2,
+                                      color: _selected == _iconChoices[i].id
+                                          ? scheme.primary
+                                          : Colors.transparent),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Image.asset(_iconChoices[i].asset,
+                                      width: 64, height: 64),
+                                ),
+                              ),
+                              if (_selected == _iconChoices[i].id)
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                        color: scheme.primary,
+                                        shape: BoxShape.circle),
+                                    child: Icon(Icons.check_rounded,
+                                        size: 12, color: scheme.onPrimary),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(_iconChoices[i].label,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: _selected == _iconChoices[i].id
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
+                                  color: _selected == _iconChoices[i].id
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('切换后桌面图标会在几秒内刷新；部分启动器可能需要重新进入桌面。',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+          ],
         ),
       ),
     );

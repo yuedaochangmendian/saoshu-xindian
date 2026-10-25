@@ -19,4 +19,11 @@ class SystemBridge {
       await _channel.invokeMethod('openUrl', {'url': url});
     } catch (_) {}
   }
+
+  /// 切换桌面图标：启用指定 alias、禁用其余。alias 如 'LauncherPhoto'。
+  static Future<void> setLauncherIcon(String alias) async {
+    try {
+      await _channel.invokeMethod('setLauncherIcon', {'alias': alias});
+    } catch (_) {}
+  }
 }

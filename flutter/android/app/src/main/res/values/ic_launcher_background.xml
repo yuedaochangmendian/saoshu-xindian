@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_bg_default">#FAFBFB</color>
+    <color name="ic_launcher_bg_photo">#FFFFFF</color>
+    <color name="ic_launcher_bg_book">#FFFFFF</color>
+    <color name="ic_launcher_bg_reading">#FFFFFF</color>
 </resources>
+
+
+
+
