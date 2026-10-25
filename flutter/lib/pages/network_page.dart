@@ -30,10 +30,11 @@ class _NetworkSectionState extends State<NetworkSection> {
   bool _fetching = false;
   String _fetchStatus = '';
 
-  /// 每个吧的已加载列表缓存：切回已浏览的吧即时显示，后台再刷新。
-  final Map<String, List<ThreadSummary>> _cache = {};
-  final Map<String, int> _pageByForum = {};
-  final Map<String, bool> _hasMoreByForum = {};
+  /// 每个吧的已加载列表缓存：切回已浏览的吧即时显示（静态持有，
+  /// 页面被 AnimatedSwitcher 重建时缓存不丢，避免自动重载）。
+  static final Map<String, List<ThreadSummary>> _cache = {};
+  static final Map<String, int> _pageByForum = {};
+  static final Map<String, bool> _hasMoreByForum = {};
 
   @override
   void didChangeDependencies() {

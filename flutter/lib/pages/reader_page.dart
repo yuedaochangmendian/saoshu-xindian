@@ -73,6 +73,8 @@ class _ReaderPageState extends State<ReaderPage> {
     final scheme = Theme.of(context).colorScheme;
     final document = _document;
     final style = document == null ? null : categoryStyleOf(document.category);
+    final header =
+        document == null ? null : categoryHeaderOf(context, document.category);
     return Scaffold(
       body: NestedScrollView(
         headerSliverBuilder: (context, innerScrolled) => [
@@ -115,7 +117,7 @@ class _ReaderPageState extends State<ReaderPage> {
                       Container(
                         padding: const EdgeInsets.all(17),
                         decoration: BoxDecoration(
-                          color: style!.container.withValues(alpha: 0.42),
+                          color: header!.background,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Column(
@@ -127,7 +129,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 9, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: style.container,
+                                    color: style!.container,
                                     borderRadius: BorderRadius.circular(11),
                                   ),
                                   child: Row(
@@ -151,9 +153,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                         ? '日期未知'
                                         : document.date,
                                     style: TextStyle(
-                                        fontSize: 12,
-                                        color: style.onContainer
-                                            .withValues(alpha: 0.85)),
+                                        fontSize: 12, color: header.subText),
                                   ),
                                 ),
                               ],
@@ -165,7 +165,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                   fontSize: 22,
                                   fontWeight: FontWeight.w700,
                                   height: 1.2,
-                                  color: style.onContainer),
+                                  color: header.text),
                             ),
                             const SizedBox(height: 7),
                             Text(
@@ -173,9 +173,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                   ? '作者/发帖人未知'
                                   : '作者/发帖人  ${document.author}',
                               style: TextStyle(
-                                  fontSize: 12,
-                                  color: style.onContainer
-                                      .withValues(alpha: 0.85)),
+                                  fontSize: 12, color: header.subText),
                             ),
                           ],
                         ),

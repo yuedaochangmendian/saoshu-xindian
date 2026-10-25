@@ -30,3 +30,30 @@ const categoryStyles = <String, CategoryStyle>{
 
 CategoryStyle categoryStyleOf(String category) =>
     categoryStyles[category] ?? _fallback;
+
+/// 详情头卡在两种亮度下的配色：浅色模式 = 浅染底 + 深字；
+/// 夜间模式 = 极浅染底 + 提亮字（避免浅色贴纸色在暗底上发灰、深字不可读）。
+class CategoryHeaderColors {
+  final Color background;
+  final Color text;
+  final Color subText;
+  const CategoryHeaderColors(
+      {required this.background, required this.text, required this.subText});
+}
+
+CategoryHeaderColors categoryHeaderOf(BuildContext context, String category) {
+  final style = categoryStyleOf(category);
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  if (dark) {
+    return CategoryHeaderColors(
+      background: style.container.withValues(alpha: 0.16),
+      text: Color.lerp(style.container, Colors.white, 0.80)!,
+      subText: Color.lerp(style.container, Colors.white, 0.60)!,
+    );
+  }
+  return CategoryHeaderColors(
+    background: style.container.withValues(alpha: 0.42),
+    text: style.onContainer,
+    subText: style.onContainer.withValues(alpha: 0.85),
+  );
+}

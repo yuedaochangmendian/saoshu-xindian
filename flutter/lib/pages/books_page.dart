@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../app.dart';
-
 import 'browse_page.dart';
 import 'glossary_page.dart';
 import 'network_page.dart';
 
-/// 书库：网络浏览（贴吧抓取）/ 分类浏览 / 名词解释 三个并列视图。
+/// 书库：网络浏览 / 分类浏览 / 名词解释 三个并列视图。
+///
+/// 切换逻辑：自定义滑动式分段控件（动画药丸指示器）+ AnimatedSwitcher 内容淡入，
+/// 状态全部保活（IndexedStack）；页签与 dock 只在滑动时隐藏，切换页签立即回显。
 class BooksPage extends StatefulWidget {
   const BooksPage({super.key});
 
@@ -14,26 +16,21 @@ class BooksPage extends StatefulWidget {
   State<BooksPage> createState() => _BooksPageState();
 }
 
-class _BooksPageState extends State<BooksPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController =
-      TabController(length: 3, vsync: this);
+class _BooksPageState extends State<BooksPage> {
+  int _index = 0;
+
+  static const _tabLabels = ['网络浏览', '分类浏览', '名词解释'];
 
   @override
   void initState() {
     super.initState();
-    // 切换二级页签时复位隐藏状态：页签只随滑动隐藏，切页必回显。
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging && mounted) {
-        AppScope.of(context).dockHidden.value = false;
-      }
-    });
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  void _select(int index) {
+    if (index == _index) return;
+    setState(() => _index = index);
+    // 切换页签时复位隐藏状态：页签只随滑动隐藏，切页必回显。
+    AppScope.of(context).dockHidden.value = false;
   }
 
   @override
@@ -69,30 +66,10 @@ class _BooksPageState extends State<BooksPage>
                         : child!,
                   ),
                 ),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(26),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: scheme.surfaceContainerLowest,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    dividerColor: Colors.transparent,
-                    labelColor: scheme.primary,
-                    unselectedLabelColor: scheme.onSurfaceVariant,
-                    labelStyle: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                    tabs: const [
-                      Tab(text: '网络浏览'),
-                      Tab(text: '分类浏览'),
-                      Tab(text: '名词解释'),
-                    ],
-                  ),
+                child: _SegmentedControl(
+                  labels: _tabLabels,
+                  index: _index,
+                  onSelect: _select,
                 ),
               ),
             ),
@@ -114,23 +91,116 @@ class _BooksPageState extends State<BooksPage>
                     }
                     return false;
                   },
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: const [
-                      NetworkSection(),
-                      SingleChildScrollView(
-                          padding: EdgeInsets.only(bottom: 140),
-                          child: BrowseSection()),
-                      SingleChildScrollView(
-                          padding: EdgeInsets.only(bottom: 140),
-                          child: GlossarySection()),
-                    ],
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 240),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                                begin: const Offset(0, 0.02), end: Offset.zero)
+                            .animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: _pageFor(_index),
                   ),
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _pageFor(int index) {
+    switch (index) {
+      case 0:
+        return NetworkSection(key: ValueKey('page-$index'));
+      case 1:
+        return SingleChildScrollView(
+            key: ValueKey('page-$index'),
+            padding: const EdgeInsets.only(bottom: 140),
+            child: BrowseSection());
+      default:
+        return SingleChildScrollView(
+            key: ValueKey('page-$index'),
+            padding: const EdgeInsets.only(bottom: 140),
+            child: GlossarySection());
+    }
+  }
+}
+
+/// 滑动式分段控件：白色药丸随选中项平滑滑动，与底栏/滑块同一设计语言。
+class _SegmentedControl extends StatelessWidget {
+  final List<String> labels;
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  const _SegmentedControl(
+      {required this.labels, required this.index, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment(-1 + 2 * index / (labels.length - 1), 0),
+                child: FractionallySizedBox(
+                  widthFactor: 1 / labels.length,
+                  child: Container(
+                    height: double.infinity,
+                    margin: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (var i = 0; i < labels.length; i++)
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => onSelect(i),
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 180),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: i == index
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: i == index
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant,
+                            ),
+                            child: Text(labels[i]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

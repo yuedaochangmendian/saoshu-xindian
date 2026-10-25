@@ -84,8 +84,10 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final style = categoryStyleOf(TiebaImporter.classifyPost(
-        widget.thread.title, _collected?.combinedText() ?? ''));
+    final header = categoryHeaderOf(
+        context,
+        TiebaImporter.classifyPost(
+            widget.thread.title, _collected?.combinedText() ?? ''));
     final date = TiebaImporter.networkDate(widget.thread.createTime);
     return Scaffold(
       body: Stack(
@@ -122,7 +124,7 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                           Container(
                             padding: const EdgeInsets.all(17),
                             decoration: BoxDecoration(
-                              color: style.container.withValues(alpha: 0.42),
+                              color: header.background,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Column(
@@ -136,7 +138,7 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                       fontSize: 20,
                                       fontWeight: FontWeight.w700,
                                       height: 1.25,
-                                      color: style.onContainer),
+                                      color: header.text),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -144,9 +146,7 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                   ' · 浏览 ${widget.thread.viewCount}'
                                   '${date.isEmpty ? '' : ' · $date'}',
                                   style: TextStyle(
-                                      fontSize: 12,
-                                      color: style.onContainer
-                                          .withValues(alpha: 0.85)),
+                                      fontSize: 12, color: header.subText),
                                 ),
                               ],
                             ),
