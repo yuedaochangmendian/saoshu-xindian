@@ -73,13 +73,17 @@ class _BooksPageState extends State<BooksPage>
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: TabBarView(
                   controller: _tabController,
                   children: const [
                     _BookList(),
-                    SingleChildScrollView(child: BrowseSection()),
-                    SingleChildScrollView(child: GlossarySection()),
+                    SingleChildScrollView(
+                        padding: EdgeInsets.only(bottom: 140),
+                        child: BrowseSection()),
+                    SingleChildScrollView(
+                        padding: EdgeInsets.only(bottom: 140),
+                        child: GlossarySection()),
                   ],
                 ),
               ),
@@ -172,7 +176,7 @@ class _BookListState extends State<_BookList> {
         Expanded(
           child: ListView.builder(
             controller: _scrollController,
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.only(bottom: 140),
             itemCount: _books.length + 1,
             itemBuilder: (context, index) {
               if (index == _books.length) {

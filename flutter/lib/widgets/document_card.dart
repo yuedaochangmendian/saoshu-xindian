@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
+import 'category_style.dart';
 
 /// 内容卡片：分类徽章 + 标题 + 预览 + 元信息（20dp 超椭圆风格圆角）。
 class DocumentCard extends StatelessWidget {
@@ -9,20 +10,10 @@ class DocumentCard extends StatelessWidget {
 
   const DocumentCard({super.key, required this.document, required this.onTap});
 
-  static const _categoryColors = {
-    '扫书': Color(0xFFFFD54F),
-    '推书': Color(0xFFA5D6A7),
-    '排雷': Color(0xFFEF9A9A),
-    '书评': Color(0xFF90CAF9),
-    '讨论': Color(0xFFCE93D8),
-    '求书': Color(0xFFFFCC80),
-  };
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final badge = _categoryColors[document.category] ??
-        scheme.secondaryContainer;
+    final style = categoryStyleOf(document.category);
     final preview = document.content.length > 220
         ? document.content.substring(0, 220)
         : document.content;
@@ -46,14 +37,23 @@ class DocumentCard extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                        horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
-                      color: badge.withValues(alpha: 0.85),
+                      color: style.container,
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Text(document.category,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w700)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(style.icon, size: 13, color: style.onContainer),
+                        const SizedBox(width: 4),
+                        Text(document.category,
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: style.onContainer)),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(

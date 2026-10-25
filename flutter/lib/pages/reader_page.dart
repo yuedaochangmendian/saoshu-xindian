@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app.dart';
 import '../data/database.dart';
 import '../data/models.dart';
+import '../widgets/category_style.dart';
 
 /// 正文详情：主色容器头卡 + 操作行 + 正文 + 上一篇/下一篇。
 class ReaderPage extends StatefulWidget {
@@ -71,6 +72,8 @@ class _ReaderPageState extends State<ReaderPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final document = _document;
+    final style =
+        document == null ? null : categoryStyleOf(document.category);
     return Scaffold(
       appBar: AppBar(
         leading: const BackButton(),
@@ -107,7 +110,7 @@ class _ReaderPageState extends State<ReaderPage> {
                     Container(
                       padding: const EdgeInsets.all(17),
                       decoration: BoxDecoration(
-                        color: scheme.primaryContainer.withValues(alpha: 0.4),
+                        color: style!.container.withValues(alpha: 0.42),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Column(
@@ -117,17 +120,24 @@ class _ReaderPageState extends State<ReaderPage> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
+                                    horizontal: 9, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: scheme.secondaryContainer,
+                                  color: style.container,
                                   borderRadius: BorderRadius.circular(11),
                                 ),
-                                child: Text(document.category,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color:
-                                            scheme.onSecondaryContainer)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(style.icon,
+                                        size: 13, color: style.onContainer),
+                                    const SizedBox(width: 4),
+                                    Text(document.category,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: style.onContainer)),
+                                  ],
+                                ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -137,8 +147,8 @@ class _ReaderPageState extends State<ReaderPage> {
                                       : document.date,
                                   style: TextStyle(
                                       fontSize: 12,
-                                      color: scheme.onPrimaryContainer
-                                          .withValues(alpha: 0.8)),
+                                      color: style.onContainer
+                                          .withValues(alpha: 0.85)),
                                 ),
                               ),
                             ],
@@ -150,7 +160,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                 fontSize: 22,
                                 fontWeight: FontWeight.w700,
                                 height: 1.2,
-                                color: scheme.onPrimaryContainer),
+                                color: style.onContainer),
                           ),
                           const SizedBox(height: 7),
                           Text(
@@ -159,8 +169,8 @@ class _ReaderPageState extends State<ReaderPage> {
                                 : '作者/发帖人  ${document.author}',
                             style: TextStyle(
                                 fontSize: 12,
-                                color: scheme.onPrimaryContainer
-                                    .withValues(alpha: 0.8)),
+                                color: style.onContainer
+                                    .withValues(alpha: 0.85)),
                           ),
                         ],
                       ),
