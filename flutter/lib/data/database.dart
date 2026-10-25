@@ -374,14 +374,16 @@ class AppDatabase {
     return rows.map(Document.fromRow).toList();
   }
 
+  /// since: 'yyyy-MM-dd' 日期下限（published_at 为同格式字符串，可直接比较）。
   Future<List<Document>> documentsByCategory(String category,
-      {int limit = 40, int offset = 0}) async {
+      {int limit = 20, int offset = 0, String? since}) async {
     final db = await database;
     final rows = await db.rawQuery(
         'SELECT * FROM documents WHERE category=? '
         'AND id NOT IN (SELECT document_id FROM local_deleted) '
+        "AND (? IS NULL OR published_at >= ?) "
         'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
-        [category, limit, offset]);
+        [category, since, since, limit, offset]);
     return rows.map(Document.fromRow).toList();
   }
 

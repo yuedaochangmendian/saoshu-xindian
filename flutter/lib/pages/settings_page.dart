@@ -74,6 +74,22 @@ class _SettingsPageState extends State<SettingsPage> {
             Text('$_docs 条内容 · $_books 本书名 · $_sources 条来源',
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 16),
+            Text('备份与恢复',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 10),
+            _BackupSection(),
+            const SizedBox(height: 20),
+            Text('检查更新',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 10),
+            _UpdateSection(),
+            const SizedBox(height: 20),
             Text('主题与外观',
                 style: TextStyle(
                     fontSize: 15,

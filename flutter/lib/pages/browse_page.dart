@@ -14,12 +14,21 @@ class BrowseSection extends StatefulWidget {
 }
 
 class _BrowseSectionState extends State<BrowseSection> {
-  static const _pageSize = 40;
+  static const _pageSize = 20;
+
+  /// 日期筛选区间（天），0 = 不限。
+  static const _rangeOptions = <int, String>{
+    0: '不限',
+    30: '近 30 天',
+    90: '近 3 个月',
+    365: '近 1 年',
+  };
 
   final _db = AppDatabase.instance;
   final _scrollController = ScrollController();
   List<Map<String, Object?>> _values = const [];
   String? _selected;
+  int _rangeDays = 0;
   final List<Document> _documents = [];
   int _offset = 0;
   bool _hasMore = true;
@@ -70,7 +79,8 @@ class _BrowseSectionState extends State<BrowseSection> {
     final selected = _selected;
     if (selected == null || _loading || !_hasMore) return;
     setState(() => _loading = true);
-    final documents = await _db.documentsByCategory(selected, offset: _offset);
+    final documents = await _db.documentsByCategory(selected,
+        offset: _offset, since: _sinceDate());
     if (mounted) {
       setState(() {
         _documents.addAll(documents);
@@ -79,6 +89,15 @@ class _BrowseSectionState extends State<BrowseSection> {
         _loading = false;
       });
     }
+  }
+
+  /// 日期下限（yyyy-MM-dd）；不限时返回 null。
+  String? _sinceDate() {
+    if (_rangeDays <= 0) return null;
+    final date = DateTime.now().subtract(Duration(days: _rangeDays));
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
   }
 
   static String _labelOf(Map<String, Object?> row) =>
@@ -110,7 +129,46 @@ class _BrowseSectionState extends State<BrowseSection> {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(Icons.calendar_month_rounded,
+                size: 15, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text('日期',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 32,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final entry in _rangeOptions.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(entry.value),
+                          labelStyle: TextStyle(
+                              fontSize: 12,
+                              color: _rangeDays == entry.key
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant),
+                          selected: _rangeDays == entry.key,
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (_) {
+                            setState(() => _rangeDays = entry.key);
+                            _resetDocuments();
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: _documents.isEmpty && _loading
               ? const Center(child: CircularProgressIndicator())
