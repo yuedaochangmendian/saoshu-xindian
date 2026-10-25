@@ -79,6 +79,10 @@ class _BooksPageState extends State<BooksPage> {
                 child: NotificationListener<ScrollUpdateNotification>(
                   onNotification: (notification) {
                     // 下滑隐藏 dock 与二级页签，上滑立即出现。
+                    // 横向滚动（分类芯片、日期筛选）不触发隐藏。
+                    if (notification.metrics.axis != Axis.vertical) {
+                      return false;
+                    }
                     final hidden = AppScope.of(context).dockHidden;
                     if (notification.scrollDelta == null) return false;
                     final delta = notification.scrollDelta!;
