@@ -5,6 +5,7 @@ import '../data/database.dart';
 import '../network/tieba_client.dart';
 import '../network/tieba_import.dart';
 import 'reader_page.dart';
+import 'thread_preview_page.dart';
 
 /// 网络浏览：贴吧主题列表（下拉刷新、分页）+ 勾选抓取导入 + 登录 + 导入历史。
 class NetworkSection extends StatefulWidget {
@@ -29,13 +30,18 @@ class _NetworkSectionState extends State<NetworkSection> {
   bool _fetching = false;
   String _fetchStatus = '';
 
+  /// 每个吧的已加载列表缓存：切回已浏览的吧即时显示，后台再刷新。
+  final Map<String, List<ThreadSummary>> _cache = {};
+  final Map<String, int> _pageByForum = {};
+  final Map<String, bool> _hasMoreByForum = {};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_client == null) {
       _client = TiebaClient(
           bduss: AppScope.of(context).prefs.getString('tieba_bduss') ?? '');
-      _reload();
+      _restoreFromCacheOrReload();
     }
   }
 
@@ -47,16 +53,32 @@ class _NetworkSectionState extends State<NetworkSection> {
 
   TiebaClient get client => _client!;
 
-  Future<void> _reload() async {
-    setState(() {
-      _threads.clear();
-      _page = 0;
-      _hasMore = true;
-    });
-    await _loadMore();
+  void _restoreFromCacheOrReload() {
+    final cached = _cache[_forum];
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _threads
+          ..clear()
+          ..addAll(cached);
+        _page = _pageByForum[_forum] ?? 1;
+        _hasMore = _hasMoreByForum[_forum] ?? true;
+      });
+      _refreshImported();
+      return;
+    }
+    _reload();
   }
 
-  Future<void> _loadMore() async {
+  Future<void> _reload() async {
+    setState(() {
+      _page = 0;
+      _hasMore = true;
+      // 保留旧列表占位，加载完成后整体替换（stale-while-revalidate）。
+    });
+    await _loadMore(force: true);
+  }
+
+  Future<void> _loadMore({bool force = false}) async {
     if (_loading || !_hasMore) return;
     setState(() {
       _loading = true;
@@ -67,9 +89,13 @@ class _NetworkSectionState extends State<NetworkSection> {
       if (mounted) {
         setState(() {
           _page++;
+          if (force) _threads.clear();
           _threads.addAll(page.threads.where((t) => !t.deleted && !t.masked));
           _hasMore = page.hasMore;
           _loading = false;
+          _cache[_forum] = List.of(_threads);
+          _pageByForum[_forum] = _page;
+          _hasMoreByForum[_forum] = _hasMore;
         });
       }
     } catch (error) {
@@ -162,8 +188,8 @@ class _NetworkSectionState extends State<NetworkSection> {
             TextField(
               controller: controller,
               obscureText: true,
-              decoration: const InputDecoration(
-                  hintText: '粘贴 BDUSS Cookie，留空即退出登录'),
+              decoration:
+                  const InputDecoration(hintText: '粘贴 BDUSS Cookie，留空即退出登录'),
             ),
             const SizedBox(height: 8),
             Text('登录后请求配额更宽松，BDUSS 只保存在本机。',
@@ -189,8 +215,8 @@ class _NetworkSectionState extends State<NetworkSection> {
         setState(() => _client = TiebaClient(bduss: bduss));
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(
-              content: Text(bduss.isEmpty ? '已退出登录' : '已登录')));
+          ..showSnackBar(
+              SnackBar(content: Text(bduss.isEmpty ? '已退出登录' : '已登录')));
       }
       return;
     }
@@ -199,11 +225,11 @@ class _NetworkSectionState extends State<NetworkSection> {
 
   Future<void> _showHistory() async {
     final db = await AppDatabase.instance.database;
-    final rows = await db.rawQuery(
-        'SELECT n.tid, n.reply_count, n.view_count, n.collected_at, '
-        'd.id doc_id, d.title FROM network_threads n '
-        'JOIN documents d ON d.id=n.document_id '
-        'ORDER BY n.collected_at DESC LIMIT 100');
+    final rows = await db
+        .rawQuery('SELECT n.tid, n.reply_count, n.view_count, n.collected_at, '
+            'd.id doc_id, d.title FROM network_threads n '
+            'JOIN documents d ON d.id=n.document_id '
+            'ORDER BY n.collected_at DESC LIMIT 100');
     if (!mounted) return;
     final scheme = Theme.of(context).colorScheme;
     final outerContext = context;
@@ -214,12 +240,11 @@ class _NetworkSectionState extends State<NetworkSection> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
           Text('导入历史（${rows.length} 条）',
-              style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w600)),
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           if (rows.isEmpty)
-            Text('还没有导入过任何主题',
-                style: TextStyle(color: scheme.onSurfaceVariant))
+            Text('还没有导入过任何主题', style: TextStyle(color: scheme.onSurfaceVariant))
           else
             ...rows.map((row) {
               final collected = row['collected_at'] as String? ?? '';
@@ -237,8 +262,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                         '回复 ${row['reply_count']} · 浏览 ${row['view_count']}'
                         '${collected.isEmpty ? '' : ' · ${collected.substring(0, collected.length.clamp(0, 10))}'}',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant)),
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
@@ -260,8 +284,7 @@ class _NetworkSectionState extends State<NetworkSection> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final loggedIn =
-        (scope.prefs.getString('tieba_bduss') ?? '').isNotEmpty;
+    final loggedIn = (scope.prefs.getString('tieba_bduss') ?? '').isNotEmpty;
     return Stack(
       children: [
         Column(
@@ -281,7 +304,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                               ? null
                               : (_) {
                                   setState(() => _forum = forum);
-                                  _reload();
+                                  _restoreFromCacheOrReload();
                                 },
                         ),
                     ],
@@ -314,8 +337,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                         child: FilledButton.icon(
                           style: FilledButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
                           ),
                           onPressed: _fetchSelected,
                           icon: const Icon(Icons.download_rounded, size: 18),
@@ -349,14 +371,12 @@ class _NetworkSectionState extends State<NetworkSection> {
                               ? const SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2))
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2))
                               : _threads.isEmpty
-                                  ? Text(
-                                      _error == null ? '下拉即可刷新' : '',
+                                  ? Text(_error == null ? '下拉即可刷新' : '',
                                       style: TextStyle(
-                                          color:
-                                              scheme.onSurfaceVariant))
+                                          color: scheme.onSurfaceVariant))
                                   : OutlinedButton(
                                       onPressed: _loadMore,
                                       child: const Text('加载更多')),
@@ -374,13 +394,19 @@ class _NetworkSectionState extends State<NetworkSection> {
                         borderRadius: BorderRadius.circular(20),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
-                          onTap: () => setState(() {
-                            if (!done) {
-                              checked
-                                  ? _selected.remove(thread.tid)
-                                  : _selected.add(thread.tid);
-                            }
-                          }),
+                          onTap: done
+                              ? null
+                              : () async {
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ThreadPreviewPage(
+                                        forum: _forum,
+                                        thread: thread,
+                                      ),
+                                    ),
+                                  );
+                                  _refreshImported();
+                                },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 6),
@@ -389,18 +415,14 @@ class _NetworkSectionState extends State<NetworkSection> {
                                 Checkbox(
                                   value: done ? true : checked,
                                   tristate: true,
-                                  fillColor:
-                                      WidgetStateProperty.resolveWith(
-                                          (states) => done
-                                              ? scheme.primary
-                                              : null),
+                                  fillColor: WidgetStateProperty.resolveWith(
+                                      (states) => done ? scheme.primary : null),
                                   onChanged: done
                                       ? null
                                       : (value) => setState(() {
                                             value == true
                                                 ? _selected.add(thread.tid)
-                                                : _selected.remove(
-                                                    thread.tid);
+                                                : _selected.remove(thread.tid);
                                           }),
                                 ),
                                 Expanded(
@@ -429,8 +451,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                                         '${done ? ' · 已导入' : ''}',
                                         style: TextStyle(
                                             fontSize: 11,
-                                            color:
-                                                scheme.onSurfaceVariant),
+                                            color: scheme.onSurfaceVariant),
                                       ),
                                     ],
                                   ),
@@ -453,8 +474,7 @@ class _NetworkSectionState extends State<NetworkSection> {
             right: 0,
             bottom: 0,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(20),
@@ -469,8 +489,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                   Expanded(
                     child: Text(_fetchStatus,
                         style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onPrimaryContainer)),
+                            fontSize: 12, color: scheme.onPrimaryContainer)),
                   ),
                 ],
               ),

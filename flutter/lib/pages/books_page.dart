@@ -43,29 +43,45 @@ class _BooksPageState extends State<BooksPage>
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  indicator: BoxDecoration(
-                    color: scheme.surfaceContainerLowest,
-                    borderRadius: BorderRadius.circular(22),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: AppScope.of(context).dockHidden,
+                builder: (context, hidden, child) => AnimatedSlide(
+                  offset: hidden ? const Offset(0, -1.6) : Offset.zero,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: hidden
+                        ? const SizedBox(width: double.infinity, height: 0)
+                        : child!,
                   ),
-                  dividerColor: Colors.transparent,
-                  labelColor: scheme.primary,
-                  unselectedLabelColor: scheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600),
-                  tabs: const [
-                    Tab(text: '网络浏览'),
-                    Tab(text: '分类浏览'),
-                    Tab(text: '名词解释'),
-                  ],
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: scheme.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    dividerColor: Colors.transparent,
+                    labelColor: scheme.primary,
+                    unselectedLabelColor: scheme.onSurfaceVariant,
+                    labelStyle: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                    tabs: const [
+                      Tab(text: '网络浏览'),
+                      Tab(text: '分类浏览'),
+                      Tab(text: '名词解释'),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -74,7 +90,7 @@ class _BooksPageState extends State<BooksPage>
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: NotificationListener<ScrollUpdateNotification>(
                   onNotification: (notification) {
-                    // 下滑隐藏 dock（一级导航），上滑立即出现；二级页签常驻。
+                    // 下滑隐藏 dock 与二级页签，上滑立即出现。
                     final hidden = AppScope.of(context).dockHidden;
                     if (notification.scrollDelta == null) return false;
                     final delta = notification.scrollDelta!;
