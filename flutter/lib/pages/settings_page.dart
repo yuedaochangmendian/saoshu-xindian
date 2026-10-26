@@ -349,7 +349,7 @@ class _BackupSectionState extends State<_BackupSection> {
     final db = await AppDatabase.instance.database;
     await _run(() async {
       final summary = await BackupService.restoreFromContent(
-          selected.readAsStringSync(), scope.prefs, db);
+          await selected.readAsString(), scope.prefs, db);
       _syncAfterRestore(scope);
       return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条，'
           '网络帖子 ${summary['postsAdded'] ?? 0} 条';

@@ -46,7 +46,13 @@ class WebDavClient {
   }
 
   Future<HttpClientResponse> _send(String method, Uri uri,
-      {Uint8List? body, int timeoutSeconds = 20}) async {
+      {Uint8List? body,
+      int timeoutSeconds = 20,
+      // 大体积上传/下载按 512KB/s 估算并保底，避免大备份固定超时必失败。
+      bool sizeAwareTimeout = false}) async {
+    if (sizeAwareTimeout && body != null) {
+      timeoutSeconds = (body.length / (512 * 1024)).ceil().clamp(30, 600);
+    }
     final client = _client();
     try {
       final request = await client.openUrl(method, uri);
@@ -111,7 +117,8 @@ class WebDavClient {
 
   Future<void> upload(String name, String content) async {
     final body = utf8.encode(content);
-    final response = await _send('PUT', _uri(name), body: body);
+    final response =
+        await _send('PUT', _uri(name), body: body, sizeAwareTimeout: true);
     await _drain(response);
     if (response.statusCode >= 300) {
       throw WebDavException('上传失败：${response.statusCode}');
@@ -157,7 +164,7 @@ class WebDavClient {
   }
 
   Future<String> download(String name) async {
-    final response = await _send('GET', _uri(name), timeoutSeconds: 30);
+    final response = await _send('GET', _uri(name), timeoutSeconds: 300);
     final bodyText = await response.transform(utf8.decoder).join();
     if (response.statusCode != 200) {
       throw WebDavException('下载失败：${response.statusCode}');

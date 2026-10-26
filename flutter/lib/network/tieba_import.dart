@@ -337,7 +337,7 @@ Future<void> applyBookIndexForRestore(
 /// 备份恢复用：导出全部已导入的贴吧帖子（含来源与统计元数据）。
 Future<List<Map<String, Object?>>> exportImportedPosts(Database db) async {
   final rows = await db.rawQuery(
-      'SELECT d.canonical_key,d.title,d.title_norm,d.author,d.author_norm,'
+      'SELECT d.id AS document_id,d.canonical_key,d.title,d.title_norm,d.author,d.author_norm,'
       'd.content,d.category,d.source_type,d.forum,d.mname,d.zname,'
       'd.published_at,d.source_url,d.word,d.hot_score,d.mentioned_books_json,'
       'n.tid,n.forum AS thread_forum,n.reply_count,n.view_count,n.agree_max,'
@@ -348,16 +348,23 @@ Future<List<Map<String, Object?>>> exportImportedPosts(Database db) async {
   return rows;
 }
 
-/// 备份恢复用：按 canonical_key 去重写入帖子，返回新增条数。
-Future<int> importPostsFromBackup(
+/// 备份恢复用：按 canonical_key 去重写入帖子。
+/// 返回 {备份内 document_id: 恢复后实际 id} 映射（已存在的帖子映射到现有
+/// id），供收藏 id 翻译使用；added 为真正新插入的条数。
+Future<Map<int, int>> importPostsFromBackup(
     Database db, List<Map<String, Object?>> posts) async {
-  var added = 0;
+  final idMap = <int, int>{};
   for (final post in posts) {
     final key = post['canonical_key'] as String? ?? '';
     if (key.isEmpty) continue;
+    final oldId = (post['document_id'] ?? 0) as int;
     final exists = await db.rawQuery(
         'SELECT id FROM documents WHERE canonical_key=? LIMIT 1', [key]);
-    if (exists.isNotEmpty) continue;
+    if (exists.isNotEmpty) {
+      final existingId = exists.first['id'] as int;
+      if (oldId > 0) idMap[oldId] = existingId;
+      continue;
+    }
     await db.transaction((txn) async {
       final id = await txn.insert('documents', {
         'canonical_key': key,
@@ -421,8 +428,8 @@ Future<int> importPostsFromBackup(
           post['source_type'] as String? ?? '百度贴吧',
           post['published_at'] as String? ?? '',
           id);
+      if (oldId > 0) idMap[oldId] = id;
     });
-    added++;
   }
-  return added;
+  return idMap;
 }

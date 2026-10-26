@@ -99,9 +99,17 @@ class BackupService {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
-    final postsAdded = await importPostsFromBackup(
+    final idMap = await importPostsFromBackup(
         db, posts.map((e) => Map<String, Object?>.from(e as Map)).toList());
-    await prefs.setStringList('favorite_ids', favorites);
+    // 收藏 id 翻译：导入帖恢复后是新 id，按映射改写；未命中的保留
+    // （对应随包库内容的收藏，其 id 与备份时相同）。
+    final translated = favorites.map((id) {
+      final parsed = int.tryParse(id);
+      return parsed != null && idMap.containsKey(parsed)
+          ? idMap[parsed].toString()
+          : id;
+    }).toList();
+    await prefs.setStringList('favorite_ids', translated);
     // 调用方需随后调用 Favorites.reload() 刷新内存缓存。
     savedPrefs.forEach((key, value) {
       if (value is String) {
@@ -111,9 +119,9 @@ class BackupService {
       }
     });
     return {
-      'favorites': favorites.length,
+      'favorites': translated.length,
       'notesAdded': notes.length,
-      'postsAdded': postsAdded,
+      'postsAdded': idMap.values.where((newId) => newId > 0).length,
     };
   }
 
