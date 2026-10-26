@@ -302,3 +302,127 @@ Map<String, String> _candidateBookTitlesStatic(
   } catch (_) {}
   return candidates;
 }
+
+/// 备份恢复用：把一条已导入帖子的书目计数补进 books 索引。
+Future<void> applyBookIndexForRestore(
+    DatabaseExecutor txn,
+    String title,
+    String mentionedJson,
+    String sourceType,
+    String date,
+    int documentId) async {
+  for (final entry
+      in _candidateBookTitlesStatic(title, mentionedJson).entries) {
+    final exists = await txn.rawQuery(
+        'SELECT 1 FROM books WHERE title_norm=? LIMIT 1', [entry.key]);
+    if (exists.isEmpty) {
+      await txn.insert('books', {
+        'title_norm': entry.key,
+        'title': entry.value,
+        'review_count': 1,
+        'best_document_id': documentId,
+        'latest_at': date,
+        'sources_json': jsonEncode([sourceType]),
+      });
+    } else {
+      await txn.execute(
+          'UPDATE books SET review_count=review_count+1,'
+          'latest_at=CASE WHEN latest_at IS NULL OR latest_at<? '
+          'THEN ? ELSE latest_at END WHERE title_norm=?',
+          [date, date, entry.key]);
+    }
+  }
+}
+
+/// 备份恢复用：导出全部已导入的贴吧帖子（含来源与统计元数据）。
+Future<List<Map<String, Object?>>> exportImportedPosts(Database db) async {
+  final rows = await db.rawQuery(
+      'SELECT d.canonical_key,d.title,d.title_norm,d.author,d.author_norm,'
+      'd.content,d.category,d.source_type,d.forum,d.mname,d.zname,'
+      'd.published_at,d.source_url,d.word,d.hot_score,d.mentioned_books_json,'
+      'n.tid,n.forum AS thread_forum,n.reply_count,n.view_count,n.agree_max,'
+      'n.collected_at '
+      'FROM network_threads n JOIN documents d ON d.id=n.document_id '
+      'WHERE d.id NOT IN (SELECT document_id FROM local_deleted) '
+      'ORDER BY n.collected_at ASC');
+  return rows;
+}
+
+/// 备份恢复用：按 canonical_key 去重写入帖子，返回新增条数。
+Future<int> importPostsFromBackup(
+    Database db, List<Map<String, Object?>> posts) async {
+  var added = 0;
+  for (final post in posts) {
+    final key = post['canonical_key'] as String? ?? '';
+    if (key.isEmpty) continue;
+    final exists = await db.rawQuery(
+        'SELECT id FROM documents WHERE canonical_key=? LIMIT 1', [key]);
+    if (exists.isNotEmpty) continue;
+    await db.transaction((txn) async {
+      final id = await txn.insert('documents', {
+        'canonical_key': key,
+        'title': post['title'] ?? '',
+        'title_norm': post['title_norm'] ?? '',
+        'author': post['author'] ?? '',
+        'author_norm': post['author_norm'] ?? '',
+        'content': post['content'] ?? '',
+        'category': post['category'] ?? '扫书',
+        'source_type': post['source_type'] ?? '百度贴吧',
+        'forum': post['forum'] ?? '',
+        'mname': post['mname'] ?? '',
+        'zname': post['zname'] ?? '',
+        'published_at': post['published_at'] ?? '',
+        'source_url': post['source_url'] ?? '',
+        'word': post['word'] ?? 0,
+        'hot_score': post['hot_score'] ?? 0,
+        'mentioned_books_json': post['mentioned_books_json'] ?? '[]',
+      });
+      final title = post['title'] as String? ?? '';
+      final mentioned = post['mentioned_books_json'] as String? ?? '[]';
+      await txn.execute(
+          'INSERT OR IGNORE INTO document_sources('
+          'document_id,source_kind,source_ref,source_url) VALUES(?,?,?,?)',
+          [
+            id,
+            TiebaImporter.sourceKind,
+            (post['tid'] ?? '').toString(),
+            post['source_url'] ?? ''
+          ]);
+      await txn.execute(
+          'INSERT OR IGNORE INTO network_threads('
+          'document_id,tid,forum,reply_count,view_count,agree_max,collected_at) '
+          'VALUES(?,?,?,?,?,?,?)',
+          [
+            id,
+            post['tid'] ?? 0,
+            post['thread_forum'] ?? '',
+            post['reply_count'] ?? 0,
+            post['view_count'] ?? 0,
+            post['agree_max'] ?? 0,
+            post['collected_at'] ?? DateTime.now().toIso8601String(),
+          ]);
+      final searchable = StringBuffer('$title ${post['author'] ?? ''}');
+      try {
+        final books = jsonDecode(mentioned);
+        if (books is List) {
+          for (final book in books) {
+            searchable.write(' ');
+            searchable.write(book.toString());
+          }
+        }
+      } catch (_) {}
+      await txn.execute('DELETE FROM search_idx WHERE rowid=?', [id]);
+      await txn.execute('INSERT INTO search_idx(rowid,tokens) VALUES(?,?)',
+          [id, AppDatabase.buildFtsQuery(searchable.toString())]);
+      await applyBookIndexForRestore(
+          txn,
+          title,
+          mentioned,
+          post['source_type'] as String? ?? '百度贴吧',
+          post['published_at'] as String? ?? '',
+          id);
+    });
+    added++;
+  }
+  return added;
+}

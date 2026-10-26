@@ -5,8 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// 用户数据备份（JSON）：收藏、简记、设置。
-/// 内容型数据（documents）随包分发，不入备份；导入的帖子可通过重新抓取恢复。
+import '../network/tieba_import.dart';
+
+/// 用户数据备份（JSON）：收藏、简记、设置，以及导入的贴吧帖子。
+/// 随包内容库不纳入（体积 332 MiB，随 APK 分发）；凭据永不进备份。
 class BackupService {
   static const formatVersion = 1;
   static const fileNamePattern = 'saoshu_backup_';
@@ -24,11 +26,13 @@ class BackupService {
       SharedPreferences prefs, Database db) async {
     final notes = await db.query('user_notes',
         where: 'deleted_at IS NULL', orderBy: 'id ASC');
+    final posts = await exportImportedPosts(db);
     return {
       'format': formatVersion,
       'exported_at': DateTime.now().toIso8601String(),
       'favorites': prefs.getStringList('favorite_ids') ?? [],
       'notes': notes,
+      'networkPosts': posts,
       'prefs': {
         'theme_id': prefs.getString('theme_id') ?? 'teal',
         'haptic_enabled': prefs.getBool('haptic_enabled') ?? false,
@@ -68,7 +72,7 @@ class BackupService {
     }
   }
 
-  /// 从备份 JSON 恢复。返回摘要 {favorites: n, notesAdded: n}。
+  /// 从备份 JSON 恢复。返回摘要 {favorites, notesAdded, postsAdded}。
   static Future<Map<String, int>> restoreFromContent(
       String content, SharedPreferences prefs, Database db) async {
     final data = jsonDecode(content) as Map<String, Object?>;
@@ -76,6 +80,7 @@ class BackupService {
         .map((e) => e.toString())
         .toList();
     final notes = (data['notes'] ?? const []) as List;
+    final posts = (data['networkPosts'] ?? const []) as List;
     final savedPrefs = (data['prefs'] ?? {}) as Map<String, Object?>;
 
     await db.transaction((txn) async {
@@ -94,6 +99,8 @@ class BackupService {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+    final postsAdded = await importPostsFromBackup(
+        db, posts.map((e) => Map<String, Object?>.from(e as Map)).toList());
     await prefs.setStringList('favorite_ids', favorites);
     // 调用方需随后调用 Favorites.reload() 刷新内存缓存。
     savedPrefs.forEach((key, value) {
@@ -103,7 +110,11 @@ class BackupService {
         prefs.setBool(key, value);
       }
     });
-    return {'favorites': favorites.length, 'notesAdded': notes.length};
+    return {
+      'favorites': favorites.length,
+      'notesAdded': notes.length,
+      'postsAdded': postsAdded,
+    };
   }
 
   static String summaryLabel(File file) {

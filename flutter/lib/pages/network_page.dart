@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../app.dart';
 import '../data/database.dart';
 import '../network/tieba_client.dart';
 import '../network/tieba_import.dart';
+import '../services/secure_store.dart';
 import 'reader_page.dart';
 import 'thread_preview_page.dart';
 
@@ -40,8 +40,7 @@ class _NetworkSectionState extends State<NetworkSection> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_client == null) {
-      _client = TiebaClient(
-          bduss: AppScope.of(context).prefs.getString('tieba_bduss') ?? '');
+      _client = TiebaClient(bduss: SecureStore.get('tieba_bduss'));
       _restoreFromCacheOrReload();
     }
   }
@@ -190,9 +189,8 @@ class _NetworkSectionState extends State<NetworkSection> {
   }
 
   Future<void> _showLoginDialog() async {
-    final prefs = AppScope.of(context).prefs;
     final controller =
-        TextEditingController(text: prefs.getString('tieba_bduss') ?? '');
+        TextEditingController(text: SecureStore.get('tieba_bduss'));
     final messenger = ScaffoldMessenger.of(context);
     final saved = await showDialog<bool>(
       context: context,
@@ -224,7 +222,7 @@ class _NetworkSectionState extends State<NetworkSection> {
     );
     if (saved == true) {
       final bduss = controller.text.trim();
-      await prefs.setString('tieba_bduss', bduss);
+      await SecureStore.set('tieba_bduss', bduss);
       controller.dispose();
       if (mounted) {
         _client?.close();
@@ -334,9 +332,8 @@ class _NetworkSectionState extends State<NetworkSection> {
 
   @override
   Widget build(BuildContext context) {
-    final scope = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final loggedIn = (scope.prefs.getString('tieba_bduss') ?? '').isNotEmpty;
+    final loggedIn = SecureStore.get('tieba_bduss').isNotEmpty;
     return Stack(
       children: [
         Column(

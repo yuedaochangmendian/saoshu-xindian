@@ -4,6 +4,7 @@ import '../app.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../services/backup_service.dart';
+import '../services/secure_store.dart';
 import '../services/system_bridge.dart';
 import '../services/update_service.dart';
 import '../services/webdav_client.dart';
@@ -350,7 +351,8 @@ class _BackupSectionState extends State<_BackupSection> {
       final summary = await BackupService.restoreFromContent(
           selected.readAsStringSync(), scope.prefs, db);
       _syncAfterRestore(scope);
-      return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
+      return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条，'
+          '网络帖子 ${summary['postsAdded'] ?? 0} 条';
     });
   }
 
@@ -363,7 +365,7 @@ class _BackupSectionState extends State<_BackupSection> {
     final userCtrl =
         TextEditingController(text: prefs.getString('webdav_user') ?? '');
     final passCtrl =
-        TextEditingController(text: prefs.getString('webdav_pass') ?? '');
+        TextEditingController(text: SecureStore.get('webdav_pass'));
     final dirCtrl =
         TextEditingController(text: prefs.getString('webdav_dir') ?? '');
     final confirmed = await showDialog<bool>(
@@ -414,7 +416,7 @@ class _BackupSectionState extends State<_BackupSection> {
     if (confirmed != true || !mounted) return;
     await prefs.setString('webdav_server', server);
     await prefs.setString('webdav_user', user);
-    await prefs.setString('webdav_pass', pass);
+    await SecureStore.set('webdav_pass', pass);
     await prefs.setString('webdav_dir', dir);
     if (server.isEmpty) {
       _toast('请填写服务器地址');
@@ -455,7 +457,8 @@ class _BackupSectionState extends State<_BackupSection> {
         final summary =
             await BackupService.restoreFromContent(content, scope.prefs, db);
         _syncAfterRestore(scope);
-        return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
+        return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条，'
+            '网络帖子 ${summary['postsAdded'] ?? 0} 条';
       });
     } else {
       await _run(() async {
