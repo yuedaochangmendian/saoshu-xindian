@@ -795,6 +795,39 @@ const _iconChoices = <_IconChoice>[
 class _IconSectionState extends State<_IconSection> {
   String _selected = 'default';
   bool _applying = false;
+  bool _busy = false;
+  String _importStatus = '';
+
+  /// 从本地选图：Android 无运行时替换应用图标的 API，采用官方近似——
+  /// 选图后请求用户确认，把带自定义图标的快捷方式钉到桌面（与
+  /// 应用图标并存，指向主页）。
+  Future<void> _importFromLocal() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _importStatus = '';
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await SystemBridge.pinCustomShortcut();
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _importStatus = result == null
+            ? '已取消'
+            : result == 'pinned'
+                ? '已创建桌面快捷方式（用所选图片作为图标）'
+                : '导入失败：$result';
+      });
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+          content: Text(result == null
+              ? '已取消'
+              : result == 'pinned'
+                  ? '桌面快捷方式已创建'
+                  : '导入失败：$result')));
+  }
 
   @override
   void initState() {
@@ -890,7 +923,30 @@ class _IconSectionState extends State<_IconSection> {
               ],
             ),
             const SizedBox(height: 10),
-            Text('切换后桌面图标会在几秒内刷新；部分启动器可能需要重新进入桌面。',
+            Row(
+              children: [
+                Expanded(
+                  child: _MiniAction(
+                    icon: Icons.add_photo_alternate_rounded,
+                    label: '从本地导入',
+                    onTap: _busy ? null : _importFromLocal,
+                  ),
+                ),
+              ],
+            ),
+            if (_importStatus.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(_importStatus,
+                  style: TextStyle(
+                      fontSize: 11, color: scheme.onSurfaceVariant)),
+            ],
+            if (_busy) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+            const SizedBox(height: 10),
+            Text('切换后桌面图标会在几秒内刷新；部分启动器可能需要重新进入桌面。'
+                '「从本地导入」会以所选图片创建桌面快捷方式（与原图标并存）。',
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           ],
         ),

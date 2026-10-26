@@ -124,7 +124,7 @@ class _BooksPageState extends State<BooksPage> {
       case 0:
         return NetworkSection(key: ValueKey('page-$index'));
       case 1:
-        return BrowseSection(key: ValueKey('page-\$index'));
+        return BrowseSection(key: ValueKey('page-$index'));
       default:
         return GlossarySection(key: ValueKey('page-\$index'));
     }

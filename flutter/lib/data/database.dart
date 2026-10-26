@@ -65,7 +65,11 @@ class AppDatabase {
       final imported = await exportImportedPosts(oldDb);
       final favoriteIds = prefs.getStringList('favorite_ids') ?? [];
       await oldDb.close();
-      await File(path).delete();
+      // 重命名而非删除：迁移中途被杀时下次启动可从 .migrating 重新迁移，
+      // 避免用户数据（简记/导入帖）随旧库一起丢失。
+      final migrating = File('$path.migrating');
+      if (migrating.existsSync()) migrating.deleteSync();
+      File(path).renameSync(migrating.path);
       await _copyFromAssets(path);
       final db = await openDatabase(path);
       await _initializeLocalSchema(db);
@@ -86,6 +90,8 @@ class AppDatabase {
       }).toList();
       await prefs.setStringList('favorite_ids', translated);
       await prefs.setInt('db_asset_version', dbAssetVersion);
+      // 迁移全部成功后才清理旧库快照。
+      if (migrating.existsSync()) migrating.deleteSync();
       _status('数据库已更新');
       return db;
     }
