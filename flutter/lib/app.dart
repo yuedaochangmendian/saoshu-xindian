@@ -18,6 +18,10 @@ class AppScope extends InheritedWidget {
   /// dock 滚动隐藏开关（书库页下滑隐藏、上滑出现，切页自动复位）。
   final ValueNotifier<bool> dockHidden;
 
+  /// 点击震动开关的实时状态（设置页与 dock 共享）。
+  final ValueNotifier<bool> haptic;
+  final ValueChanged<bool> setHaptic;
+
   const AppScope({
     super.key,
     required this.prefs,
@@ -25,6 +29,8 @@ class AppScope extends InheritedWidget {
     required this.themeId,
     required this.changeTheme,
     required this.dockHidden,
+    required this.haptic,
+    required this.setHaptic,
     required super.child,
   });
 
@@ -96,19 +102,22 @@ class _HomeShellState extends State<HomeShell> {
                 curve: Curves.easeOutCubic,
                 child: IgnorePointer(ignoring: hidden, child: child),
               ),
-              child: AppDock(
-                index: _index,
-                count: 4,
-                icons: _icons,
-                selectedIcons: _selectedIcons,
-                labels: _labels,
-                hapticEnabled: scope.prefs.getBool('haptic_enabled') ?? false,
-                onTap: (i) {
-                  if (i != _index) {
-                    scope.dockHidden.value = false;
-                    setState(() => _index = i);
-                  }
-                },
+              child: ValueListenableBuilder<bool>(
+                valueListenable: scope.haptic,
+                builder: (context, hapticEnabled, _) => AppDock(
+                  index: _index,
+                  count: 4,
+                  icons: _icons,
+                  selectedIcons: _selectedIcons,
+                  labels: _labels,
+                  hapticEnabled: hapticEnabled,
+                  onTap: (i) {
+                    if (i != _index) {
+                      scope.dockHidden.value = false;
+                      setState(() => _index = i);
+                    }
+                  },
+                ),
               ),
             ),
           ),

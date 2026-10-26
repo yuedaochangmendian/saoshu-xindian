@@ -34,9 +34,19 @@ class _SaoshuAppState extends State<SaoshuApp> {
 
   final ValueNotifier<bool> _dockHidden = ValueNotifier<bool>(false);
 
+  /// 点击震动开关：dock 与设置页共享同一份实时状态。
+  late final ValueNotifier<bool> _haptic =
+      ValueNotifier<bool>(widget.prefs.getBool('haptic_enabled') ?? false);
+
+  void _setHaptic(bool enabled) {
+    _haptic.value = enabled;
+    widget.prefs.setBool('haptic_enabled', enabled);
+  }
+
   @override
   void dispose() {
     _dockHidden.dispose();
+    _haptic.dispose();
     _favorites.removeListener(_rebuild);
     super.dispose();
   }
@@ -56,6 +66,8 @@ class _SaoshuAppState extends State<SaoshuApp> {
       themeId: _themeId,
       changeTheme: _changeTheme,
       dockHidden: _dockHidden,
+      haptic: _haptic,
+      setHaptic: _setHaptic,
       child: MaterialApp(
         title: '扫书新典',
         debugShowCheckedModeBanner: false,

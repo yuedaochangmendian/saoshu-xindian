@@ -59,7 +59,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final haptic = scope.prefs.getBool('haptic_enabled') ?? false;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -114,12 +113,14 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const SizedBox(height: 12),
-            _SwitchCard(
-              title: '点击震动',
-              hint: '默认关闭；开启后仅提供轻微触感',
-              value: haptic,
-              onChanged: (checked) =>
-                  scope.prefs.setBool('haptic_enabled', checked),
+            ValueListenableBuilder<bool>(
+              valueListenable: scope.haptic,
+              builder: (context, hapticEnabled, _) => _SwitchCard(
+                title: '点击震动',
+                hint: '默认关闭；开启后仅提供轻微触感',
+                value: hapticEnabled,
+                onChanged: scope.setHaptic,
+              ),
             ),
             const SizedBox(height: 20),
             Text('桌面图标',
@@ -279,6 +280,13 @@ class _BackupSectionState extends State<_BackupSection> {
     }
   }
 
+  /// 恢复备份后把 prefs 里的全局设置同步到内存状态（收藏、主题、震动）。
+  void _syncAfterRestore(AppScope scope) {
+    scope.favorites.reload();
+    scope.setHaptic(scope.prefs.getBool('haptic_enabled') ?? false);
+    scope.changeTheme(scope.prefs.getString('theme_id') ?? 'teal');
+  }
+
   Future<void> _run(Future<String> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -341,7 +349,7 @@ class _BackupSectionState extends State<_BackupSection> {
     await _run(() async {
       final summary = await BackupService.restoreFromContent(
           selected.readAsStringSync(), scope.prefs, db);
-      scope.favorites.reload();
+      _syncAfterRestore(scope);
       return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
     });
   }
@@ -446,7 +454,7 @@ class _BackupSectionState extends State<_BackupSection> {
         final content = await client.download(picked);
         final summary =
             await BackupService.restoreFromContent(content, scope.prefs, db);
-        scope.favorites.reload();
+        _syncAfterRestore(scope);
         return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
       });
     } else {
