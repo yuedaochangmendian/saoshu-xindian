@@ -61,6 +61,8 @@ class _BrowseSectionState extends State<BrowseSection> {
   }
 
   Future<void> _loadValues() async {
+    // 首次进入先显示加载态，避免首帧闪「暂无内容」。
+    setState(() => _loading = true);
     final values = await _db.categoriesWithCounts();
     if (mounted) {
       setState(() {
@@ -100,7 +102,8 @@ class _BrowseSectionState extends State<BrowseSection> {
         });
       }
     } finally {
-      _fetching = false;
+      // 仅当本次请求仍是最新代号时才释放锁，避免过期响应清掉在飞请求的锁。
+      if (generation == _generation) _fetching = false;
     }
   }
 

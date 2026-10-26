@@ -105,14 +105,6 @@ class _NetworkSectionState extends State<NetworkSection> {
           _hasMoreByForum[_forum] = _hasMore;
         });
       }
-    } on Exception {
-      // 请求失败：_page 未递增前的归零由 _reload 保证；此处恢复可重试状态。
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          if (_page == 0) _hasMore = true;
-        });
-      }
     } catch (error) {
       if (mounted) {
         setState(() {
