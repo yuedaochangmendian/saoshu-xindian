@@ -341,6 +341,7 @@ class _BackupSectionState extends State<_BackupSection> {
     await _run(() async {
       final summary = await BackupService.restoreFromContent(
           selected.readAsStringSync(), scope.prefs, db);
+      scope.favorites.reload();
       return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
     });
   }
@@ -445,6 +446,7 @@ class _BackupSectionState extends State<_BackupSection> {
         final content = await client.download(picked);
         final summary =
             await BackupService.restoreFromContent(content, scope.prefs, db);
+        scope.favorites.reload();
         return '恢复完成：收藏 ${summary['favorites']} 条，简记 ${summary['notesAdded']} 条';
       });
     } else {

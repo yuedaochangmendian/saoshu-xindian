@@ -84,22 +84,22 @@ class UpdateService {
     for (var i = 0; i < 3; i++) {
       if (r[i] != c[i]) return r[i].compareTo(c[i]);
     }
-    final rPre = r.pre;
-    final cPre = c.pre;
-    // 无预发布后缀视为比有后缀的新。
-    if (rPre.isEmpty && cPre.isNotEmpty) return 1;
-    if (rPre.isNotEmpty && cPre.isEmpty) return -1;
-    if (rPre != cPre) return rPre.compareTo(cPre);
-    return 0;
+    final rPre = r.preNumber;
+    final cPre = c.preNumber;
+    // 无预发布后缀视为比有后缀的新；pre 按整数比较（pre6 < pre10）。
+    if (rPre == null && cPre == null) return 0;
+    if (rPre == null) return 1;
+    if (cPre == null) return -1;
+    return rPre.compareTo(cPre);
   }
 
   static _VersionParts _parts(String version) {
     var v = version.trim().replaceFirst(RegExp(r'^v'), '');
-    String pre = '';
-    final preMatch = RegExp(r'-(.+)$').firstMatch(v);
+    int? preNumber;
+    final preMatch = RegExp(r'-(?:pre)?(\d+)$').firstMatch(v);
     if (preMatch != null) {
-      pre = preMatch.group(1)!;
-      v = v.substring(0, v.length - pre.length - 1);
+      preNumber = int.tryParse(preMatch.group(1)!);
+      v = v.substring(0, v.length - preMatch.group(0)!.length);
     }
     final nums = <int>[];
     for (final part in v.split('.')) {
@@ -108,13 +108,13 @@ class UpdateService {
     while (nums.length < 3) {
       nums.add(0);
     }
-    return _VersionParts(nums.sublist(0, 3), pre);
+    return _VersionParts(nums.sublist(0, 3), preNumber);
   }
 }
 
 class _VersionParts {
   final List<int> numbers;
-  final String pre;
-  const _VersionParts(this.numbers, this.pre);
+  final int? preNumber;
+  const _VersionParts(this.numbers, this.preNumber);
   int operator [](int index) => numbers[index];
 }

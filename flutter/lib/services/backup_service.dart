@@ -95,6 +95,7 @@ class BackupService {
       }
     });
     await prefs.setStringList('favorite_ids', favorites);
+    // 调用方需随后调用 Favorites.reload() 刷新内存缓存。
     savedPrefs.forEach((key, value) {
       if (value is String) {
         prefs.setString(key, value);

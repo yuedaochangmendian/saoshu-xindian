@@ -91,12 +91,26 @@ class _NetworkSectionState extends State<NetworkSection> {
         setState(() {
           _page++;
           if (force) _threads.clear();
-          _threads.addAll(page.threads.where((t) => !t.deleted && !t.masked));
+          // tid 去重：刷新失败重试 / 翻页回退时防止重复条目。
+          final seen = _threads.map((t) => t.tid).toSet();
+          for (final thread in page.threads) {
+            if (!thread.deleted && !thread.masked && seen.add(thread.tid)) {
+              _threads.add(thread);
+            }
+          }
           _hasMore = page.hasMore;
           _loading = false;
           _cache[_forum] = List.of(_threads);
           _pageByForum[_forum] = _page;
           _hasMoreByForum[_forum] = _hasMore;
+        });
+      }
+    } on Exception {
+      // 请求失败：_page 未递增前的归零由 _reload 保证；此处恢复可重试状态。
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          if (_page == 0) _hasMore = true;
         });
       }
     } catch (error) {
@@ -114,14 +128,23 @@ class _NetworkSectionState extends State<NetworkSection> {
     if (_threads.isEmpty) return;
     final db = await AppDatabase.instance.database;
     final tids = _threads.map((t) => t.tid).toList();
-    final placeholders = List.filled(tids.length, '?').join(',');
-    final rows = await db.rawQuery(
-        'SELECT tid FROM network_threads WHERE tid IN ($placeholders)', tids);
+    final imported = <int>{};
+    // SQLite 单语句默认最多 999 个绑定参数，分批查询。
+    const chunkSize = 500;
+    for (var start = 0; start < tids.length; start += chunkSize) {
+      final chunk =
+          tids.sublist(start, (start + chunkSize).clamp(0, tids.length));
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final rows = await db.rawQuery(
+          'SELECT tid FROM network_threads WHERE tid IN ($placeholders)',
+          chunk);
+      imported.addAll(rows.map((r) => r['tid'] as int));
+    }
     if (mounted) {
       setState(() {
         _imported
           ..clear()
-          ..addAll(rows.map((r) => r['tid'] as int));
+          ..addAll(imported);
       });
     }
   }

@@ -311,40 +311,6 @@ class AppDatabase {
     return rows.map(Document.fromRow).toList();
   }
 
-  Future<List<Book>> searchBooks(String query,
-      {int limit = 60, int offset = 0}) async {
-    final db = await database;
-    final like = '%$query%';
-    final rows = await db.rawQuery(
-        'SELECT $_bookColumns FROM books WHERE title LIKE ? OR title_norm LIKE ? '
-        'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
-        [like, like, limit, offset]);
-    return rows.map(Book.fromRow).toList();
-  }
-
-  static const _bookColumns =
-      'id,title,title_norm,review_count,best_document_id,latest_at';
-
-  Future<List<Book>> latestBooks({int limit = 60, int offset = 0}) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT $_bookColumns FROM books '
-        'ORDER BY review_count DESC,id DESC LIMIT ? OFFSET ?',
-        [limit, offset]);
-    return rows.map(Book.fromRow).toList();
-  }
-
-  Future<List<Document>> documentsForBook(Book book, {int limit = 200}) async {
-    final db = await database;
-    final rows = await db.rawQuery(
-        'SELECT d.* FROM documents d WHERE (d.title_norm=? '
-        'OR instr(d.mentioned_books_json, ?)>0) '
-        'AND d.id NOT IN (SELECT document_id FROM local_deleted) '
-        'ORDER BY d.published_at DESC,d.hot_score DESC,d.id DESC LIMIT ?',
-        [book.titleNorm, book.title, limit]);
-    return rows.map(Document.fromRow).toList();
-  }
-
   // ---------- 分类浏览（来源 / 帖子类型） ----------
 
   Future<List<Map<String, Object?>>> forumsWithCounts() async {

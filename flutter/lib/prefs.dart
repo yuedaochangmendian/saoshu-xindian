@@ -80,6 +80,14 @@ class Favorites extends ChangeNotifierX {
 
   List<String> get ids => List.unmodifiable(_ids);
 
+  /// 从 prefs 重读（备份恢复后调用），并通知监听者刷新 UI。
+  void reload() {
+    _ids
+      ..clear()
+      ..addAll(prefs.getStringList('favorite_ids') ?? []);
+    notify();
+  }
+
   bool contains(int id) => _ids.contains(id.toString());
 
   void toggle(int id) {
