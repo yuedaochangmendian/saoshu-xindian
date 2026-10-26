@@ -7,7 +7,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../network/tieba_import.dart';
 import 'models.dart';
 
 /// 随包数据库接入层。
@@ -19,7 +21,7 @@ class AppDatabase {
   AppDatabase._();
   static final AppDatabase instance = AppDatabase._();
 
-  static const int dbAssetVersion = 15;
+  static const int dbAssetVersion = 16;
 
   Database? _db;
   final List<void Function(String)> _statusListeners = [];
@@ -47,10 +49,47 @@ class AppDatabase {
     final path = await _candidatePaths();
     final file = File(path);
     final usable = file.existsSync() && file.lengthSync() > 65536;
+    final prefs = await SharedPreferences.getInstance();
+    final installed = prefs.getInt('db_asset_version') ?? -1;
+
+    // 全新安装：直接解压。
     if (!usable) {
       _status('正在准备随包数据库…');
       await _copyFromAssets(path);
+    } else if (installed != dbAssetVersion) {
+      // 库版本更新：重拷随包库，并迁移用户数据（简记/收藏/导入帖）。
+      _status('正在更新随包数据库…');
+      final oldDb = await openDatabase(path);
+      final notes =
+          await oldDb.query('user_notes', where: 'deleted_at IS NULL');
+      final imported = await exportImportedPosts(oldDb);
+      final favoriteIds = prefs.getStringList('favorite_ids') ?? [];
+      await oldDb.close();
+      await File(path).delete();
+      await _copyFromAssets(path);
+      final db = await openDatabase(path);
+      await _initializeLocalSchema(db);
+      _status('正在恢复用户数据…');
+      await db.transaction((txn) async {
+        for (final note in notes) {
+          await txn.insert('user_notes', note,
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      });
+      final idMap = await importPostsFromBackup(db,
+          imported.map((e) => Map<String, Object?>.from(e as Map)).toList());
+      final translated = favoriteIds.map((id) {
+        final parsed = int.tryParse(id);
+        return parsed != null && idMap.containsKey(parsed)
+            ? idMap[parsed].toString()
+            : id;
+      }).toList();
+      await prefs.setStringList('favorite_ids', translated);
+      await prefs.setInt('db_asset_version', dbAssetVersion);
+      _status('数据库已更新');
+      return db;
     }
+    await prefs.setInt('db_asset_version', dbAssetVersion);
     final db = await openDatabase(path);
     await _initializeLocalSchema(db);
     return db;

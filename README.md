@@ -26,7 +26,7 @@ GitHub Release 提供：
 
 ## 数据
 
-- `app/src/main/assets/saoshu.db`：130,681 条可读内容、76,689 个书名聚合、154,203 次来源关系
+- `app/src/main/assets/saoshu.db`：128,687 条可读内容、76,689 个书名聚合、152,209 次来源关系（v4.3.x 清理了约 2,000 条无书名且字数过少的灌水内容）
 - 数据来源：《扫书宝典》3.10.250109、yy小说吧/哀伤雪刃吧提取表、优书网书评和 BookSift 书目评价，截止 2026-10-23
 - 原库的 `clist` 38,594 条、`dalao` 2,400 条和 `wlist` 39 条已归一化到 `documents`，不再重复内嵌原始正文表
 - `document_sources` 使用 `WITHOUT ROWID` 复合主键保存 `clist/dalao/wlist` 来源编号，避免额外索引
