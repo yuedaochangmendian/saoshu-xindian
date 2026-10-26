@@ -115,7 +115,8 @@ class PostsPage {
 }
 
 /// 设备参数（参考 TiebaLite CommonRequest v11 字段集）。
-/// 值应在安装后随机生成并持久化（cuid/client_id 的一致性影响登录态校验）。
+/// 值随机生成一次后持久化（经 `TiebaClient.ensureDevice`），cuid/client_id
+/// 的一致性影响服务端对登录态的校验。
 class TiebaDeviceParams {
   final String cuid;
   final String clientId;
@@ -132,9 +133,33 @@ class TiebaDeviceParams {
 }
 
 class TiebaClient {
+  /// 设备参数的进程级共享缓存：所有实例共用同一设备指纹。
+  static TiebaDeviceParams? _sharedDevice;
+
+  /// 从持久化恢复设备参数；无则生成。persist 由调用方提供（写 prefs）。
+  static Future<TiebaDeviceParams> ensureDevice(
+      Future<void> Function(String key, String value) persist) async {
+    if (_sharedDevice != null) return _sharedDevice!;
+    final device = TiebaDeviceParams(
+      cuid: 'baidutiebaapp${_randHex(26)}00',
+      clientId: _randHex(32),
+      imei: _randHex(15),
+      c3Aid: '${_randHex(26)}${_randHex(4)}',
+    );
+    await persist('tieba_device_cuid', device.cuid);
+    _sharedDevice = device;
+    return device;
+  }
+
+  static String _randHex(int len) {
+    final rnd = Random();
+    return List.generate(len, (i) => '0123456789abcdef'[rnd.nextInt(16)])
+        .join();
+  }
+
   TiebaClient({String bduss = '', TiebaDeviceParams? device})
       : _bduss = bduss,
-        _device = device ?? _randomDevice();
+        _device = device ?? _sharedDevice ?? _randomDevice();
   final String _bduss;
   final TiebaDeviceParams _device;
   static const _host = 'https://tiebac.baidu.com';

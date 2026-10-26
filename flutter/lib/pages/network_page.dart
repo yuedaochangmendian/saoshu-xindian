@@ -234,17 +234,23 @@ class _NetworkSectionState extends State<NetworkSection> {
       _client?.close();
       _client = TiebaClient(bduss: bduss);
       String message;
-      try {
-        final profile = await client.fetchProfile();
-        if (profile == null) {
-          message = '登录失败：BDUSS 无效或已过期';
+      if (bduss.isEmpty) {
+        await prefs.setString('tieba_username', '');
+        message = '已退出登录';
+      } else {
+        try {
+          final profile = await client.fetchProfile();
+          if (profile == null) {
+            message = '登录失败：BDUSS 无效或已过期';
+            await prefs.setString('tieba_username', '');
+          } else {
+            await prefs.setString('tieba_username', profile.name);
+            message = '已登录：${profile.name}';
+          }
+        } catch (error) {
+          message = '登录验证失败（BDUSS 已保存）：$error';
           await prefs.setString('tieba_username', '');
-        } else {
-          await prefs.setString('tieba_username', profile.name);
-          message = '已登录：${profile.name}';
         }
-      } catch (error) {
-        message = '登录验证失败：$error（BDUSS 已保存，稍后自动重试）';
       }
       if (mounted) {
         setState(() {
