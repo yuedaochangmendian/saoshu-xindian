@@ -4,6 +4,7 @@ import '../data/database.dart';
 import '../network/tieba_client.dart';
 import '../network/tieba_import.dart';
 import '../services/secure_store.dart';
+import '../app.dart';
 import 'reader_page.dart';
 import 'thread_preview_page.dart';
 
@@ -189,6 +190,7 @@ class _NetworkSectionState extends State<NetworkSection> {
   }
 
   Future<void> _showLoginDialog() async {
+    final prefs = AppScope.of(context).prefs;
     final controller =
         TextEditingController(text: SecureStore.get('tieba_bduss'));
     final messenger = ScaffoldMessenger.of(context);
@@ -222,15 +224,36 @@ class _NetworkSectionState extends State<NetworkSection> {
     );
     if (saved == true) {
       final bduss = controller.text.trim();
-      await SecureStore.set('tieba_bduss', bduss);
       controller.dispose();
       if (mounted) {
-        _client?.close();
-        setState(() => _client = TiebaClient(bduss: bduss));
+        setState(() {
+          _loading = true;
+        });
+      }
+      await SecureStore.set('tieba_bduss', bduss);
+      _client?.close();
+      _client = TiebaClient(bduss: bduss);
+      String message;
+      try {
+        final profile = await client.fetchProfile();
+        if (profile == null) {
+          message = '登录失败：BDUSS 无效或已过期';
+          await prefs.setString('tieba_username', '');
+        } else {
+          await prefs.setString('tieba_username', profile.name);
+          message = '已登录：${profile.name}';
+        }
+      } catch (error) {
+        message = '登录验证失败：$error（BDUSS 已保存，稍后自动重试）';
+      }
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+        await _reload();
         messenger
           ..hideCurrentSnackBar()
-          ..showSnackBar(
-              SnackBar(content: Text(bduss.isEmpty ? '已退出登录' : '已登录')));
+          ..showSnackBar(SnackBar(content: Text(message)));
       }
       return;
     }
@@ -333,6 +356,8 @@ class _NetworkSectionState extends State<NetworkSection> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final prefs = AppScope.of(context).prefs;
+    final account = prefs.getString('tieba_username') ?? '';
     final loggedIn = SecureStore.get('tieba_bduss').isNotEmpty;
     return Stack(
       children: [
@@ -363,7 +388,9 @@ class _NetworkSectionState extends State<NetworkSection> {
                   onPressed: _showLoginDialog,
                   icon: Icon(loggedIn ? Icons.logout : Icons.login,
                       size: 20, color: scheme.onSurfaceVariant),
-                  tooltip: loggedIn ? '退出登录' : '贴吧登录',
+                  tooltip: loggedIn
+                      ? (account.isEmpty ? '退出登录' : '已登录：$account（点击退出）')
+                      : '贴吧登录',
                 ),
                 IconButton(
                   onPressed: _showHistory,

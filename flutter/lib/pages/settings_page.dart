@@ -937,15 +937,16 @@ class _IconSectionState extends State<_IconSection> {
             if (_importStatus.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(_importStatus,
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
+                  style:
+                      TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
             ],
             if (_busy) ...[
               const SizedBox(height: 8),
               const LinearProgressIndicator(minHeight: 2),
             ],
             const SizedBox(height: 10),
-            Text('切换后桌面图标会在几秒内刷新；部分启动器可能需要重新进入桌面。'
+            Text(
+                '切换后桌面图标会在几秒内刷新；部分启动器可能需要重新进入桌面。'
                 '「从本地导入」会以所选图片创建桌面快捷方式（与原图标并存）。',
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           ],

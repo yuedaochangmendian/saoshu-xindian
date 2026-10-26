@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -11,6 +12,14 @@ class TiebaException implements Exception {
   TiebaException(this.message);
   @override
   String toString() => message;
+}
+
+class TiebaUserProfile {
+  final int id;
+  final String name;
+  final String portrait;
+  const TiebaUserProfile(
+      {required this.id, required this.name, required this.portrait});
 }
 
 class ThreadSummary {
@@ -105,14 +114,47 @@ class PostsPage {
       this.replyNum, this.viewNum, this.floors);
 }
 
+/// 设备参数（参考 TiebaLite CommonRequest v11 字段集）。
+/// 值应在安装后随机生成并持久化（cuid/client_id 的一致性影响登录态校验）。
+class TiebaDeviceParams {
+  final String cuid;
+  final String clientId;
+  final String imei;
+  final String c3Aid;
+  final String model;
+  const TiebaDeviceParams({
+    required this.cuid,
+    required this.clientId,
+    required this.imei,
+    required this.c3Aid,
+    this.model = 'M2012K11AC',
+  });
+}
+
 class TiebaClient {
-  TiebaClient({String bduss = ''}) : _bduss = bduss;
+  TiebaClient({String bduss = '', TiebaDeviceParams? device})
+      : _bduss = bduss,
+        _device = device ?? _randomDevice();
   final String _bduss;
+  final TiebaDeviceParams _device;
   static const _host = 'https://tiebac.baidu.com';
   static const _userAgent = 'aiotieba/22.12.1.0';
   static const _clientVersion = '12.64.1.1';
   static const _boundary = '-*_r1999';
   static const _frsCmd = 301001;
+
+  static TiebaDeviceParams _randomDevice() {
+    final rnd = Random();
+    String hex(int len) =>
+        List.generate(len, (i) => '0123456789abcdef'[rnd.nextInt(16)]).join();
+    return TiebaDeviceParams(
+      cuid: 'baidutiebaapp${hex(26)}00',
+      clientId: hex(32),
+      imei: hex(15),
+      c3Aid: '${hex(26)}${hex(4)}',
+    );
+  }
+
   static const _pbCmd = 302001;
   static const _listPageSize = 50;
   static const _postPageSize = 30;
@@ -132,14 +174,8 @@ class TiebaClient {
 
   Future<ThreadsPage> requestThreads(String fname, int page) async {
     final apiPage = page <= 1 ? 0 : page;
-    final common = PbWriter()
-      ..varintField(1, 2)
-      ..textField(2, _clientVersion);
-    if (_bduss.isNotEmpty) {
-      common.textField(10, _bduss);
-    }
     final data = PbWriter()
-      ..messageField(39, common)
+      ..messageField(39, _commonRequest())
       ..textField(1, fname)
       ..varintField(2, _listPageSize)
       ..varintField(3, _listPageSize + 5)
@@ -186,14 +222,8 @@ class TiebaClient {
   }
 
   Future<PostsPage> _requestPosts(int tid, int page) async {
-    final common = PbWriter()
-      ..varintField(1, 2)
-      ..textField(2, _clientVersion);
-    if (_bduss.isNotEmpty) {
-      common.textField(10, _bduss);
-    }
     final data = PbWriter()
-      ..messageField(25, common)
+      ..messageField(25, _commonRequest())
       ..varintField(4, tid)
       ..varintField(5, 0)
       ..varintField(6, 0)
@@ -204,14 +234,72 @@ class TiebaClient {
     return _parsePosts(response);
   }
 
+  /// 完整 CommonRequest（参考 TiebaLite CommonRequest.proto v11 字段集）。
+  /// BDUSS 在 field 10；字段一致性影响服务端对登录态的校验。
+  PbWriter _commonRequest() {
+    final writer = PbWriter()
+      ..varintField(1, 2) // _client_type
+      ..textField(2, _clientVersion)
+      ..textField(3, _device.clientId)
+      ..textField(5, _device.imei)
+      ..textField(6, '1024324o') // from
+      ..textField(7, _device.cuid)
+      ..varintField(8, DateTime.now().millisecondsSinceEpoch)
+      ..textField(9, _device.model)
+      ..varintField(12, 1) // net_type wifi
+      ..textField(24, '1.0.3') // pversion
+      ..textField(25, '13') // _os_version
+      ..textField(26, 'Xiaomi') // brand
+      ..textField(28, '3.0.0') // lego_lib_version
+      ..textField(32, _device.cuid) // cuid_galaxy2
+      ..textField(35, _device.c3Aid)
+      ..varintField(41, 0); // is_teenager
+    if (_bduss.isNotEmpty) {
+      writer.textField(10, _bduss);
+    }
+    return writer;
+  }
+
+  /// 登录验证：请求个人资料（参考 TiebaLite UserApiImpl.profileFlow，
+  /// /c/u/user/profile?cmd=303012）。返回 null = BDUSS 无效/未登录。
+  Future<TiebaUserProfile?> fetchProfile() async {
+    final data = PbWriter()
+      ..messageField(9, _commonRequest())
+      ..varintField(4, 0) // is_guest
+      ..varintField(8, 1) // has_plist
+      ..textField(5, 'h5view'); // st_type
+    final request = (PbWriter()..messageField(1, data)).toBytes();
+    final response = await _postProto('/c/u/user/profile?cmd=303012', request);
+    final root = PbMessage.parse(response);
+    final error = root.message(1);
+    if (error != null && error.varint(1) != 0) {
+      throw TiebaException('贴吧错误 ${error.varint(1)} ${error.text(2)}');
+    }
+    final dataMsg = root.message(2);
+    final user = dataMsg?.message(1);
+    if (dataMsg == null || user == null) return null;
+    final name = user.text(4).isNotEmpty ? user.text(4) : user.text(3);
+    if (name.isEmpty) return null;
+    return TiebaUserProfile(
+      id: user.varint(2),
+      name: name,
+      portrait: user.text(5),
+    );
+  }
+
   Future<Uint8List> _postProto(String path, Uint8List protobuf) async {
     await _throttle();
     _lastRequest = DateTime.now();
+    final versionPart = utf8.encode('--$_boundary\r\n'
+        'Content-Disposition: form-data; name="_client_version"\r\n'
+        '\r\n'
+        '$_clientVersion\r\n');
     final head = utf8.encode('--$_boundary\r\n'
         'Content-Disposition: form-data; name="data"; filename="file"\r\n'
         '\r\n');
     final tail = utf8.encode('\r\n--$_boundary--\r\n');
     final body = (BytesBuilder(copy: false)
+          ..add(versionPart)
           ..add(head)
           ..add(protobuf)
           ..add(tail))
