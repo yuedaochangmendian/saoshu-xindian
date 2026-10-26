@@ -26,4 +26,16 @@ class SystemBridge {
       await _channel.invokeMethod('setLauncherIcon', {'alias': alias});
     } catch (_) {}
   }
+
+  /// 从系统文件选择器选一张图片，请求用户确认后以「桌面快捷方式」
+  /// 形式钉到桌面（Android 不支持运行时用任意位图替换应用图标，
+  /// 这是官方近似方案；与 app 图标并存，指向应用主页）。
+  /// 返回 null=用户取消；'pinned'=已请求；其他=错误消息。
+  static Future<String?> pinCustomShortcut() async {
+    try {
+      return await _channel.invokeMethod<String>('pickImageAndPinShortcut');
+    } catch (error) {
+      return error.toString();
+    }
+  }
 }

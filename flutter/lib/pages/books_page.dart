@@ -126,10 +126,7 @@ class _BooksPageState extends State<BooksPage> {
       case 1:
         return BrowseSection(key: ValueKey('page-\$index'));
       default:
-        return SingleChildScrollView(
-            key: ValueKey('page-$index'),
-            padding: const EdgeInsets.only(bottom: 140),
-            child: GlossarySection());
+        return GlossarySection(key: ValueKey('page-\$index'));
     }
   }
 }
