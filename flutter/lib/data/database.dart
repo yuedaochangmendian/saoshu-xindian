@@ -21,7 +21,7 @@ class AppDatabase {
   AppDatabase._();
   static final AppDatabase instance = AppDatabase._();
 
-  static const int dbAssetVersion = 16;
+  static const int dbAssetVersion = 17;
 
   Database? _db;
   final List<void Function(String)> _statusListeners = [];

@@ -1,21 +1,20 @@
 {
   "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 346726400,
+  "bytes": 346677248,
   "integrity": "ok",
   "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取；优书网；BookSift",
   "data_cutoff": "2026-10-23",
-  "documents": 128687,
+  "documents": 128681,
   "books": 76689,
-  "source_rows": 152209,
+  "source_rows": 152203,
   "extract_metadata": 2538,
   "categories": {
+    "书评": 31398,
     "扫书": 52540,
     "排雷": 34163,
-    "书评": 31398,
     "推书": 10228,
-    "讨论": 65,
     "求书": 287,
-    "卷首": 6
+    "讨论": 65
   },
   "xlsx_merge": {
     "rows_read": 1032,
@@ -46,5 +45,5 @@
     "booksift_source_rows": 47448
   },
   "storage_mode": "all-substantive-reviews merge with deduplicated App compatibility schema",
-  "generated_at": "2026-10-26T16:17:26.150498+00:00"
+  "generated_at": "2026-10-26T16:49:39.776071+00:00"
 }
