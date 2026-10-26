@@ -90,47 +90,78 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 10),
             _UpdateSection(),
             const SizedBox(height: 20),
-            Text('主题与外观',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface)),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final option in appThemes)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _ThemeChip(
-                        option: option,
-                        selected: option.id == scope.themeId,
-                        onTap: () => scope.changeTheme(option.id),
+            // 个性化设置折叠：低频选项收起，页面更精简。
+            Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: Theme(
+                data: Theme.of(context)
+                    .copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  title: Text('主题与个性化',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface)),
+                  subtitle: Text('主题 / 点击震动 / 桌面图标',
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.onSurfaceVariant)),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('主题与外观',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface)),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          for (final option in appThemes)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _ThemeChip(
+                                option: option,
+                                selected: option.id == scope.themeId,
+                                onTap: () => scope.changeTheme(option.id),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                ],
+                    const SizedBox(height: 12),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: scope.haptic,
+                      builder: (context, hapticEnabled, _) => _SwitchCard(
+                        title: '点击震动',
+                        hint: '默认关闭；开启后仅提供轻微触感',
+                        value: hapticEnabled,
+                        onChanged: scope.setHaptic,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('桌面图标',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface)),
+                    ),
+                    const SizedBox(height: 10),
+                    _IconSection(),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            ValueListenableBuilder<bool>(
-              valueListenable: scope.haptic,
-              builder: (context, hapticEnabled, _) => _SwitchCard(
-                title: '点击震动',
-                hint: '默认关闭；开启后仅提供轻微触感',
-                value: hapticEnabled,
-                onChanged: scope.setHaptic,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text('桌面图标',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface)),
-            const SizedBox(height: 10),
-            _IconSection(),
             const SizedBox(height: 20),
             Text('关于',
                 style: TextStyle(

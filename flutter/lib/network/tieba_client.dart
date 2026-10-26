@@ -35,11 +35,15 @@ class ThreadSummary {
   final bool deleted;
   final bool masked;
 
+  /// 作者头像（portrait 参数，拼 https://tb.himg.baidu.com/sys/portraitn/item/）
+  final String authorPortrait;
+
   const ThreadSummary(
       this.tid,
       this.forum,
       this.title,
       this.author,
+      this.authorPortrait,
       this.createTime,
       this.lastTime,
       this.replyCount,
@@ -157,10 +161,13 @@ class TiebaClient {
         .join();
   }
 
-  TiebaClient({String bduss = '', TiebaDeviceParams? device})
+  TiebaClient(
+      {String bduss = '', String stoken = '', TiebaDeviceParams? device})
       : _bduss = bduss,
+        _stoken = stoken,
         _device = device ?? _sharedDevice ?? _randomDevice();
   final String _bduss;
+  final String _stoken;
   final TiebaDeviceParams _device;
   static const _host = 'https://tiebac.baidu.com';
   static const _userAgent = 'aiotieba/22.12.1.0';
@@ -282,6 +289,9 @@ class TiebaClient {
     if (_bduss.isNotEmpty) {
       writer.textField(10, _bduss);
     }
+    if (_stoken.isNotEmpty) {
+      writer.textField(30, _stoken);
+    }
     return writer;
   }
 
@@ -315,10 +325,18 @@ class TiebaClient {
   Future<Uint8List> _postProto(String path, Uint8List protobuf) async {
     await _throttle();
     _lastRequest = DateTime.now();
-    final versionPart = utf8.encode('--$_boundary\r\n'
-        'Content-Disposition: form-data; name="_client_version"\r\n'
-        '\r\n'
-        '$_clientVersion\r\n');
+    var versionPart = utf8
+        .encode('--$_boundary\r\n'
+            'Content-Disposition: form-data; name="_client_version"\r\n'
+            '\r\n'
+            '$_clientVersion\r\n')
+        .toList();
+    if (_stoken.isNotEmpty) {
+      versionPart.addAll(utf8.encode('--$_boundary\r\n'
+          'Content-Disposition: form-data; name="stoken"\r\n'
+          '\r\n'
+          '$_stoken\r\n'));
+    }
     final head = utf8.encode('--$_boundary\r\n'
         'Content-Disposition: form-data; name="data"; filename="file"\r\n'
         '\r\n');
@@ -369,19 +387,21 @@ class TiebaClient {
     var hasMore = false;
     final page = data.message(4);
     if (page != null) hasMore = page.varint(6) != 0;
-    final users = _parseUsers(data.messages(17));
+    final users = _parseUsersWithPortrait(data.messages(17));
     final threads = <ThreadSummary>[];
     for (final item in data.messages(7)) {
       final tid = item.varint(1);
       if (tid <= 0) continue;
       final authorId = item.varint(56);
-      var author = users[authorId] ?? '';
+      var author = users[authorId]?[0] ?? '';
       if (author.isEmpty) author = _userDisplay(item.message(18));
+      final authorPortrait = users[authorId]?[1] ?? '';
       threads.add(ThreadSummary(
           tid,
           fname,
           item.text(3),
           author,
+          authorPortrait,
           item.varint(45),
           item.varint(7),
           item.varint(4),
@@ -409,12 +429,12 @@ class TiebaClient {
     final createTime = thread?.varint(45) ?? 0;
     final replyNum = thread?.varint(4) ?? 0;
     final viewNum = thread?.varint(5) ?? 0;
-    final users = _parseUsers(data.messages(13));
+    final users = _parseUsersWithPortrait(data.messages(13));
     final floors = <Floor>[];
     for (final post in data.messages(6)) {
       final pid = post.varint(1);
       final authorId = post.varint(19);
-      var floorAuthor = users[authorId] ?? '';
+      var floorAuthor = users[authorId]?[0] ?? '';
       if (floorAuthor.isEmpty) floorAuthor = _userDisplay(post.message(23));
       final agreeNode = post.message(37);
       final agree = agreeNode?.varint(1) ?? 0;
@@ -434,13 +454,15 @@ class TiebaClient {
         hasMore, title, author, createTime, replyNum, viewNum, floors);
   }
 
-  Map<int, String> _parseUsers(List<PbMessage> list) {
-    final result = <int, String>{};
+  /// {user_id: [显示名, 头像 portrait 参数]}
+  Map<int, List<String>> _parseUsersWithPortrait(List<PbMessage> list) {
+    final result = <int, List<String>>{};
     for (final user in list) {
       final id = user.varint(2);
       final display = _userDisplay(user);
-      if (id != 0 && display.isNotEmpty) {
-        result[id] = display;
+      final portrait = user.text(5);
+      if (id != 0 && (display.isNotEmpty || portrait.isNotEmpty)) {
+        result[id] = [display, portrait];
       }
     }
     return result;

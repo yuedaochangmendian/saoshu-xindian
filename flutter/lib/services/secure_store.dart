@@ -12,6 +12,7 @@ class SecureStore {
 
   /// 需要从明文迁移的旧键。
   static const _legacyKeys = ['tieba_bduss', 'webdav_pass'];
+  // stoken 同样为敏感凭据（tieba_stoken），由 WebView 登录写入。
 
   static final Map<String, String> _cache = {};
 

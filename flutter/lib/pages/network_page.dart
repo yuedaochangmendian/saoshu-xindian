@@ -7,6 +7,7 @@ import '../services/secure_store.dart';
 import '../app.dart';
 import 'reader_page.dart';
 import 'thread_preview_page.dart';
+import 'tieba_login_page.dart';
 
 /// 网络浏览：贴吧主题列表（下拉刷新、分页）+ 勾选抓取导入 + 登录 + 导入历史。
 class NetworkSection extends StatefulWidget {
@@ -189,81 +190,41 @@ class _NetworkSectionState extends State<NetworkSection> {
     }
   }
 
+  /// 打开 WebView 网页登录页（验证码/扫码/账密均可），拿到 BDUSS 后验证。
   Future<void> _showLoginDialog() async {
     final prefs = AppScope.of(context).prefs;
-    final controller =
-        TextEditingController(text: SecureStore.get('tieba_bduss'));
     final messenger = ScaffoldMessenger.of(context);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('贴吧登录（BDUSS）'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration:
-                  const InputDecoration(hintText: '粘贴 BDUSS Cookie，留空即退出登录'),
-            ),
-            const SizedBox(height: 8),
-            Text('登录后请求配额更宽松，BDUSS 只保存在本机。',
-                style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, null),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('保存')),
-        ],
-      ),
+    final credentials = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TiebaLoginPage()),
     );
-    if (saved == true) {
-      final bduss = controller.text.trim();
-      controller.dispose();
-      if (mounted) {
-        setState(() {
-          _loading = true;
-        });
-      }
-      await SecureStore.set('tieba_bduss', bduss);
-      _client?.close();
-      _client = TiebaClient(bduss: bduss);
-      String message;
-      if (bduss.isEmpty) {
+    if (credentials == null || !mounted) return;
+    final (bduss, stoken) = credentials;
+    setState(() => _loading = true);
+    await SecureStore.set('tieba_bduss', bduss);
+    await SecureStore.set('tieba_stoken', stoken);
+    _client?.close();
+    _client = TiebaClient(bduss: bduss, stoken: stoken);
+    String message;
+    try {
+      final profile = await client.fetchProfile();
+      if (profile == null) {
+        message = '登录失败：未能从网页获取到有效账号';
         await prefs.setString('tieba_username', '');
-        message = '已退出登录';
       } else {
-        try {
-          final profile = await client.fetchProfile();
-          if (profile == null) {
-            message = '登录失败：BDUSS 无效或已过期';
-            await prefs.setString('tieba_username', '');
-          } else {
-            await prefs.setString('tieba_username', profile.name);
-            message = '已登录：${profile.name}';
-          }
-        } catch (error) {
-          message = '登录验证失败（BDUSS 已保存）：$error';
-          await prefs.setString('tieba_username', '');
-        }
+        await prefs.setString('tieba_username', profile.name);
+        message = '已登录：${profile.name}';
       }
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-        await _reload();
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(message)));
-      }
-      return;
+    } catch (error) {
+      message = '登录验证失败（凭据已保存）：$error';
+      await prefs.setString('tieba_username', '');
     }
-    controller.dispose();
+    if (mounted) {
+      setState(() => _loading = false);
+      await _reload();
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Future<void> _showHistory() async {
@@ -512,18 +473,35 @@ class _NetworkSectionState extends State<NetworkSection> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        thread.title.isEmpty
-                                            ? '（无标题）'
-                                            : thread.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: done
-                                                ? scheme.onSurfaceVariant
-                                                : scheme.onSurface),
+                                      Row(
+                                        children: [
+                                          if (thread
+                                              .authorPortrait.isNotEmpty) ...[
+                                            CircleAvatar(
+                                              radius: 10,
+                                              backgroundImage: NetworkImage(
+                                                  'https://tb.himg.baidu.com/sys/portraitn/item/${thread.authorPortrait}'),
+                                              onBackgroundImageError:
+                                                  (_, __) {},
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
+                                          Expanded(
+                                            child: Text(
+                                              thread.title.isEmpty
+                                                  ? '（无标题）'
+                                                  : thread.title,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: done
+                                                      ? scheme.onSurfaceVariant
+                                                      : scheme.onSurface),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 3),
                                       Text(
