@@ -142,13 +142,103 @@ class _TiebaThreadPageState extends State<TiebaThreadPage> {
     }
   }
 
-  /// 导入本地库：整帖抓取（主楼楼层串）后走既有入库流程。
-  Future<void> _import() async {
+  /// 导入本地库：弹层勾选楼层后，按所选楼层构建 CollectedThread 入库
+  /// （导入语义 = 主楼楼层串，楼中楼不入库）。
+  Future<void> _showFloorPicker() async {
     if (_importing || _imported) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (_floors.isEmpty || _meta == null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('楼层还在加载，请稍后再试')));
+      return;
+    }
+    final meta = _meta!;
+    final snapshot = List<Floor>.of(_floors);
+    final snapshotHasMore = _hasMore;
+    final picked = await showModalBottomSheet<List<Floor>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) =>
+          _FloorPickerSheet(floors: snapshot, hasMore: snapshotHasMore),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+
+    final isFullPick = picked.length == snapshot.length;
+    if (isFullPick && snapshotHasMore) {
+      // 全选且帖子未加载完：自动整帖抓取入库，保证内容完整
+      // （导入去重按 tid——入库一次后无法再补，宁可多抓几页）。
+      await _importWholeThread();
+      return;
+    }
+    if (!isFullPick) {
+      // 部分楼层：tid 级去重使该帖一次性买断，必须明示不可追加。
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('仅导入选中楼层'),
+          content: Text('将只导入选中的 ${picked.length} 层。贴吧帖子按主题'
+              '一次性入库：导入后无法再追加其余楼层（如需重来，先在'
+              '「导入历史」中删除该帖）。确定继续？'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('仍要导入')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    await _importFloors(picked, meta);
+  }
+
+  /// 整帖抓取导入（fetchThread 自动翻页，含未加载楼层）。
+  Future<void> _importWholeThread() async {
     setState(() => _importing = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final collected = await _client.fetchThread(widget.fname, widget.tid);
+      final result =
+          await TiebaImporter(AppDatabase.instance).importThreads([collected]);
+      if (mounted) {
+        setState(() {
+          _importing = false;
+          _imported = result.added > 0;
+        });
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+              content: Text(result.added > 0
+                  ? '已整帖导入本地库（${collected.floors.length} 层）'
+                  : '未导入（内容过短或已存在）')));
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _importing = false);
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('导入失败：$error')));
+      }
+    }
+  }
+
+  Future<void> _importFloors(List<Floor> floors, PostsPage meta) async {
+    setState(() => _importing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final collected = CollectedThread(
+          widget.fname,
+          widget.tid,
+          meta.title,
+          meta.author,
+          meta.createTime,
+          meta.replyNum,
+          meta.viewNum,
+          floors);
       final result =
           await TiebaImporter(AppDatabase.instance).importThreads([collected]);
       if (mounted) {
@@ -398,6 +488,27 @@ class _TiebaThreadPageState extends State<TiebaThreadPage> {
         title: Text(widget.fname, style: const TextStyle(fontSize: 16)),
         actions: [
           IconButton(
+            tooltip: _imported
+                ? '已导入本地库'
+                : _importing
+                    ? '导入中…'
+                    : '导入本地库（选择楼层）',
+            onPressed: _importing || _imported ? null : _showFloorPicker,
+            icon: _importing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(
+                    _imported
+                        ? Icons.check_circle_rounded
+                        : Icons.download_rounded,
+                    size: 20,
+                    color: _imported
+                        ? Theme.of(context).colorScheme.primary
+                        : null),
+          ),
+          IconButton(
             tooltip: '打开原帖',
             onPressed: () => SystemBridge.openUrl(
                 'https://tieba.baidu.com/p/${widget.tid}'),
@@ -520,36 +631,124 @@ class _TiebaThreadPageState extends State<TiebaThreadPage> {
                     },
                   ),
           ),
-          if (meta != null)
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// 导入楼层选择弹层：默认全选已加载楼层，可逐层勾选；
+/// 帖子未加载完时给出提示（先滚动加载再选）。
+class _FloorPickerSheet extends StatefulWidget {
+  final List<Floor> floors;
+  final bool hasMore;
+  const _FloorPickerSheet({required this.floors, required this.hasMore});
+
+  @override
+  State<_FloorPickerSheet> createState() => _FloorPickerSheetState();
+}
+
+class _FloorPickerSheetState extends State<_FloorPickerSheet> {
+  late final Set<int> _picked =
+      widget.floors.map((f) => f.pid).toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.7,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('选择导入楼层（已加载 ${widget.floors.length} 层）',
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    if (_picked.length == widget.floors.length) {
+                      _picked.clear();
+                    } else {
+                      _picked
+                        ..clear()
+                        ..addAll(widget.floors.map((f) => f.pid));
+                    }
+                  }),
+                  child: Text(
+                      _picked.length == widget.floors.length
+                          ? '全不选'
+                          : '全选',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          if (widget.hasMore)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('帖子还有未加载楼层：保持全选导入将自动抓取全部楼层',
+                    style:
+                        TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              ),
+            ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: widget.floors.length,
+              itemBuilder: (context, i) {
+                final floor = widget.floors[i];
+                final summary = floor.text
+                    .replaceAll('\n', ' ')
+                    .replaceAll('#(', '[')
+                    .trim();
+                return CheckboxListTile(
+                  dense: true,
+                  value: _picked.contains(floor.pid),
+                  onChanged: (v) => setState(() {
+                    v == true
+                        ? _picked.add(floor.pid)
+                        : _picked.remove(floor.pid);
+                  }),
+                  title: Text(
+                      floor.seq == 1
+                          ? '楼主 · ${floor.author}'
+                          : '${floor.seq}楼 · ${floor.author}',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                      summary.length > 42
+                          ? '${summary.substring(0, 42)}…'
+                          : (summary.isEmpty ? '（图片/表情楼层）' : summary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11)),
+                );
+              },
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: SizedBox(
+                width: double.infinity,
                 child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _imported
-                        ? scheme.surfaceContainerHigh
-                        : scheme.primary,
-                    foregroundColor: _imported
-                        ? scheme.onSurfaceVariant
-                        : scheme.onPrimary,
-                  ),
-                  onPressed: _importing || _imported ? null : _import,
-                  icon: _importing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : Icon(_imported
-                          ? Icons.check_circle_rounded
-                          : Icons.download_rounded),
-                  label: Text(_importing
-                      ? '导入中…'
-                      : _imported
-                          ? '已导入本地库'
-                          : '导入本地库'),
+                  onPressed: _picked.isEmpty
+                      ? null
+                      : () => Navigator.of(context).pop(widget.floors
+                          .where((f) => _picked.contains(f.pid))
+                          .toList()),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: Text('导入选中 ${_picked.length} 层'),
                 ),
               ),
             ),
+          ),
         ],
       ),
     );

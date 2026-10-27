@@ -394,12 +394,21 @@ class _BrowseSectionState extends State<BrowseSection> {
         const SizedBox(height: 8),
         Row(
           children: [
-            Icon(Icons.calendar_month_rounded,
-                size: 15, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 6),
-            Text('日期',
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-            const SizedBox(width: 8),
+            // 年月筛选并入日期图标：点击直接弹日历式年月选择。
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: () async {
+                final picked = await _pickMonth();
+                if (picked != null) _setMonth(picked);
+              },
+              icon: Icon(Icons.calendar_month_rounded,
+                  size: 18,
+                  color: _monthFilter != null
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant),
+              tooltip: _monthFilter == null ? '按年月筛选' : '当前 $_monthFilter（点击更换）',
+            ),
+            const SizedBox(width: 2),
             Expanded(
               child: SizedBox(
                 height: 32,
@@ -430,16 +439,6 @@ class _BrowseSectionState extends State<BrowseSection> {
                   ],
                 ),
               ),
-            ),
-            ActionChip(
-              avatar: Icon(Icons.calendar_today_rounded,
-                  size: 14, color: scheme.onSurfaceVariant),
-              label: const Text('按月', style: TextStyle(fontSize: 12)),
-              visualDensity: VisualDensity.compact,
-              onPressed: () async {
-                final picked = await _pickMonth();
-                if (picked != null) _setMonth(picked);
-              },
             ),
             const SizedBox(width: 6),
             ActionChip(

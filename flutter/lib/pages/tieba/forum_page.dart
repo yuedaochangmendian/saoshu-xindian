@@ -11,8 +11,8 @@ import '../reader_page.dart';
 import '../tieba_login_page.dart';
 import 'thread_page.dart';
 
-/// 网络浏览主页（TiebaLite 式）：吧主题列表分页浏览 → 点进帖子页，
-/// 另保留登录/退出、导入历史与批量抓取入库。
+/// 网络浏览主页（TiebaLite 式）：吧主题列表分页浏览 → 点进帖子页
+/// （浏览与导入都在帖子页完成），另保留登录/退出与导入历史。
 class TiebaForumPage extends StatefulWidget {
   const TiebaForumPage({super.key});
 
@@ -33,10 +33,7 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
   bool _loading = false;
   String? _error;
   final List<ThreadSummary> _threads = [];
-  final Set<int> _selected = {};
   final Set<int> _imported = <int>{};
-  bool _fetching = false;
-  String _fetchStatus = '';
 
   /// 每个吧的已加载列表缓存：切回已浏览的吧即时显示（静态持有，
   /// 页面被切走销毁时缓存不丢，避免自动重载）。
@@ -148,54 +145,6 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
           ..clear()
           ..addAll(imported);
       });
-    }
-  }
-
-  Future<void> _fetchSelected() async {
-    if (_selected.isEmpty || _fetching) return;
-    final targets = _threads.where((t) => _selected.contains(t.tid)).toList();
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      _fetching = true;
-      _fetchStatus = '开始抓取 ${targets.length} 个主题…';
-    });
-    final importer = TiebaImporter(AppDatabase.instance);
-    final collected = <CollectedThread>[];
-    try {
-      for (var i = 0; i < targets.length; i++) {
-        final thread = await client.fetchThread(_forum, targets[i].tid,
-            onStatus: (status) {
-          if (mounted) {
-            setState(
-                () => _fetchStatus = '(${i + 1}/${targets.length}) $status');
-          }
-        });
-        collected.add(thread);
-      }
-      final result = await importer.importThreads(collected);
-      if (mounted) {
-        setState(() {
-          _fetching = false;
-          _fetchStatus = '';
-          _selected.clear();
-        });
-        await _refreshImported();
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(
-              content: Text(
-                  '抓取完成：新增 ${result.added} 条，跳过 ${result.skipped} 条（已存在或内容过短）')));
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _fetching = false;
-          _fetchStatus = '';
-        });
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text('抓取失败：$error')));
-      }
     }
   }
 
@@ -431,13 +380,10 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                                     child: ChoiceChip(
                                       label: Text(forum),
                                       selected: _forum == forum,
-                                      onSelected: _fetching
-                                          ? null
-                                          : (_) {
-                                              setState(
-                                                  () => _forum = forum);
-                                              _restoreFromCacheOrReload();
-                                            },
+                                      onSelected: (_) {
+                                        setState(() => _forum = forum);
+                                        _restoreFromCacheOrReload();
+                                      },
                                     ),
                                   ),
                               ],
@@ -463,32 +409,6 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                           tooltip: '导入历史',
                         ),
                       ],
-                    ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.topLeft,
-                      child: _selected.isEmpty
-                          ? const SizedBox(width: double.infinity)
-                          : Padding(
-                              padding:
-                                  const EdgeInsets.only(top: 4, bottom: 6),
-                              child: SizedBox(
-                                height: 38,
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 14),
-                                  ),
-                                  onPressed: _fetchSelected,
-                                  icon: const Icon(Icons.download_rounded,
-                                      size: 18),
-                                  label: Text(
-                                      '抓取选中 (${_selected.length})'),
-                                ),
-                              ),
-                            ),
                     ),
                     if (_error != null && _threads.isNotEmpty)
                       Padding(
@@ -541,7 +461,6 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                             }
                             final thread = _threads[index];
                             final done = _imported.contains(thread.tid);
-                            final checked = _selected.contains(thread.tid);
                             final date =
                                 TiebaImporter.networkDate(
                                     thread.createTime);
@@ -552,8 +471,8 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                                 borderRadius: BorderRadius.circular(20),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(20),
-                                  onTap: () {
-                                    Navigator.of(context).push(
+                                  onTap: () async {
+                                    await Navigator.of(context).push(
                                       MaterialPageRoute(
                                         builder: (_) => TiebaThreadPage(
                                           fname: _forum,
@@ -562,35 +481,15 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                                         ),
                                       ),
                                     );
+                                    // 帖子页内可能刚完成导入：回来即刷新标记。
+                                    if (mounted) _refreshImported();
                                   },
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 6),
                                     child: Row(
                                       children: [
-                                        Checkbox(
-                                          value: done ? true : checked,
-                                          tristate: true,
-                                          visualDensity:
-                                              VisualDensity.compact,
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize
-                                                  .shrinkWrap,
-                                          fillColor:
-                                              WidgetStateProperty.resolveWith(
-                                                  (states) => done
-                                                      ? scheme.primary
-                                                      : null),
-                                          onChanged: done
-                                              ? null
-                                              : (value) => setState(() {
-                                                    value == true
-                                                        ? _selected.add(
-                                                            thread.tid)
-                                                        : _selected.remove(
-                                                            thread.tid);
-                                                  }),
-                                        ),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: Column(
                                             crossAxisAlignment:
@@ -657,35 +556,6 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
                   ],
                 ),
               ),
-              if (_fetching)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(_fetchStatus,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: scheme.onPrimaryContainer)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
