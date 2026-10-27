@@ -20,6 +20,18 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// 写入系统「下载」公共目录（子目录 扫书新典）。
+  /// 返回落盘路径；失败返回错误文本（前缀 'error:'）。
+  static Future<String> saveToDownloads(String name, Uint8List bytes) async {
+    try {
+      final path = await _channel.invokeMethod<String>(
+          'saveToDownloads', {'name': name, 'bytes': bytes});
+      return path ?? '(未知路径)';
+    } catch (error) {
+      return 'error: $error';
+    }
+  }
+
   /// 切换桌面图标：启用指定 alias、禁用其余。alias 如 'LauncherPhoto'。
   static Future<void> setLauncherIcon(String alias) async {
     try {

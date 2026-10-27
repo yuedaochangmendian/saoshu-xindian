@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+
+import 'system_bridge.dart';
 
 import '../network/tieba_import.dart';
 
@@ -42,7 +45,10 @@ class BackupService {
     };
   }
 
-  static Future<String> createLocalBackup(
+  /// 创建本地备份。除应用私有目录（恢复列表读取）外，
+  /// 同时镜像写入系统「下载/扫书新典」公共目录——卸载/清数据不丢，
+  /// 文件管理器可直接拷走。返回 (私有路径, 公共路径或 null)。
+  static Future<(String, String?)> createLocalBackup(
       SharedPreferences prefs, Database db) async {
     final snapshot = await buildSnapshot(prefs, db);
     final dir = await backupDirectory();
@@ -50,9 +56,17 @@ class BackupService {
         .toIso8601String()
         .replaceAll(RegExp(r'[:\-]'), '')
         .substring(0, 15);
-    final file = File('${dir.path}/$fileNamePattern$stamp.json');
-    await file.writeAsString(jsonEncode(snapshot), flush: true);
-    return file.path;
+    final name = '$fileNamePattern$stamp.json';
+    final file = File('${dir.path}/$name');
+    final encoded = jsonEncode(snapshot);
+    await file.writeAsString(encoded, flush: true);
+    String? publicPath;
+    try {
+      final r = await SystemBridge.saveToDownloads(
+          name, Uint8List.fromList(utf8.encode(encoded)));
+      if (!r.startsWith('error:')) publicPath = r;
+    } catch (_) {}
+    return (file.path, publicPath);
   }
 
   static Future<List<File>> listLocalBackups() async {

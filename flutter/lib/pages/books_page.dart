@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../app.dart';
 import 'browse_page.dart';
 import 'glossary_page.dart';
-import 'network_page.dart';
 
 /// 书库：网络浏览 / 分类浏览 / 名词解释 三个并列视图。
 ///
@@ -19,11 +18,36 @@ class BooksPage extends StatefulWidget {
 class _BooksPageState extends State<BooksPage> {
   int _index = 0;
 
-  static const _tabLabels = ['网络浏览', '分类浏览', '名词解释'];
+  static const _tabLabels = ['分类浏览', '名词解释'];
+
+  AppScope? _scope;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 首页快捷入口跳进来时，先把内容切回「分类浏览」页签。
+    final scope = AppScope.of(context);
+    if (_scope != scope) {
+      _scope?.browseJump.removeListener(_onBrowseJump);
+      scope.browseJump.addListener(_onBrowseJump);
+      _scope = scope;
+    }
+  }
+
+  void _onBrowseJump() {
+    final scope = _scope;
+    if (scope != null &&
+        scope.browseJump.value != null &&
+        _index != 0 &&
+        mounted) {
+      _select(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scope?.browseJump.removeListener(_onBrowseJump);
+    super.dispose();
   }
 
   void _select(int index) {
@@ -122,8 +146,6 @@ class _BooksPageState extends State<BooksPage> {
   Widget _pageFor(int index) {
     switch (index) {
       case 0:
-        return NetworkSection(key: ValueKey('page-$index'));
-      case 1:
         return BrowseSection(key: ValueKey('page-$index'));
       default:
         return GlossarySection(key: ValueKey('page-\$index'));

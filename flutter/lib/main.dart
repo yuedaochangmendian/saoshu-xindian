@@ -47,6 +47,12 @@ class _SaoshuAppState extends State<SaoshuApp> {
 
   final ValueNotifier<bool> _dockHidden = ValueNotifier<bool>(false);
 
+  /// 全局 dock 页索引（首页快捷入口/返回逻辑使用）。
+  final ValueNotifier<int> _tabIndex = ValueNotifier<int>(0);
+
+  /// 首页 → 书库·分类浏览 的跳转信号（分类名，消费后置 null）。
+  final ValueNotifier<String?> _browseJump = ValueNotifier<String?>(null);
+
   /// 点击震动开关：dock 与设置页共享同一份实时状态。
   late final ValueNotifier<bool> _haptic =
       ValueNotifier<bool>(widget.prefs.getBool('haptic_enabled') ?? false);
@@ -60,6 +66,8 @@ class _SaoshuAppState extends State<SaoshuApp> {
   void dispose() {
     _dockHidden.dispose();
     _haptic.dispose();
+    _tabIndex.dispose();
+    _browseJump.dispose();
     _favorites.removeListener(_rebuild);
     super.dispose();
   }
@@ -81,6 +89,8 @@ class _SaoshuAppState extends State<SaoshuApp> {
       dockHidden: _dockHidden,
       haptic: _haptic,
       setHaptic: _setHaptic,
+      tabIndex: _tabIndex,
+      browseJump: _browseJump,
       child: MaterialApp(
         title: '扫书新典',
         debugShowCheckedModeBanner: false,

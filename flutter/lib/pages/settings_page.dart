@@ -12,6 +12,35 @@ import '../data/database.dart';
 import '../theme.dart';
 
 /// 数据页：主题选择、底栏磨砂、点击震动、统计与关于。
+/// 设置页统一折叠组外壳：Material 圆角卡 + 无边 ExpansionTile。
+Widget _settingsGroup(BuildContext context,
+    {required String title,
+    required String subtitle,
+    required List<Widget> children}) {
+  final scheme = Theme.of(context).colorScheme;
+  return Material(
+    color: scheme.surfaceContainerLow,
+    borderRadius: BorderRadius.circular(20),
+    clipBehavior: Clip.antiAlias,
+    child: Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        title: Text(title,
+            style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface)),
+        subtitle: Text(subtitle,
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+        children: children,
+      ),
+    ),
+  );
+}
+
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -74,52 +103,30 @@ class _SettingsPageState extends State<SettingsPage> {
             Text('$_docs 条内容 · $_books 本书名 · $_sources 条来源',
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 16),
-            Text('备份与恢复',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface)),
-            const SizedBox(height: 10),
-            _BackupSection(),
-            const SizedBox(height: 20),
-            Text('检查更新',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface)),
-            const SizedBox(height: 10),
-            _UpdateSection(),
-            const SizedBox(height: 20),
-            // 个性化设置折叠：低频选项收起，页面更精简。
-            Material(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              child: Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                  title: Text('主题与个性化',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface)),
-                  subtitle: Text('主题 / 点击震动 / 桌面图标',
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.onSurfaceVariant)),
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('主题与外观',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurface)),
-                    ),
-                    const SizedBox(height: 10),
+            // 低频设置全部折叠成两组，页面只剩 数据/备份 + 个性化 + 关于。
+            _settingsGroup(context,
+                title: '数据与备份',
+                subtitle: '本地备份 / WebDAV / 检查更新',
+                children: [
+                  _BackupSection(),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('检查更新',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface)),
+                  ),
+                  const SizedBox(height: 8),
+                  _UpdateSection(),
+                ]),
+            const SizedBox(height: 16),
+            _settingsGroup(context,
+                title: '主题与个性化',
+                subtitle: '主题 / 点击震动 / 桌面图标',
+                children: [
+                    const SizedBox(height: 2),
                     SizedBox(
                       height: 44,
                       child: ListView(
@@ -158,10 +165,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 10),
                     _IconSection(),
-                  ],
-                ),
-              ),
-            ),
+                  ]),
             const SizedBox(height: 20),
             Text('关于',
                 style: TextStyle(
@@ -341,8 +345,11 @@ class _BackupSectionState extends State<_BackupSection> {
   Future<void> _localBackup() => _run(() async {
         final scope = AppScope.of(context);
         final db = await AppDatabase.instance.database;
-        final path = await BackupService.createLocalBackup(scope.prefs, db);
-        return '已备份到 $path';
+        final (path, publicPath) =
+            await BackupService.createLocalBackup(scope.prefs, db);
+        return publicPath == null
+            ? '已备份到 $path'
+            : '已备份：$path\n公共目录：$publicPath';
       });
 
   Future<void> _localRestore() async {

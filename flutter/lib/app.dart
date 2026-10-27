@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'pages/books_page.dart';
 import 'pages/collection_page.dart';
 import 'pages/home_page.dart';
+import 'pages/network_page.dart';
 import 'pages/settings_page.dart';
 import 'prefs.dart';
 import 'widgets/app_dock.dart';
@@ -22,6 +23,12 @@ class AppScope extends InheritedWidget {
   final ValueNotifier<bool> haptic;
   final ValueChanged<bool> setHaptic;
 
+  /// 当前 dock 页索引（提升到全局：首页快捷入口可直达书库/网络等页）。
+  final ValueNotifier<int> tabIndex;
+
+  /// 首页 → 分类浏览的跳转信号（值为目标分类名，消费后置 null）。
+  final ValueNotifier<String?> browseJump;
+
   const AppScope({
     super.key,
     required this.prefs,
@@ -31,6 +38,8 @@ class AppScope extends InheritedWidget {
     required this.dockHidden,
     required this.haptic,
     required this.setHaptic,
+    required this.tabIndex,
+    required this.browseJump,
     required super.child,
   });
 
@@ -41,7 +50,8 @@ class AppScope extends InheritedWidget {
   bool updateShouldNotify(AppScope old) => themeId != old.themeId;
 }
 
-/// 主外壳：四个页面 + 可拖动悬浮胶囊 dock（Bettbox 交互模型）。
+/// 主外壳：五个页面 + 可拖动悬浮胶囊 dock（Bettbox 交互模型）。
+/// 页面：首页 / 书库（分类浏览+名词解释）/ 网络浏览 / 收藏与简记 / 数据。
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -50,29 +60,30 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
-
   static const _icons = [
     Icons.home_outlined,
     Icons.grid_view_outlined,
+    Icons.public_outlined,
     Icons.star_border,
     Icons.storage_outlined
   ];
   static const _selectedIcons = [
     Icons.home,
     Icons.grid_view,
+    Icons.public,
     Icons.star,
     Icons.storage
   ];
-  static const _labels = ['首页', '书库', '收藏与简记', '数据'];
+  static const _labels = ['首页', '书库', '网络', '收藏', '数据'];
 
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final pages = const [
+    const pages = [
       HomePage(),
       BooksPage(),
+      NetworkSection(),
       CollectionPage(),
       SettingsPage(),
     ];
@@ -87,7 +98,11 @@ class _HomeShellState extends State<HomeShell> {
               removeLeft: true,
               removeRight: true,
               context: context,
-              child: IndexedStack(index: _index, children: pages),
+              child: ValueListenableBuilder<int>(
+                valueListenable: scope.tabIndex,
+                builder: (context, index, _) =>
+                    IndexedStack(index: index, children: pages),
+              ),
             ),
           ),
           Positioned(
@@ -102,21 +117,25 @@ class _HomeShellState extends State<HomeShell> {
                 curve: Curves.easeOutCubic,
                 child: IgnorePointer(ignoring: hidden, child: child),
               ),
-              child: ValueListenableBuilder<bool>(
-                valueListenable: scope.haptic,
-                builder: (context, hapticEnabled, _) => AppDock(
-                  index: _index,
-                  count: 4,
-                  icons: _icons,
-                  selectedIcons: _selectedIcons,
-                  labels: _labels,
-                  hapticEnabled: hapticEnabled,
-                  onTap: (i) {
-                    if (i != _index) {
-                      scope.dockHidden.value = false;
-                      setState(() => _index = i);
-                    }
-                  },
+              child: ValueListenableBuilder<int>(
+                valueListenable: scope.tabIndex,
+                builder: (context, index, child) =>
+                    ValueListenableBuilder<bool>(
+                  valueListenable: scope.haptic,
+                  builder: (context, hapticEnabled, _) => AppDock(
+                    index: index,
+                    count: 5,
+                    icons: _icons,
+                    selectedIcons: _selectedIcons,
+                    labels: _labels,
+                    hapticEnabled: hapticEnabled,
+                    onTap: (i) {
+                      if (i != index) {
+                        scope.dockHidden.value = false;
+                        scope.tabIndex.value = i;
+                      }
+                    },
+                  ),
                 ),
               ),
             ),

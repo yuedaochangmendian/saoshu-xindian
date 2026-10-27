@@ -6,6 +6,7 @@ import '../data/database.dart';
 import '../data/models.dart';
 import '../services/system_bridge.dart';
 import '../widgets/category_style.dart';
+import '../widgets/tieba_rich_text.dart';
 
 /// 正文详情：主色容器头卡 + 操作行 + 正文 + 上一篇/下一篇。
 class ReaderPage extends StatefulWidget {
@@ -227,8 +228,8 @@ class _ReaderPageState extends State<ReaderPage> {
                           color: scheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: SelectableText(
-                          document.content,
+                        child: SelectableTiebaText(
+                          content: document.content,
                           style: TextStyle(
                               fontSize: 15,
                               height: 1.65,

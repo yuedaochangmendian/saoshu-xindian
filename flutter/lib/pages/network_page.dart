@@ -8,6 +8,7 @@ import '../app.dart';
 import 'reader_page.dart';
 import 'thread_preview_page.dart';
 import 'tieba_login_page.dart';
+import '../widgets/tieba_rich_text.dart';
 
 /// 网络浏览：贴吧主题列表（下拉刷新、分页）+ 勾选抓取导入 + 登录 + 导入历史。
 class NetworkSection extends StatefulWidget {
@@ -360,236 +361,290 @@ class _NetworkSectionState extends State<NetworkSection> {
     final prefs = AppScope.of(context).prefs;
     final account = prefs.getString('tieba_username') ?? '';
     final loggedIn = SecureStore.get('tieba_bduss').isNotEmpty;
-    return Stack(
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final forum in _forums)
-                        ChoiceChip(
-                          label: Text(forum),
-                          selected: _forum == forum,
-                          onSelected: _fetching
-                              ? null
-                              : (_) {
-                                  setState(() => _forum = forum);
-                                  _restoreFromCacheOrReload();
-                                },
-                        ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: loggedIn ? _logout : _showLoginDialog,
-                  icon: Icon(loggedIn ? Icons.logout : Icons.login,
-                      size: 20, color: scheme.onSurfaceVariant),
-                  tooltip: loggedIn
-                      ? (account.isEmpty ? '退出登录' : '已登录：$account（点击退出）')
-                      : '贴吧登录',
-                ),
-                IconButton(
-                  onPressed: _showHistory,
-                  icon: Icon(Icons.history,
-                      size: 20, color: scheme.onSurfaceVariant),
-                  tooltip: '导入历史',
-                ),
-              ],
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topLeft,
-              child: _selected.isEmpty
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 6),
-                      child: SizedBox(
-                        height: 38,
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                          ),
-                          onPressed: _fetchSelected,
-                          icon: const Icon(Icons.download_rounded, size: 18),
-                          label: Text('抓取选中 (${_selected.length})'),
-                        ),
-                      ),
-                    ),
-            ),
-            if (_error != null)
+    return Scaffold(
+      body: SafeArea(
+        child: NotificationListener<ScrollUpdateNotification>(
+          onNotification: (notification) {
+            // 与其他 dock 页一致：纵向滑动隐藏 dock，横滑（贴吧选择）不触发。
+            if (notification.metrics.axis != Axis.vertical) return false;
+            if (notification.scrollDelta == null) return false;
+            final hidden = AppScope.of(context).dockHidden;
+            final delta = notification.scrollDelta!;
+            if (delta > 6 &&
+                notification.metrics.pixels > 60 &&
+                !hidden.value) {
+              hidden.value = true;
+            } else if (delta < -6 && hidden.value) {
+              hidden.value = false;
+            }
+            return false;
+          },
+          child: Stack(
+            children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!,
-                    style: TextStyle(color: scheme.error, fontSize: 12)),
-              ),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(bottom: 140),
-                  itemCount: _threads.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == _threads.length) {
-                      if (!_hasMore && _threads.isNotEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Center(
-                          child: _loading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2))
-                              : _threads.isEmpty
-                                  ? Text(_error == null ? '下拉即可刷新' : '',
-                                      style: TextStyle(
-                                          color: scheme.onSurfaceVariant))
-                                  : OutlinedButton(
-                                      onPressed: _loadMore,
-                                      child: const Text('加载更多')),
-                        ),
-                      );
-                    }
-                    final thread = _threads[index];
-                    final done = _imported.contains(thread.tid);
-                    final checked = _selected.contains(thread.tid);
-                    final date = TiebaImporter.networkDate(thread.createTime);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Material(
-                        color: scheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(20),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(20),
-                          onTap: done
-                              ? null
-                              : () async {
-                                  await Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => ThreadPreviewPage(
-                                        forum: _forum,
-                                        thread: thread,
-                                      ),
-                                    ),
-                                  );
-                                  _refreshImported();
-                                },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('网络浏览',
+                        style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurface)),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
                             child: Row(
                               children: [
-                                Checkbox(
-                                  value: done ? true : checked,
-                                  tristate: true,
-                                  fillColor: WidgetStateProperty.resolveWith(
-                                      (states) => done ? scheme.primary : null),
-                                  onChanged: done
-                                      ? null
-                                      : (value) => setState(() {
-                                            value == true
-                                                ? _selected.add(thread.tid)
-                                                : _selected.remove(thread.tid);
-                                          }),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          if (thread
-                                              .authorPortrait.isNotEmpty) ...[
-                                            CircleAvatar(
-                                              radius: 10,
-                                              backgroundImage: NetworkImage(
-                                                  'https://tb.himg.baidu.com/sys/portraitn/item/${thread.authorPortrait}'),
-                                              onBackgroundImageError:
-                                                  (_, __) {},
-                                            ),
-                                            const SizedBox(width: 6),
-                                          ],
-                                          Expanded(
-                                            child: Text(
-                                              thread.title.isEmpty
-                                                  ? '（无标题）'
-                                                  : thread.title,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: done
-                                                      ? scheme.onSurfaceVariant
-                                                      : scheme.onSurface),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '${thread.author} · 回复 ${thread.replyCount} · 浏览 ${thread.viewCount}'
-                                        '${date.isEmpty ? '' : ' · $date'}'
-                                        '${thread.top ? ' · 置顶' : ''}'
-                                        '${done ? ' · 已导入' : ''}',
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            color: scheme.onSurfaceVariant),
-                                      ),
-                                    ],
+                                for (final forum in _forums)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      label: Text(forum),
+                                      selected: _forum == forum,
+                                      onSelected: _fetching
+                                          ? null
+                                          : (_) {
+                                              setState(() => _forum = forum);
+                                              _restoreFromCacheOrReload();
+                                            },
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
                         ),
+                        IconButton(
+                          onPressed: loggedIn ? _logout : _showLoginDialog,
+                          icon: Icon(loggedIn ? Icons.logout : Icons.login,
+                              size: 20, color: scheme.onSurfaceVariant),
+                          tooltip: loggedIn
+                              ? (account.isEmpty
+                                  ? '退出登录'
+                                  : '已登录：$account（点击退出）')
+                              : '贴吧登录',
+                        ),
+                        IconButton(
+                          onPressed: _showHistory,
+                          icon: Icon(Icons.history,
+                              size: 20, color: scheme.onSurfaceVariant),
+                          tooltip: '导入历史',
+                        ),
+                      ],
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topLeft,
+                      child: _selected.isEmpty
+                          ? const SizedBox(width: double.infinity)
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 4, bottom: 6),
+                              child: SizedBox(
+                                height: 38,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14),
+                                  ),
+                                  onPressed: _fetchSelected,
+                                  icon: const Icon(Icons.download_rounded,
+                                      size: 18),
+                                  label: Text('抓取选中 (${_selected.length})'),
+                                ),
+                              ),
+                            ),
+                    ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(_error!,
+                            style:
+                                TextStyle(color: scheme.error, fontSize: 12)),
                       ),
-                    );
-                  },
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _reload,
+                        child: ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(bottom: 140),
+                          itemCount: _threads.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == _threads.length) {
+                              if (!_hasMore && _threads.isNotEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                child: Center(
+                                  child: _loading
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : _threads.isEmpty
+                                          ? Text(_error == null ? '下拉即可刷新' : '',
+                                              style: TextStyle(
+                                                  color:
+                                                      scheme.onSurfaceVariant))
+                                          : OutlinedButton(
+                                              onPressed: _loadMore,
+                                              child: const Text('加载更多')),
+                                ),
+                              );
+                            }
+                            final thread = _threads[index];
+                            final done = _imported.contains(thread.tid);
+                            final checked = _selected.contains(thread.tid);
+                            final date =
+                                TiebaImporter.networkDate(thread.createTime);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Material(
+                                color: scheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(20),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(20),
+                                  onTap: done
+                                      ? null
+                                      : () async {
+                                          await Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) => ThreadPreviewPage(
+                                                forum: _forum,
+                                                thread: thread,
+                                              ),
+                                            ),
+                                          );
+                                          _refreshImported();
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        Checkbox(
+                                          value: done ? true : checked,
+                                          tristate: true,
+                                          fillColor:
+                                              WidgetStateProperty.resolveWith(
+                                                  (states) => done
+                                                      ? scheme.primary
+                                                      : null),
+                                          onChanged: done
+                                              ? null
+                                              : (value) => setState(() {
+                                                    value == true
+                                                        ? _selected
+                                                            .add(thread.tid)
+                                                        : _selected
+                                                            .remove(thread.tid);
+                                                  }),
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  if (thread.authorPortrait
+                                                      .isNotEmpty) ...[
+                                                    TiebaAvatar(
+                                                      radius: 10,
+                                                      portrait:
+                                                          thread.authorPortrait,
+                                                      name: thread.author,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                  ],
+                                                  Expanded(
+                                                    child: Text(
+                                                      thread.title.isEmpty
+                                                          ? '（无标题）'
+                                                          : thread.title,
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: done
+                                                              ? scheme
+                                                                  .onSurfaceVariant
+                                                              : scheme
+                                                                  .onSurface),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                '${thread.author} · 回复 ${thread.replyCount} · 浏览 ${thread.viewCount}'
+                                                '${date.isEmpty ? '' : ' · $date'}'
+                                                '${thread.top ? ' · 置顶' : ''}'
+                                                '${done ? ' · 已导入' : ''}',
+                                                style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: scheme
+                                                        .onSurfaceVariant),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-        if (_fetching)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(_fetchStatus,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onPrimaryContainer)),
+              if (_fetching)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(_fetchStatus,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.onPrimaryContainer)),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 }

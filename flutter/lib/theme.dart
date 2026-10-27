@@ -14,6 +14,13 @@ const appThemes = <AppThemeOption>[
   AppThemeOption('amber', '琥珀棕', 0xFFA66A2E),
   AppThemeOption('rose', '樱雾粉', 0xFFC75B7A),
   AppThemeOption('violet', '暮云紫', 0xFF7E57C2),
+  // TiebaLite 官方色板（深海蓝 #4477E0 / 少女粉 #FF9A9E / 新年红 #C51100
+  // / 星空紫 #512DA8 / 高级黑主色）——名字与色值取自其 strings/colors 资源。
+  AppThemeOption('tieba_blue', '深海蓝', 0xFF4477E0),
+  AppThemeOption('tieba_pink', '少女粉', 0xFFFF9A9E),
+  AppThemeOption('tieba_red', '新年红', 0xFFC51100),
+  AppThemeOption('tieba_purple', '星空紫', 0xFF512DA8),
+  AppThemeOption('tieba_black', '高级黑', 0xFF171717),
 ];
 
 ThemeData buildTheme(String themeId, Brightness brightness) {

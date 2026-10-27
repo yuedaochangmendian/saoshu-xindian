@@ -238,6 +238,9 @@ class AppDatabase {
         'ON documents(category, published_at DESC)');
     await db.execute('CREATE INDEX IF NOT EXISTS books_review_id_idx '
         'ON books(review_count DESC,id DESC)');
+    await db.execute('CREATE INDEX IF NOT EXISTS '
+        'documents_category_forum_idx '
+        'ON documents(category, forum)');
     final hasIndex = await db.rawQuery(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_idx' LIMIT 1");
     if (hasIndex.isEmpty) {
@@ -444,17 +447,34 @@ class AppDatabase {
 
   /// since/until: 'yyyy-MM-dd' 日期上下限（published_at 同格式，字符串比较）。
   /// until 为开区间下界（次月 1 日），可完整覆盖所选月份。
+  /// forum 非空时限定来源贴吧/站点（分类浏览「来源索引」）。
   Future<List<Document>> documentsByCategory(String category,
-      {int limit = 20, int offset = 0, String? since, String? until}) async {
+      {int limit = 20,
+      int offset = 0,
+      String? since,
+      String? until,
+      String? forum}) async {
     final db = await database;
     final rows = await db.rawQuery(
         'SELECT * FROM documents WHERE category=? '
         'AND id NOT IN (SELECT document_id FROM local_deleted) '
+        "AND (? IS NULL OR forum = ?) "
         "AND (? IS NULL OR published_at >= ?) "
         "AND (? IS NULL OR published_at < ?) "
         'ORDER BY published_at DESC,id DESC LIMIT ? OFFSET ?',
-        [category, since, since, until, until, limit, offset]);
+        [
+          category, forum, forum, since, since, until, until, limit, offset
+        ]);
     return rows.map(Document.fromRow).toList();
+  }
+
+  /// 当前分类下的来源列表（名称+条数），供「来源索引」面板。
+  Future<List<Map<String, Object?>>> forumsForCategory(String category) async {
+    final db = await database;
+    return db.rawQuery(
+        "SELECT forum, count(*) c FROM documents WHERE category=? "
+        "AND forum IS NOT NULL AND forum != '' "
+        'GROUP BY forum ORDER BY c DESC', [category]);
   }
 
   Future<List<Document>> favoritesDocuments(List<int> ids) async {

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../app.dart';
 import '../data/database.dart';
 import '../data/models.dart';
+import '../services/system_bridge.dart';
+import '../widgets/category_style.dart';
 import '../widgets/document_card.dart';
 import 'reader_page.dart';
 import 'search_page.dart';
@@ -13,6 +16,47 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+class _CategoryTile extends StatelessWidget {
+  final String name;
+  final int count;
+  final VoidCallback onTap;
+  const _CategoryTile(
+      {required this.name, required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = categoryStyleOf(name);
+    return Material(
+      color: style.container,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(style.icon, size: 20, color: style.onContainer),
+              const SizedBox(height: 4),
+              Text(name,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: style.onContainer)),
+              Text('$count 条',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: style.onContainer.withValues(alpha: 0.75))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HomePageState extends State<HomePage> {
   final _db = AppDatabase.instance;
   bool _loading = true;
@@ -22,6 +66,8 @@ class _HomePageState extends State<HomePage> {
   int _books = 0;
   int _sources = 0;
   List<Document> _random = const [];
+  List<Map<String, Object?>> _categories = const [];
+  String _versionLabel = 'v4';
 
   late final void Function(String) _statusListener;
 
@@ -33,6 +79,11 @@ class _HomePageState extends State<HomePage> {
     };
     _db.onStatus(_statusListener);
     _load();
+    SystemBridge.appVersion().then((info) {
+      if (mounted && info != null) {
+        setState(() => _versionLabel = 'v${info['version']}');
+      }
+    });
   }
 
   @override
@@ -54,12 +105,14 @@ class _HomePageState extends State<HomePage> {
       final books = stats[1];
       final sources = stats[2];
       final random = await _db.randomHomeDocuments(limit: 12);
+      final categories = await _db.categoriesWithCounts();
       if (mounted) {
         setState(() {
           _docs = docs;
           _books = books;
           _sources = sources;
           _random = random;
+          _categories = categories;
           _loading = false;
           _dbPreparing = false;
         });
@@ -84,6 +137,14 @@ class _HomePageState extends State<HomePage> {
   void _openSearch() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const SearchPage()));
+  }
+
+  /// 首页分类入口：跳转书库-分类浏览并选中该分类。
+  void _jumpCategory(String name) {
+    final scope = AppScope.of(context);
+    scope.browseJump.value = name;
+    scope.dockHidden.value = false;
+    scope.tabIndex.value = 1;
   }
 
   @override
@@ -125,7 +186,7 @@ class _HomePageState extends State<HomePage> {
                     color: scheme.primaryContainer,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Text('v4.0',
+                  child: Text(_versionLabel,
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -174,6 +235,29 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+            Text('板块直达',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.32,
+              children: [
+                for (final entry in _categories)
+                  _CategoryTile(
+                      name: (entry['category'] ?? '') as String,
+                      count: (entry['c'] as int? ?? 0),
+                      onTap: () => _jumpCategory(
+                          (entry['category'] ?? '') as String)),
+              ],
             ),
             const SizedBox(height: 18),
             Row(

@@ -1,6 +1,11 @@
 package com.saoshu.saoshu_xindian
 
 import android.app.Activity
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import java.io.File
+import java.io.IOException
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,6 +15,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -71,6 +77,76 @@ class MainActivity : FlutterActivity() {
                                 )
                             }
                             result.success(null)
+                        } catch (e: Exception) {
+                            result.error("unavailable", e.message, null)
+                        }
+                    }
+                    "saveToDownloads" -> {
+                        // 写入系统「下载」公共目录（子目录 扫书新典），
+                        // 卸载应用/清除数据都不丢。API 29+ 走 MediaStore
+                        // （无需权限）；更旧版本直接写文件路径。
+                        val name = call.argument<String>("name")
+                        val bytes = call.argument<ByteArray>("bytes")
+                        if (name == null || bytes == null) {
+                            result.error("badArgs", "name/bytes required", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val values = ContentValues().apply {
+                                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                                    put(
+                                        MediaStore.Downloads.MIME_TYPE,
+                                        "application/json"
+                                    )
+                                    put(
+                                        MediaStore.Downloads.RELATIVE_PATH,
+                                        Environment.DIRECTORY_DOWNLOADS + "/扫书新典"
+                                    )
+                                }
+                                // 先清同名旧文件，避免 MediaStore 自动改名 (1)
+                                val resolver = contentResolver
+                                val existing = resolver.query(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    arrayOf(MediaStore.MediaColumns._ID),
+                                    "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
+                                        "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+                                    arrayOf(name, "%扫书新典%"),
+                                    null
+                                )
+                                existing?.use { cursor ->
+                                    while (cursor.moveToNext()) {
+                                        val id = cursor.getLong(0)
+                                        resolver.delete(
+                                            android.content.ContentUris
+                                                .withAppendedId(
+                                                    MediaStore.Downloads
+                                                        .EXTERNAL_CONTENT_URI, id
+                                                ),
+                                            null, null
+                                        )
+                                    }
+                                }
+                                val uri = resolver.insert(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    values
+                                ) ?: throw IOException("MediaStore 插入失败")
+                                resolver.openOutputStream(uri)?.use {
+                                    it.write(bytes)
+                                } ?: throw IOException("无法打开输出流")
+                                result.success(
+                                    Environment.DIRECTORY_DOWNLOADS + "/扫书新典/$name"
+                                )
+                            } else {
+                                @Suppress("DEPRECATION")
+                                val base = Environment.getExternalStorageDirectory()
+                                val dir = File(base, "Download/扫书新典")
+                                if (!dir.exists() && !dir.mkdirs()) {
+                                    throw IOException("无法创建目录 ${dir.path}")
+                                }
+                                File(dir, name).writeBytes(bytes)
+                                result.success(dir.absolutePath + "/" + name)
+                            }
                         } catch (e: Exception) {
                             result.error("unavailable", e.message, null)
                         }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app.dart';
 import '../data/database.dart';
 import '../data/models.dart';
 import '../widgets/document_card.dart';
@@ -43,6 +44,13 @@ class _BrowseSectionState extends State<BrowseSection> {
 
   /// 按月筛选（'yyyy-MM'）；非空时区间筛选失效（两者互斥）。
   String? _monthFilter;
+
+  /// 来源（贴吧/站点）过滤，来自「来源索引」面板。
+  String? _forumFilter;
+
+  /// 是否有生效中的筛选（筛选态下分页进度无跨会话意义，不持久化）。
+  bool get _filtered =>
+      _forumFilter != null || _monthFilter != null || _rangeDays > 0;
   final List<Document> _documents = [];
   int _offset = 0;
   bool _hasMore = true;
@@ -51,6 +59,8 @@ class _BrowseSectionState extends State<BrowseSection> {
   /// 请求进行中标记：与 _loading 分离，避免在「重置 → 加载」链路里自我阻塞。
   bool _fetching = false;
 
+  AppScope? _scope;
+
   @override
   void initState() {
     super.initState();
@@ -58,11 +68,50 @@ class _BrowseSectionState extends State<BrowseSection> {
     _loadValues();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = AppScope.of(context);
+    if (_scope != scope) {
+      _scope?.browseJump.removeListener(_applyBrowseJump);
+      scope.browseJump.addListener(_applyBrowseJump);
+      _scope = scope;
+    }
+  }
+
+  /// 首页分类入口 → 直接选中对应分类。
+  /// 若此时 _values 还没加载完，等 _loadValues 完成后补应用。
+  void _applyBrowseJump() {
+    final scope = _scope;
+    if (scope == null) return;
+    final target = scope.browseJump.value;
+    if (target == null) return;
+    scope.browseJump.value = null;
+    if (!mounted) return;
+    if (_values.isEmpty) {
+      _pendingJump = target;
+      return;
+    }
+    _selectValue(target);
+  }
+
+  void _selectValue(String target) {
+    final hit = _values.where((e) => _labelOf(e) == target).toList();
+    if (hit.isEmpty) return;
+    _saveProgress();
+    setState(() => _selected = target);
+    _resetDocuments(restore: true);
+  }
+
+  String? _pendingJump;
+
   /// 持久化当前分类进度。offset 显式传入时（dispose 已在控制器销毁前
   /// 读取位置）用它，否则读实时位置；绝不跨 dispose 之后再碰控制器。
   Future<void> _saveProgress({double? offset}) async {
     final selected = _selected;
-    if (selected == null || _restoring || _restoreLoading) return;
+    if (selected == null || _restoring || _restoreLoading || _filtered) {
+      return;
+    }
     final px = offset ??
         (_scrollController.hasClients
             ? _scrollController.position.pixels
@@ -77,6 +126,7 @@ class _BrowseSectionState extends State<BrowseSection> {
 
   @override
   void dispose() {
+    _scope?.browseJump.removeListener(_applyBrowseJump);
     final px = _scrollController.hasClients
         ? _scrollController.position.pixels
         : null;
@@ -106,7 +156,17 @@ class _BrowseSectionState extends State<BrowseSection> {
         _values = values;
         _selected = values.isEmpty ? null : _labelOf(values.first);
       });
-      await _resetDocuments();
+      final pending = _scope?.browseJump.value ?? _pendingJump;
+      if (pending != null) {
+        _pendingJump = null;
+        final hit = _values
+            .where((e) => _labelOf(e) == pending)
+            .isNotEmpty;
+        if (hit) _selected = pending;
+      }
+      await _resetDocuments(
+          restore: _selected != null &&
+              _scrollMemory.containsKey(_selected));
     }
   }
 
@@ -155,7 +215,10 @@ class _BrowseSectionState extends State<BrowseSection> {
     setState(() => _loading = true);
     try {
       final documents = await _db.documentsByCategory(selected,
-          offset: _offset, since: _sinceDate(), until: _untilDate());
+          offset: _offset,
+          since: _sinceDate(),
+          until: _untilDate(),
+          forum: _forumFilter);
       if (mounted && generation == _generation) {
         setState(() {
           _documents.addAll(documents);
@@ -235,6 +298,29 @@ class _BrowseSectionState extends State<BrowseSection> {
   }
 
   /// 日期下限（yyyy-MM-dd）；按月筛选或不限时返回 null。
+  /// 「来源索引」：当前分类下所有来源贴吧/站点（按条数排序，可搜索）。
+  Future<void> _showForumIndex() async {
+    final category = _selected;
+    if (category == null) return;
+    final rows = await _db.forumsForCategory(category);
+    if (rows.isEmpty || !mounted) return;
+    final forums = <String, int>{
+      for (final r in rows) (r['forum'] ?? '') as String: (r['c'] as int? ?? 0)
+    };
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _ForumIndexSheet(
+          category: category, forums: forums, selected: _forumFilter),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _forumFilter = picked == _forumFilter ? null : picked;
+    });
+    _resetDocuments();
+  }
+
   String? _sinceDate() {
     if (_monthFilter != null) return '$_monthFilter-01';
     if (_rangeDays <= 0) return null;
@@ -285,7 +371,10 @@ class _BrowseSectionState extends State<BrowseSection> {
                     selected: _selected == _labelOf(entry),
                     onSelected: (_) {
                       _saveProgress();
-                      setState(() => _selected = _labelOf(entry));
+                      setState(() {
+                        _selected = _labelOf(entry);
+                        _forumFilter = null;
+                      });
                       _resetDocuments(restore: true);
                     },
                   ),
@@ -308,17 +397,6 @@ class _BrowseSectionState extends State<BrowseSection> {
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
-                    if (_monthFilter != null) ...[
-                      InputChip(
-                        avatar: Icon(Icons.event_rounded,
-                            size: 14, color: scheme.primary),
-                        label: Text(_monthFilter!),
-                        labelStyle:
-                            TextStyle(fontSize: 12, color: scheme.primary),
-                        onDeleted: () => _setMonth(null),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
                     for (final entry in _rangeOptions.entries)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
@@ -354,8 +432,80 @@ class _BrowseSectionState extends State<BrowseSection> {
                 if (picked != null) _setMonth(picked);
               },
             ),
+            const SizedBox(width: 6),
+            ActionChip(
+              avatar: Icon(Icons.account_tree_rounded,
+                  size: 14, color: scheme.onSurfaceVariant),
+              label: const Text('来源', style: TextStyle(fontSize: 12)),
+              visualDensity: VisualDensity.compact,
+              onPressed: _showForumIndex,
+            ),
           ],
         ),
+        // 筛选摘要：任何生效筛选都显式展示、可单独移除。
+        if (_filtered) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.filter_alt_rounded,
+                  size: 14, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (_forumFilter != null)
+                      InputChip(
+                        avatar: Icon(Icons.account_tree_rounded,
+                            size: 14, color: scheme.primary),
+                        label: Text(_forumFilter!),
+                        labelStyle:
+                            TextStyle(fontSize: 12, color: scheme.primary),
+                        visualDensity: VisualDensity.compact,
+                        onDeleted: () => setState(() {
+                              _forumFilter = null;
+                              _resetDocuments();
+                            }),
+                      ),
+                    if (_monthFilter != null)
+                      InputChip(
+                        avatar: Icon(Icons.event_rounded,
+                            size: 14, color: scheme.primary),
+                        label: Text(_monthFilter!),
+                        labelStyle:
+                            TextStyle(fontSize: 12, color: scheme.primary),
+                        visualDensity: VisualDensity.compact,
+                        onDeleted: () => _setMonth(null),
+                      ),
+                    if (_rangeDays > 0)
+                      InputChip(
+                        avatar: Icon(Icons.schedule_rounded,
+                            size: 14, color: scheme.primary),
+                        label: Text('近 $_rangeDays 天'),
+                        labelStyle:
+                            TextStyle(fontSize: 12, color: scheme.primary),
+                        visualDensity: VisualDensity.compact,
+                        onDeleted: () => setState(() {
+                              _rangeDays = 0;
+                              _resetDocuments();
+                            }),
+                      ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() {
+                  _forumFilter = null;
+                  _monthFilter = null;
+                  _rangeDays = 0;
+                  _resetDocuments();
+                }),
+                child: const Text('重置', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 8),
         Expanded(
           child: _documents.isEmpty && _loading
@@ -412,6 +562,81 @@ class _BrowseSectionState extends State<BrowseSection> {
                     ),
         ),
       ],
+    );
+  }
+}
+
+/// 来源索引面板：分类下来源列表（条数降序），顶部搜索过滤，点击选定/再点取消。
+class _ForumIndexSheet extends StatefulWidget {
+  final String category;
+  final Map<String, int> forums;
+  final String? selected;
+  const _ForumIndexSheet(
+      {required this.category,
+      required this.forums,
+      required this.selected});
+
+  @override
+  State<_ForumIndexSheet> createState() => _ForumIndexSheetState();
+}
+
+class _ForumIndexSheetState extends State<_ForumIndexSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final entries = widget.forums.entries.where((e) =>
+            _query.isEmpty ||
+            e.key.toLowerCase().contains(_query.toLowerCase())).toList();
+    return Padding(
+      padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: TextField(
+                autofocus: false,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  hintText: '在「${widget.category}」的 ${widget.forums.length} 个来源中搜索',
+                  hintStyle: TextStyle(fontSize: 13),
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: entries.length,
+                itemBuilder: (context, i) {
+                  final e = entries[i];
+                  final active = widget.selected == e.key;
+                  return ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    leading: Icon(
+                        active
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        size: 20,
+                        color: active ? scheme.primary : null),
+                    title: Text(e.key,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: Text('${e.value}',
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                    onTap: () => Navigator.pop(context, e.key),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

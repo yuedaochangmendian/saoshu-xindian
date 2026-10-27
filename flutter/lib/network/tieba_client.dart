@@ -35,7 +35,7 @@ class ThreadSummary {
   final bool deleted;
   final bool masked;
 
-  /// 作者头像（portrait 参数，拼 https://tb.himg.baidu.com/sys/portraitn/item/）
+  /// 作者头像（portrait token，渲染侧用 tiebaAvatarUrl 拼 himg portrait 路径）
   final String authorPortrait;
 
   const ThreadSummary(
