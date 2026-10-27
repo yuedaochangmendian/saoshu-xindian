@@ -24,6 +24,9 @@ class _NetworkSectionState extends State<NetworkSection> {
 
   TiebaClient? _client;
   String _forum = _forums.first;
+
+  /// 当前吧的 fid（requestThreads 带回，楼中楼 302002 请求需要）。
+  int _forumFid = 0;
   int _page = 0;
   bool _hasMore = true;
   bool _loading = false;
@@ -92,6 +95,7 @@ class _NetworkSectionState extends State<NetworkSection> {
     });
     try {
       final page = await client.requestThreads(_forum, _page + 1);
+      if (page.fid != 0) _forumFid = page.fid;
       if (mounted) {
         setState(() {
           _page++;
@@ -539,10 +543,12 @@ class _NetworkSectionState extends State<NetworkSection> {
                                       : () async {
                                           await Navigator.of(context).push(
                                             MaterialPageRoute(
-                                              builder: (_) => ThreadPreviewPage(
-                                                forum: _forum,
-                                                thread: thread,
-                                              ),
+                                              builder: (_) =>
+                                                  ThreadPreviewPage(
+                                                    forum: _forum,
+                                                    fid: _forumFid,
+                                                    thread: thread,
+                                                  ),
                                             ),
                                           );
                                           _refreshImported();

@@ -1,36 +1,63 @@
 import 'package:flutter/material.dart';
 
 import '../data/database.dart';
-import '../widgets/tieba_rich_text.dart';
 import '../network/tieba_client.dart';
 import '../network/tieba_import.dart';
+import '../services/secure_store.dart';
 import '../widgets/category_style.dart';
+import '../widgets/tieba_rich_text.dart';
 
-/// 帖子预览：进入即抓取楼层内容，可一键导入本地库。
+/// 帖子预览：楼层流式浏览（对齐 TiebaLite ThreadPage 的核心体验）——
+/// 楼层头像、楼中楼（内嵌预览 + 302002 分页展开）、图片大图浏览、
+/// 登录态复用（凭据走 SecureStore，登录用户的预览也过带 BDUSS 通道），
+/// 并可一键导入本地库。
 class ThreadPreviewPage extends StatefulWidget {
   final String forum;
+
+  /// 吧 fid；跨吧搜索入口可缺省（预览页自行向列表接口解析一次）。
+  final int fid;
   final ThreadSummary thread;
   final VoidCallback? onImported;
 
   const ThreadPreviewPage(
-      {super.key, required this.forum, required this.thread, this.onImported});
+      {super.key,
+      required this.forum,
+      this.fid = 0,
+      required this.thread,
+      this.onImported});
 
   @override
   State<ThreadPreviewPage> createState() => _ThreadPreviewPageState();
 }
 
+/// 单个楼层的楼中楼展开状态。
+class _SubState {
+  List<SubPost> posts = [];
+  int pn = 0;
+  bool hasMore = false;
+  bool loading = false;
+  String? error;
+}
+
 class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
-  final _client =
-      TiebaClient(bduss: ''); // BDUSS 由调用方壳层注入成本高，预览走游客通道即可；导入后正文入库。
+  late final TiebaClient _client;
 
   CollectedThread? _collected;
   String? _error;
   bool _importing = false;
   bool _imported = false;
+  int _fid = 0;
+
+  /// pid → 楼中楼展开状态（仅展开过的楼层持有）。
+  final Map<int, _SubState> _subs = {};
 
   @override
   void initState() {
     super.initState();
+    _client = TiebaClient(
+        bduss: SecureStore.get('tieba_bduss'),
+        stoken: SecureStore.get('tieba_stoken'));
+    _fid = widget.fid;
     _fetch();
   }
 
@@ -42,6 +69,13 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
 
   Future<void> _fetch() async {
     try {
+      // fid 未知（跨吧搜索入口）：先向列表接口要一次。
+      if (_fid == 0) {
+        try {
+          final page = await _client.requestThreads(widget.forum, 1);
+          _fid = page.fid;
+        } catch (_) {}
+      }
       final collected = await _client
           .fetchThread(widget.forum, widget.thread.tid, onStatus: (status) {
         if (mounted) setState(() => _error = null);
@@ -49,6 +83,35 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
       if (mounted) setState(() => _collected = collected);
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  /// 展开/加载更多楼中楼（302002）。
+  Future<void> _expandSubs(Floor floor) async {
+    final state = _subs.putIfAbsent(floor.pid, () => _SubState());
+    if (state.loading) return;
+    setState(() => state.loading = true);
+    try {
+      final result = await _client.fetchSubPosts(widget.thread.tid, floor.pid,
+          state.pn + 1,
+          fid: _fid);
+      if (!mounted) return;
+      final byPid = <int, SubPost>{
+        for (final p in state.posts) p.pid: p,
+        for (final p in result.posts) p.pid: p,
+      };
+      state.posts = byPid.values.toList()..sort((a, b) => a.pid.compareTo(b.pid));
+      state.pn += 1;
+      state.hasMore = result.hasMore;
+      state.error = null;
+      setState(() => state.loading = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          state.loading = false;
+          state.error = error.toString();
+        });
+      }
     }
   }
 
@@ -80,6 +143,95 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
           ..showSnackBar(SnackBar(content: Text('导入失败：$error')));
       }
     }
+  }
+
+  /// 图片大图浏览：黑底 PageView + InteractiveViewer 缩放，点击关闭。
+  void _openPhoto(List<String> urls, int index) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (context) => PhotoViewerPage(urls: urls, initialIndex: index),
+    );
+  }
+
+  Widget _buildSubPosts(BuildContext context, Floor floor) {
+    final scheme = Theme.of(context).colorScheme;
+    final state = _subs[floor.pid];
+    // 未展开：展示 302001 内嵌的楼中楼预览；展开后：用抓取到的完整列表。
+    final shown = state != null && state.posts.isNotEmpty
+        ? state.posts
+        : floor.subPosts;
+    final loadedCount = state?.posts.length ?? floor.subPosts.length;
+    final canExpand = floor.subNumber > shown.length;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final sub in shown)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TiebaAvatar(
+                      radius: 8, portrait: sub.portrait, name: sub.author),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${sub.author}'
+                          '${sub.time > 0 ? ' · ${TiebaImporter.networkDate(sub.time)}' : ''}'
+                          '${sub.agree > 0 ? ' · ${sub.agree}赞' : ''}',
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.onSurfaceVariant),
+                        ),
+                        SelectableTiebaText(
+                          content: sub.text,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.5,
+                              color: scheme.onSurface),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (state?.error != null)
+            Text('楼中楼加载失败：${state!.error}',
+                style: TextStyle(fontSize: 11, color: scheme.error)),
+          if (state != null && state.loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (canExpand || (state?.hasMore ?? false))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => _expandSubs(floor),
+                child: Text(
+                    state == null
+                        ? '查看全部 ${floor.subNumber} 条楼中楼'
+                        : '加载更多楼中楼（已载 $loadedCount/${floor.subNumber}）',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -142,19 +294,32 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                       color: header.text),
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  '${widget.thread.author} · 回复 ${widget.thread.replyCount}'
-                                  ' · 浏览 ${widget.thread.viewCount}'
-                                  '${date.isEmpty ? '' : ' · $date'}',
-                                  style: TextStyle(
-                                      fontSize: 12, color: header.subText),
+                                Row(
+                                  children: [
+                                    TiebaAvatar(
+                                        radius: 11,
+                                        portrait: widget.thread.authorPortrait,
+                                        name: widget.thread.author),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        '${widget.thread.author} · 回复 ${widget.thread.replyCount}'
+                                        ' · 浏览 ${widget.thread.viewCount}'
+                                        '${date.isEmpty ? '' : ' · $date'}',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: header.subText),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(height: 12),
                           for (final floor in _collected!.floors)
-                            if (floor.text.trim().isNotEmpty)
+                            if (floor.text.trim().isNotEmpty ||
+                                floor.images.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Material(
@@ -168,6 +333,11 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                       children: [
                                         Row(
                                           children: [
+                                            TiebaAvatar(
+                                                radius: 11,
+                                                portrait: floor.portrait,
+                                                name: floor.author),
+                                            const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
                                                   floor.seq == 1
@@ -206,45 +376,56 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                                               fontSize: 14,
                                               height: 1.55,
                                               color: scheme.onSurface)),
-                                        for (final url in floor.images) ...[
+                                        for (var i = 0;
+                                            i < floor.images.length;
+                                            i++) ...[
                                           const SizedBox(height: 8),
                                           ClipRRect(
                                             borderRadius:
                                                 BorderRadius.circular(14),
-                                            child: Image.network(url,
-                                                fit: BoxFit.cover,
-                                                cacheWidth: 540,
-                                                loadingBuilder:
-                                                    (context, child, progress) {
-                                                  if (progress == null) {
-                                                    return child;
-                                                  }
-                                                  return Container(
-                                                    height: 160,
-                                                    color: scheme
-                                                        .surfaceContainerHigh,
-                                                    alignment: Alignment.center,
-                                                    child:
-                                                        const CircularProgressIndicator(
-                                                            strokeWidth: 2),
-                                                  );
-                                                },
-                                                errorBuilder:
-                                                    (context, error, stack) =>
-                                                        Container(
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  _openPhoto(floor.images, i),
+                                              child: Image.network(
+                                                  floor.images[i],
+                                                  fit: BoxFit.cover,
+                                                  cacheWidth: 540,
+                                                  loadingBuilder: (context,
+                                                      child, progress) {
+                                                    if (progress == null) {
+                                                      return child;
+                                                    }
+                                                    return Container(
+                                                      height: 160,
+                                                      color: scheme
+                                                          .surfaceContainerHigh,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: const CircularProgressIndicator(
+                                                          strokeWidth: 2),
+                                                    );
+                                                  },
+                                                  errorBuilder: (context,
+                                                          error, stack) =>
+                                                      Container(
                                                           height: 60,
                                                           color: scheme
                                                               .surfaceContainerHigh,
                                                           alignment:
                                                               Alignment.center,
-                                                          child: Text('图片加载失败',
+                                                          child: Text(
+                                                              '图片加载失败',
                                                               style: TextStyle(
-                                                                  fontSize: 12,
+                                                                  fontSize:
+                                                                      12,
                                                                   color: scheme
-                                                                      .onSurfaceVariant)),
-                                                        )),
+                                                                      .onSurfaceVariant))),
+                                                ),
+                                            ),
                                           ),
                                         ],
+                                        if (floor.subNumber > 0)
+                                          _buildSubPosts(context, floor),
                                       ],
                                     ),
                                   ),
@@ -288,6 +469,80 @@ class _ThreadPreviewPageState extends State<ThreadPreviewPage> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 全屏大图浏览：左右滑动 + 双指缩放，点击任意处关闭。
+class PhotoViewerPage extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+  const PhotoViewerPage(
+      {super.key, required this.urls, required this.initialIndex});
+
+  @override
+  State<PhotoViewerPage> createState() => _PhotoViewerPageState();
+}
+
+class _PhotoViewerPageState extends State<PhotoViewerPage> {
+  late final PageController _controller =
+      PageController(initialPage: widget.initialIndex);
+  late int _index = widget.initialIndex;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: widget.urls.length,
+                onPageChanged: (i) => setState(() => _index = i),
+                itemBuilder: (context, i) => InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.network(widget.urls[i],
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stack) => Text(
+                            '图片加载失败',
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 13))),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (widget.urls.length > 1)
+            Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text('${_index + 1}/${widget.urls.length}',
+                    style: const TextStyle(color: Colors.white70)),
+              ),
+            ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 4,
+            right: 8,
+            child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded,
+                    color: Colors.white70)),
+          ),
         ],
       ),
     );

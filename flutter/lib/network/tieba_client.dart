@@ -62,8 +62,47 @@ class Floor {
 
   /// 楼内图片 URL（720px 流量与清晰度平衡，取自 type=3 分片 field 8）。
   final List<String> images;
+
+  /// 楼层作者头像 portrait token（来自 post 关联的 user 映射）。
+  final String portrait;
+
+  /// 楼中楼总数（Post.sub_post_number）。
+  final int subNumber;
+
+  /// 302001 响应内嵌的楼中楼预览（通常前 2 条，Post.sub_post_list=15）；
+  /// 全部展开走 fetchSubPosts(302002)。
+  final List<SubPost> subPosts;
   const Floor(this.pid, this.seq, this.agree, this.author, this.text,
-      {this.images = const []});
+      {this.images = const [],
+      this.portrait = '',
+      this.subNumber = 0,
+      this.subPosts = const []});
+}
+
+/// 楼中楼（小回复）。字段对齐 TiebaLite SubPostList.proto。
+class SubPost {
+  final int pid;
+  final String author;
+  final String portrait;
+  final int time;
+  final int agree;
+  final String text;
+  final List<String> images;
+  const SubPost(
+      {required this.pid,
+      required this.author,
+      required this.portrait,
+      required this.time,
+      required this.agree,
+      required this.text,
+      this.images = const []});
+}
+
+/// fetchSubPosts 返回：一页楼中楼 + 是否还有下一页。
+class SubPostPage {
+  final bool hasMore;
+  final List<SubPost> posts;
+  const SubPostPage(this.hasMore, this.posts);
 }
 
 class CollectedThread {
@@ -229,6 +268,58 @@ class TiebaClient {
     final request = (PbWriter()..messageField(1, data)).toBytes();
     final response = await _postProto('/c/f/frs/page?cmd=$_frsCmd', request);
     return _parseThreads(response, fname);
+  }
+
+  /// 解析 SubPostList 数组（楼中楼元素）。
+  /// SubPostList: id=1 content=2(repeated PbContent) time=3 author_id=4
+  /// floor=6 author=7(User) agree=9。
+  List<SubPost> _parseSubPostLists(List<PbMessage> list) {
+    final result = <SubPost>[];
+    for (final sp in list) {
+      final fragments = sp.messages(2);
+      final images = <String>[];
+      for (final fragment in fragments) {
+        if (fragment.varint(1) == 3) {
+          final url = fragment.text(8);
+          if (url.startsWith('http')) images.add(url);
+        }
+      }
+      final user = sp.message(7);
+      var name = _userDisplay(user);
+      if (name.isEmpty) name = '匿名用户${sp.varint(4)}';
+      result.add(SubPost(
+          pid: sp.varint(1),
+          author: name,
+          portrait: user?.text(5) ?? '',
+          time: sp.varint(3).toInt(),
+          agree: sp.message(9)?.varint(1) ?? 0,
+          text: _assembleContent(fragments),
+          images: images));
+    }
+    return result;
+  }
+
+  /// 楼中楼分页（/c/f/pb/floor cmd=302002，对齐 TiebaLite PbFloorRequestData：
+  /// kz=1 tid、pid=2 主楼 pid、pn=4 页码、common=9、forum_id=11）。
+  Future<SubPostPage> fetchSubPosts(int tid, int pid, int pn,
+      {int fid = 0}) async {
+    final data = PbWriter()
+      ..varintField(1, tid)
+      ..varintField(2, pid)
+      ..varintField(4, pn)
+      ..messageField(9, _commonRequest())
+      ..varintField(11, fid);
+    final request = (PbWriter()..messageField(1, data)).toBytes();
+    final response =
+        await _postProto('/c/f/pb/floor?cmd=302002', request);
+    final root = PbMessage.parse(response);
+    _checkError(root.message(1));
+    final dataMsg = root.message(2);
+    if (dataMsg == null) throw TiebaException('楼中楼响应缺少 data');
+    var hasMore = false;
+    final page = dataMsg.message(1);
+    if (page != null) hasMore = page.varint(6) != 0;
+    return SubPostPage(hasMore, _parseSubPostLists(dataMsg.messages(4)));
   }
 
   Future<CollectedThread> fetchThread(String fname, int tid,
@@ -472,7 +563,12 @@ class TiebaClient {
       }
       floors.add(Floor(
           pid, post.varint(3), agree, floorAuthor, _assembleContent(fragments),
-          images: images));
+          images: images,
+          portrait: users[authorId]?[1] ??
+              post.message(23)?.text(5) ??
+              '',
+          subNumber: post.varint(13),
+          subPosts: _parseSubPostLists(post.messages(15))));
     }
     return PostsPage(
         hasMore, title, author, createTime, replyNum, viewNum, floors);
