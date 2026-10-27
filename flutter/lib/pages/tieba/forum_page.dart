@@ -206,7 +206,7 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
       MaterialPageRoute(builder: (_) => const TiebaLoginPage()),
     );
     if (credentials == null || !mounted) return;
-    final (bduss, stoken, uid, cookieName) = credentials;
+    final (bduss, stoken) = credentials;
     setState(() => _loading = true);
     await SecureStore.set('tieba_bduss', bduss);
     await SecureStore.set('tieba_stoken', stoken);
@@ -214,19 +214,14 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
     _client = TiebaClient(bduss: bduss, stoken: stoken);
     String message;
     try {
-      final profile = await client.fetchProfile(selfUid: uid);
-      if (profile != null) {
-        await prefs.setString('tieba_username', profile.name);
-        message = '已登录：${profile.name}';
-      } else if (cookieName.isNotEmpty) {
-        // 服务端资料接口没返回，但 BDUSS 已到手 + web 侧 NAME cookie
-        // 能解析出账号名——按登录成功处理，不让验证失败误伤登录。
-        await prefs.setString('tieba_username', cookieName);
-        message = '已登录：$cookieName';
+      // TiebaLite 同款验证：POST /c/s/login（bdusstoken+stoken+sign）。
+      final result = await client.verifyLogin();
+      if (result.ok) {
+        await prefs.setString('tieba_username', result.profile!.name);
+        message = '已登录：${result.profile!.name}';
       } else {
-        // BDUSS 拿到了却查无此号且无账号名（轮询竞态窗口）：判定登录
-        // 失败就必须回滚凭据——留着未验证凭据会让 loggedIn 与失败提示矛盾。
-        message = '登录失败：未能获取到有效账号信息';
+        // 服务端明确判凭据无效：回滚，避免"提示失败但 loggedIn=true"。
+        message = '登录失败（${result.errorCode} ${result.errorMsg}）';
         await SecureStore.set('tieba_bduss', '');
         await SecureStore.set('tieba_stoken', '');
         await prefs.setString('tieba_username', '');
@@ -235,12 +230,10 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
         _client = TiebaClient();
       }
     } catch (error) {
-      if (cookieName.isNotEmpty) {
-        await prefs.setString('tieba_username', cookieName);
-        message = '已登录：$cookieName（资料验证暂不可用）';
-      } else {
-        message = '登录验证失败（凭据已保存）：$error';
-      }
+      // 网络异常不等于凭据无效（BDUSS/STOKEN 来自真实 cookie）：保留
+      // 登录态，仅账号名暂缺。
+      await prefs.setString('tieba_username', '');
+      message = '登录验证暂不可用（凭据已保存）：$error';
     }
     if (mounted) {
       setState(() => _loading = false);

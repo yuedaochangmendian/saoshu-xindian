@@ -82,7 +82,10 @@ String tiebaAvatarUrl(String portrait) {
   if (portrait.startsWith('http://') || portrait.startsWith('https://')) {
     return portrait;
   }
-  return 'https://tb.himg.baidu.com/sys/portrait/item/$portrait';
+  // 注意必须 http：tb.himg.baidu.com 的 https 端口不可达（TLS 失败），
+  // TiebaLite StringUtil.getAvatarUrl 同源同协议；Dart HttpClient 不受
+  // Android cleartext 策略限制。
+  return 'http://tb.himg.baidu.com/sys/portrait/item/$portrait';
 }
 
 final RegExp _emoticonPattern = RegExp(r'#\((([一-龥A-Za-z0-9~]+))\)');

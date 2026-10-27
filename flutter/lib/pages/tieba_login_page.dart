@@ -45,8 +45,8 @@ class _TiebaLoginPageState extends State<TiebaLoginPage> {
 
   /// 从系统 CookieManager 读贴吧域 cookie；拿到 BDUSS 即视为登录成功。
   /// 注意：BDUSS/STOKEN 带 HttpOnly，JS 的 document.cookie 永远读不到，
-  /// 必须走原生 MethodChannel。UID/NAME 是贴吧 web 侧的普通 cookie，
-  /// 一并带回：NAME 作为账号名兜底显示，UID 供 profile PB 接口自查。
+  /// 必须走原生 MethodChannel。账号信息不靠 web cookie（wappass 已不种
+  /// NAME/UID），登录后由 TiebaClient.verifyLogin（/c/s/login）取得。
   Future<void> _checkCookies() async {
     if (_checked) return;
     final cookie = await SystemBridge.getTiebaCookies(
@@ -55,15 +55,13 @@ class _TiebaLoginPageState extends State<TiebaLoginPage> {
     final bduss = cookieValueOf(cookie, 'BDUSS');
     if (bduss == null || bduss.isEmpty) return;
     final stoken = cookieValueOf(cookie, 'STOKEN') ?? '';
-    final uid = cookieValueOf(cookie, 'UID') ?? '';
-    var name = cookieValueOf(cookie, 'NAME') ?? '';
-    try {
-      name = Uri.decodeComponent(name);
-    } catch (_) {}
+    // TiebaLite updateLoginInfo 语义：BDUSS 与 STOKEN 同时在场才算登录
+    // 完成（wappass 流程 STOKEN 稍后落盘，轮询会等到两者齐）。
+    if (stoken.isEmpty) return;
     _checked = true;
     _poll?.cancel();
     if (mounted) {
-      Navigator.of(context).pop((bduss, stoken, uid, name));
+      Navigator.of(context).pop((bduss, stoken));
     }
   }
 

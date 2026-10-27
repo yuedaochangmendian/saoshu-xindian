@@ -1,6 +1,8 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,6 +14,15 @@ class TiebaException implements Exception {
   TiebaException(this.message);
   @override
   String toString() => message;
+}
+
+/// /c/s/login 验证结果。
+class TiebaLoginResult {
+  final TiebaUserProfile? profile;
+  final String errorCode;
+  final String errorMsg;
+  const TiebaLoginResult(this.profile, this.errorCode, this.errorMsg);
+  bool get ok => profile != null;
 }
 
 class TiebaUserProfile {
@@ -407,6 +418,120 @@ class TiebaClient {
     return writer;
   }
 
+  /// 登录验证（TiebaLite AccountUtil.updateLoginInfo → loginFlow 等价实现）：
+  /// POST http://c.tieba.baidu.com/c/s/login，FormUrlEncoded。
+  /// 公共参数集 = defaultCommonParamInterceptor（BDUSS 被 DROP_PARAMS 排除）
+  /// + OFFICIAL_TIEBA_API 附加参数 + loginFlow 显式字段；
+  /// sign = md5(所有 raw "k=v" 字典序排序无分隔拼接 + 'tiebaclient!!!')，
+  /// 与 SortAndSignInterceptor.calculateSign 一致；body 用编码对排序后
+  /// & 连接再追加 sign（sortedEncodedRaw 语义）。
+  /// 返回 TiebaLoginResult：profile 非空=成功；否则带服务端
+  /// error_code/error_msg（凭据无效等），调用方据此回滚或提示。
+  Future<TiebaLoginResult> verifyLogin() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rnd = Random();
+    final nowDate = DateTime.now();
+    // event_day = SimpleDateFormat("yyyyMdd")：月份无前导零。
+    final eventDay =
+        '${nowDate.year}${nowDate.month}${nowDate.day.toString().padLeft(2, '0')}';
+    final params = <String, String>{
+      // defaultCommonParamInterceptor（BDUSS 由 DROP_PARAMS 排除，不发）
+      '_client_id': _device.clientId,
+      '_client_type': '2',
+      '_os_version': '13',
+      'model': _device.model,
+      'net_type': '1',
+      '_phone_imei': _device.imei,
+      'timestamp': '$now',
+      // OFFICIAL_TIEBA_API 附加公共参数
+      'active_timestamp': '$now',
+      'android_id': base64Encode(List<int>.generate(
+          8, (_) => rnd.nextInt(256))),
+      'baiduid': _device.cuid.toUpperCase(),
+      'brand': 'Xiaomi',
+      'cmode': '1',
+      'cuid': _device.cuid,
+      'cuid_galaxy2': _device.cuid,
+      'cuid_gid': '',
+      'event_day': eventDay,
+      'extra': '',
+      'first_install_time': '$now',
+      'framework_ver': '3340042',
+      'from': 'tieba',
+      'is_teenager': '0',
+      'last_update_time': '$now',
+      'mac': '02:00:00:00:00:00',
+      'sample_id': '${rnd.nextInt(900000) + 100000}',
+      'sdk_ver': '2.34.0',
+      'start_scheme': '',
+      'start_type': '1',
+      'swan_game_ver': '1038000',
+      'c3_aid': _device.c3Aid,
+      'oaid': '{}',
+      // loginFlow 显式字段（_client_version 覆盖公共默认）
+      'bdusstoken': '$_bduss|null',
+      'stoken': _stoken,
+      'channel_id': '',
+      'channel_uid': '',
+      '_client_version': '11.10.8.6',
+      'authsid': 'null',
+    };
+    // sign：raw 对排序、无分隔拼接、加盐 MD5（小写 hex）。
+    final rawPairs =
+        params.entries.map((e) => '${e.key}=${e.value}').toList()..sort();
+    final sign = md5
+        .convert(utf8.encode('${rawPairs.join()}tiebaclient!!!'))
+        .toString();
+    // body：编码对排序 & 连接 + sign。
+    final encodedPairs = params.entries
+        .map((e) =>
+            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .toList()
+      ..sort();
+    final body = utf8.encode('${encodedPairs.join('&')}&sign=$sign');
+
+    await _throttle();
+    _lastRequest = DateTime.now();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12);
+    try {
+      final request = await client
+          .postUrl(Uri.parse('http://c.tieba.baidu.com/c/s/login'));
+      request.headers.set('User-Agent', 'bdtb for Android 12.25.1.0');
+      request.headers.set('Cookie', 'ka=open');
+      request.headers.set('Charset', 'UTF-8');
+      request.headers.contentType =
+          ContentType('application', 'x-www-form-urlencoded');
+      request.add(body);
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
+      final text = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) {
+        throw TiebaException('login HTTP ${response.statusCode}');
+      }
+      final json = jsonDecode(text) as Map<String, Object?>;
+      final code = (json['error_code'] ?? '').toString();
+      final msg = (json['error_msg'] ?? '').toString();
+      if (code != '0') {
+        return TiebaLoginResult(null, code, msg); // 凭据无效
+      }
+      final user = json['user'] as Map<String, Object?>?;
+      final name = (user?['name'] ?? '').toString();
+      if (user == null || name.isEmpty) {
+        return TiebaLoginResult(null, code, '响应缺少 user');
+      }
+      return TiebaLoginResult(
+          TiebaUserProfile(
+              id: int.tryParse((user['id'] ?? '').toString()) ?? 0,
+              name: name,
+              portrait: (user['portrait'] ?? '').toString()),
+          code,
+          msg);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// 请求个人资料（严格对齐 TiebaLite UserApiImpl.userProfileFlow 的
   /// ProfileRequestData 字段组合，/c/u/user/profile?cmd=303012）。
   /// - 自查（登录验证）：selfUid 来自登录 cookie UID，is_guest=0；
@@ -433,7 +558,8 @@ class TiebaClient {
       data.varintField(3, friendUid); // friend_uid
     }
     final request = (PbWriter()..messageField(1, data)).toBytes();
-    final response = await _postProto('/c/u/user/profile?cmd=303012', request);
+    final response = await _postProto(
+        '/c/u/user/profile?cmd=303012&format=protobuf', request);
     final root = PbMessage.parse(response);
     final error = root.message(1);
     if (error != null && error.varint(1) != 0) {
