@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app.dart';
 import '../data/database.dart';
 import '../data/models.dart';
+import '../services/system_bridge.dart';
 import '../widgets/category_style.dart';
 
 /// 正文详情：主色容器头卡 + 操作行 + 正文 + 上一篇/下一篇。
@@ -204,6 +205,19 @@ class _ReaderPageState extends State<ReaderPage> {
                               onTap: _copyContent,
                             ),
                           ),
+                          // 贴吧来源的帖子：一键跳转至原帖网页。
+                          if (document.sourceUrl
+                              .startsWith('https://tieba.baidu.com/p/')) ...[
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ActionButton(
+                                icon: Icons.open_in_new_rounded,
+                                label: '打开原帖',
+                                onTap: () =>
+                                    SystemBridge.openUrl(document.sourceUrl),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 14),

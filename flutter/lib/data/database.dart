@@ -26,6 +26,10 @@ class AppDatabase {
   Database? _db;
   final List<void Function(String)> _statusListeners = [];
 
+  /// SharedPreferences 便捷访问（供浏览进度等模块）。
+  Future<SharedPreferences> get sharedPrefs =>
+      SharedPreferences.getInstance();
+
   void onStatus(void Function(String message) listener) =>
       _statusListeners.add(listener);
 

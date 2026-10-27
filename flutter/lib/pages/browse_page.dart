@@ -30,6 +30,14 @@ class _BrowseSectionState extends State<BrowseSection> {
   String? _selected;
   int _rangeDays = 0;
 
+  /// 各分类的浏览进度（静态：切换页面/重建后仍保留）。
+  /// scrollMemory = 进程内滚动位置；prefs 持久化每分类已加载页数，
+  /// 恢复时补载这些页后跳回滚动位置。
+  static final Map<String, double> _scrollMemory = {};
+  static const _progressPrefix = 'browse_pages_';
+  double _pendingRestorePx = 0;
+  bool _restoring = false;
+
   /// 按月筛选（'yyyy-MM'）；非空时区间筛选失效（两者互斥）。
   String? _monthFilter;
   final List<Document> _documents = [];
@@ -47,8 +55,24 @@ class _BrowseSectionState extends State<BrowseSection> {
     _loadValues();
   }
 
+  Future<void> _saveProgress() async {
+    final selected = _selected;
+    if (selected == null || _restoring) return;
+    final prefs = await AppDatabase.instance.sharedPrefs;
+    final pages = (_offset / _pageSize).ceil();
+    await prefs.setInt('$_progressPrefix${selected}_pages', pages);
+    await prefs.setDouble(
+        '$_progressPrefix${selected}_px', _scrollController.position.pixels);
+    _scrollMemory[selected] = _scrollController.position.pixels;
+  }
+
   @override
   void dispose() {
+    if (_selected != null &&
+        _scrollController.hasClients &&
+        _scrollController.position.pixels > 0) {
+      _saveProgress();
+    }
     _scrollController.dispose();
     super.dispose();
   }
@@ -57,6 +81,9 @@ class _BrowseSectionState extends State<BrowseSection> {
     if (_scrollController.position.pixels >
         _scrollController.position.maxScrollExtent - 400) {
       _loadMore();
+    }
+    if (_scrollController.position.pixels > 0) {
+      _saveProgress();
     }
   }
 
@@ -73,7 +100,8 @@ class _BrowseSectionState extends State<BrowseSection> {
     }
   }
 
-  Future<void> _resetDocuments() async {
+  Future<void> _resetDocuments({bool restore = false}) async {
+    final savedPages = restore ? (await _loadSavedPages(_selected ?? '')) : 0;
     setState(() {
       _documents.clear();
       _offset = 0;
@@ -81,12 +109,31 @@ class _BrowseSectionState extends State<BrowseSection> {
       _loading = false;
       _fetching = false;
     });
-    await _loadMore();
+    // 恢复模式：先把保存的页数补载回来，再跳回滚动位置。
+    for (var i = 0; i < savedPages; i++) {
+      await _loadMore();
+    }
+    if (savedPages > 0 && _scrollController.hasClients) {
+      _restoring = true;
+      final target = (_scrollMemory[_selected ?? ''] ?? 0.0)
+          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(target);
+      _restoring = false;
+    }
+  }
+
+  /// 读该分类已加载页数（prefs）。
+  Future<int> _loadSavedPages(String category) async {
+    final prefs = await AppDatabase.instance.sharedPrefs;
+    final pages = prefs.getInt('$_progressPrefix${category}_pages') ?? 0;
+    _pendingRestorePx = prefs.getDouble('$_progressPrefix${category}_px') ?? 0;
+    _scrollMemory[category] = _pendingRestorePx;
+    return pages;
   }
 
   Future<void> _loadMore() async {
     final selected = _selected;
-    if (selected == null || _fetching || !_hasMore) return;
+    if (selected == null || _fetching || _restoring || !_hasMore) return;
     _fetching = true;
     final generation = ++_generation;
     setState(() => _loading = true);
@@ -100,6 +147,7 @@ class _BrowseSectionState extends State<BrowseSection> {
           _hasMore = documents.length >= _pageSize;
           _loading = false;
         });
+        _saveProgress();
       }
     } finally {
       // 仅当本次请求仍是最新代号时才释放锁，避免过期响应清掉在飞请求的锁。
@@ -221,7 +269,7 @@ class _BrowseSectionState extends State<BrowseSection> {
                     selected: _selected == _labelOf(entry),
                     onSelected: (_) {
                       setState(() => _selected = _labelOf(entry));
-                      _resetDocuments();
+                      _resetDocuments(restore: true);
                     },
                   ),
                 ),
