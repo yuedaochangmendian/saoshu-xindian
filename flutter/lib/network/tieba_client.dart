@@ -66,6 +66,9 @@ class Floor {
   /// 楼层作者头像 portrait token（来自 post 关联的 user 映射）。
   final String portrait;
 
+  /// 楼层作者百度 uid（Post.author_id），资料页 friend_uid 用。
+  final int authorId;
+
   /// 楼中楼总数（Post.sub_post_number）。
   final int subNumber;
 
@@ -75,6 +78,7 @@ class Floor {
   const Floor(this.pid, this.seq, this.agree, this.author, this.text,
       {this.images = const [],
       this.portrait = '',
+      this.authorId = 0,
       this.subNumber = 0,
       this.subPosts = const []});
 }
@@ -153,8 +157,12 @@ class PostsPage {
   final int replyNum;
   final int viewNum;
   final List<Floor> floors;
+
+  /// 楼主头像 portrait（thread.author field 18 text 5），帖子页头部用。
+  final String authorPortrait;
   const PostsPage(this.hasMore, this.title, this.author, this.createTime,
-      this.replyNum, this.viewNum, this.floors);
+      this.replyNum, this.viewNum, this.floors,
+      {this.authorPortrait = ''});
 }
 
 /// 设备参数（参考 TiebaLite CommonRequest v11 字段集）。
@@ -333,7 +341,7 @@ class TiebaClient {
     final seen = <int>{};
     for (var page = 1; page <= 8; page++) {
       onStatus?.call('抓取 $tid 第 $page 页…');
-      final result = await _requestPosts(tid, page);
+      final result = await requestPosts(tid, page);
       if (page == 1) {
         title = result.title;
         author = result.author;
@@ -356,7 +364,8 @@ class TiebaClient {
         fname, tid, title, author, createTime, replyNum, viewNum, floors);
   }
 
-  Future<PostsPage> _requestPosts(int tid, int page) async {
+  /// 帖子单页楼层（浏览器按页拉取；fetchThread 的整帖抓取复用此接口）。
+  Future<PostsPage> requestPosts(int tid, int page) async {
     final data = PbWriter()
       ..messageField(25, _commonRequest())
       ..varintField(4, tid)
@@ -398,16 +407,18 @@ class TiebaClient {
     return writer;
   }
 
-  /// 登录验证：请求个人资料（严格对齐 TiebaLite UserApiImpl.
-  /// userProfileFlow 的 ProfileRequestData 字段组合，
-  /// /c/u/user/profile?cmd=303012）。返回 null = BDUSS 无效/未登录。
-  /// selfUid 从登录 cookie UID 取得——贴吧服务端要求自查时带 uid，
-  /// 缺省（旧数据手工粘贴的凭据）则不带尝试。
-  Future<TiebaUserProfile?> fetchProfile({String? selfUid}) async {
+  /// 请求个人资料（严格对齐 TiebaLite UserApiImpl.userProfileFlow 的
+  /// ProfileRequestData 字段组合，/c/u/user/profile?cmd=303012）。
+  /// - 自查（登录验证）：selfUid 来自登录 cookie UID，is_guest=0；
+  ///   返回 null = BDUSS 无效/未登录。
+  /// - 查看他人（浏览器资料页）：friendUid=目标楼层 author_id，
+  ///   friend_uid=3 + is_guest=1，同 TiebaLite isSelf 分支。
+  Future<TiebaUserProfile?> fetchProfile(
+      {String? selfUid, int? friendUid}) async {
     final data = PbWriter()
       ..messageField(9, _commonRequest())
       ..varintField(2, 1) // need_post_count
-      ..varintField(4, 0) // is_guest（自查=0）
+      ..varintField(4, friendUid != null ? 1 : 0) // is_guest
       ..varintField(6, 1) // pn
       ..varintField(7, 20) // rn
       ..varintField(8, 1) // has_plist
@@ -417,6 +428,9 @@ class TiebaClient {
     if (selfUid != null && selfUid.isNotEmpty) {
       final uidNum = int.tryParse(selfUid);
       if (uidNum != null) data.varintField(1, uidNum); // uid
+    }
+    if (friendUid != null && friendUid > 0) {
+      data.varintField(3, friendUid); // friend_uid
     }
     final request = (PbWriter()..messageField(1, data)).toBytes();
     final response = await _postProto('/c/u/user/profile?cmd=303012', request);
@@ -567,11 +581,13 @@ class TiebaClient {
           portrait: users[authorId]?[1] ??
               post.message(23)?.text(5) ??
               '',
+          authorId: authorId,
           subNumber: post.varint(13),
           subPosts: _parseSubPostLists(post.messages(15))));
     }
-    return PostsPage(
-        hasMore, title, author, createTime, replyNum, viewNum, floors);
+    return PostsPage(hasMore, title, author, createTime, replyNum, viewNum,
+        floors,
+        authorPortrait: thread?.message(18)?.text(5) ?? '');
   }
 
   /// {user_id: [显示名, 头像 portrait 参数]}

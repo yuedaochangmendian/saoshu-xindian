@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'pages/books_page.dart';
 import 'pages/collection_page.dart';
 import 'pages/home_page.dart';
-import 'pages/network_page.dart';
+import 'pages/tieba/forum_page.dart';
 import 'pages/settings_page.dart';
 import 'prefs.dart';
 import 'widgets/app_dock.dart';
@@ -83,7 +83,7 @@ class _HomeShellState extends State<HomeShell> {
     const pages = [
       HomePage(),
       BooksPage(),
-      NetworkSection(),
+      TiebaForumPage(),
       CollectionPage(),
       SettingsPage(),
     ];

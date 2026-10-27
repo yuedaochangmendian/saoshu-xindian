@@ -1,31 +1,32 @@
 import 'package:flutter/material.dart';
 
-import '../data/database.dart';
-import '../network/tieba_client.dart';
-import '../network/tieba_import.dart';
-import '../services/secure_store.dart';
-import '../app.dart';
-import 'reader_page.dart';
-import 'thread_preview_page.dart';
-import 'tieba_login_page.dart';
-import '../services/system_bridge.dart';
-import '../widgets/tieba_rich_text.dart';
+import '../../app.dart';
+import '../../data/database.dart';
+import '../../network/tieba_client.dart';
+import '../../network/tieba_import.dart';
+import '../../services/secure_store.dart';
+import '../../services/system_bridge.dart';
+import '../../widgets/tieba_rich_text.dart';
+import '../reader_page.dart';
+import '../tieba_login_page.dart';
+import 'thread_page.dart';
 
-/// 网络浏览：贴吧主题列表（下拉刷新、分页）+ 勾选抓取导入 + 登录 + 导入历史。
-class NetworkSection extends StatefulWidget {
-  const NetworkSection({super.key});
+/// 网络浏览主页（TiebaLite 式）：吧主题列表分页浏览 → 点进帖子页，
+/// 另保留登录/退出、导入历史与批量抓取入库。
+class TiebaForumPage extends StatefulWidget {
+  const TiebaForumPage({super.key});
 
   @override
-  State<NetworkSection> createState() => _NetworkSectionState();
+  State<TiebaForumPage> createState() => _TiebaForumPageState();
 }
 
-class _NetworkSectionState extends State<NetworkSection> {
+class _TiebaForumPageState extends State<TiebaForumPage> {
   static const _forums = ['yy小说吧', '哀伤雪刃'];
 
   TiebaClient? _client;
   String _forum = _forums.first;
 
-  /// 当前吧的 fid（requestThreads 带回，楼中楼 302002 请求需要）。
+  /// 当前吧的 fid（requestThreads 带回，帖子页楼中楼请求需要）。
   int _forumFid = 0;
   int _page = 0;
   bool _hasMore = true;
@@ -38,10 +39,12 @@ class _NetworkSectionState extends State<NetworkSection> {
   String _fetchStatus = '';
 
   /// 每个吧的已加载列表缓存：切回已浏览的吧即时显示（静态持有，
-  /// 页面被 AnimatedSwitcher 重建时缓存不丢，避免自动重载）。
+  /// 页面被切走销毁时缓存不丢，避免自动重载）。
   static final Map<String, List<ThreadSummary>> _cache = {};
   static final Map<String, int> _pageByForum = {};
   static final Map<String, bool> _hasMoreByForum = {};
+
+  TiebaClient get client => _client!;
 
   @override
   void didChangeDependencies() {
@@ -59,8 +62,6 @@ class _NetworkSectionState extends State<NetworkSection> {
     _client?.close();
     super.dispose();
   }
-
-  TiebaClient get client => _client!;
 
   void _restoreFromCacheOrReload() {
     final cached = _cache[_forum];
@@ -198,7 +199,6 @@ class _NetworkSectionState extends State<NetworkSection> {
     }
   }
 
-  /// 打开 WebView 网页登录页（验证码/扫码/账密均可），拿到 BDUSS 后验证。
   Future<void> _showLoginDialog() async {
     final prefs = AppScope.of(context).prefs;
     final messenger = ScaffoldMessenger.of(context);
@@ -225,8 +225,7 @@ class _NetworkSectionState extends State<NetworkSection> {
         message = '已登录：$cookieName';
       } else {
         // BDUSS 拿到了却查无此号且无账号名（轮询竞态窗口）：判定登录
-        // 失败就必须回滚凭据——留着未验证凭据会让 loggedIn=true 与
-        // "登录失败"提示互相矛盾（v4.4.1 同型状态机缺陷）。
+        // 失败就必须回滚凭据——留着未验证凭据会让 loggedIn 与失败提示矛盾。
         message = '登录失败：未能获取到有效账号信息';
         await SecureStore.set('tieba_bduss', '');
         await SecureStore.set('tieba_stoken', '');
@@ -236,8 +235,6 @@ class _NetworkSectionState extends State<NetworkSection> {
         _client = TiebaClient();
       }
     } catch (error) {
-      // 凭据已写入（CookieManager 也确认拿到 BDUSS）：网络原因验证
-      // 失败不代表登录失败，用 web 侧账号名兜底。
       if (cookieName.isNotEmpty) {
         await prefs.setString('tieba_username', cookieName);
         message = '已登录：$cookieName（资料验证暂不可用）';
@@ -302,15 +299,18 @@ class _NetworkSectionState extends State<NetworkSection> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) => ListView(
+        shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
           Text('导入历史（${rows.length} 条）',
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           if (rows.isEmpty)
-            Text('还没有导入过任何主题', style: TextStyle(color: scheme.onSurfaceVariant))
+            Text('还没有导入过任何主题',
+                style: TextStyle(color: scheme.onSurfaceVariant))
           else
             ...rows.map((row) {
               final collected = row['collected_at'] as String? ?? '';
@@ -326,19 +326,19 @@ class _NetworkSectionState extends State<NetworkSection> {
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
                         '回复 ${row['reply_count']} · 浏览 ${row['view_count']}'
-                        '${collected.isEmpty ? '' : ' · ${collected.substring(0, collected.length.clamp(0, 10))}'}',
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                        '${collected.isEmpty ? '' : ' · $collected'}',
+                        style: const TextStyle(fontSize: 11)),
                     trailing: IconButton(
-                      icon: Icon(Icons.delete_outline,
-                          size: 20, color: scheme.onSurfaceVariant),
+                      icon: Icon(Icons.delete_outline_rounded,
+                          size: 20, color: scheme.error),
                       tooltip: '删除导入',
                       onPressed: () async {
                         final confirmed = await showDialog<bool>(
                           context: sheetContext,
                           builder: (dialogContext) => AlertDialog(
-                            title: const Text('删除导入'),
-                            content: Text('将从本地库删除「${row['title']}」及其书目计数，确定？'),
+                            title: const Text('删除导入的主题'),
+                            content: Text(
+                                '将从本地库删除「${row['title']}」及其书目计数，确定？'),
                             actions: [
                               TextButton(
                                   onPressed: () =>
@@ -352,7 +352,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                           ),
                         );
                         if (confirmed == true) {
-                          await deleteImportedThread(db, row['doc_id'] as int);
+                          await deleteImportedThread(
+                              db, row['doc_id'] as int);
                           if (sheetContext.mounted) {
                             Navigator.of(sheetContext).pop();
                           }
@@ -380,6 +381,7 @@ class _NetworkSectionState extends State<NetworkSection> {
         ],
       ),
     );
+    if (mounted) _refreshImported();
   }
 
   @override
@@ -418,6 +420,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                             fontSize: 19,
                             fontWeight: FontWeight.w700,
                             color: scheme.onSurface)),
+                    const SizedBox(height: 4),
+                    Text('点进主题即可完整浏览（含楼中楼与图片）',
+                        style: TextStyle(
+                            fontSize: 11, color: scheme.onSurfaceVariant)),
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -435,7 +441,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                                       onSelected: _fetching
                                           ? null
                                           : (_) {
-                                              setState(() => _forum = forum);
+                                              setState(
+                                                  () => _forum = forum);
                                               _restoreFromCacheOrReload();
                                             },
                                     ),
@@ -446,8 +453,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                         ),
                         IconButton(
                           onPressed: loggedIn ? _logout : _showLoginDialog,
-                          icon: Icon(loggedIn ? Icons.logout : Icons.login,
-                              size: 20, color: scheme.onSurfaceVariant),
+                          icon: Icon(
+                              loggedIn ? Icons.logout : Icons.login,
+                              size: 20,
+                              color: scheme.onSurfaceVariant),
                           tooltip: loggedIn
                               ? (account.isEmpty
                                   ? '退出登录'
@@ -469,7 +478,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                       child: _selected.isEmpty
                           ? const SizedBox(width: double.infinity)
                           : Padding(
-                              padding: const EdgeInsets.only(top: 4, bottom: 6),
+                              padding:
+                                  const EdgeInsets.only(top: 4, bottom: 6),
                               child: SizedBox(
                                 height: 38,
                                 child: FilledButton.icon(
@@ -481,12 +491,13 @@ class _NetworkSectionState extends State<NetworkSection> {
                                   onPressed: _fetchSelected,
                                   icon: const Icon(Icons.download_rounded,
                                       size: 18),
-                                  label: Text('抓取选中 (${_selected.length})'),
+                                  label: Text(
+                                      '抓取选中 (${_selected.length})'),
                                 ),
                               ),
                             ),
                     ),
-                    if (_error != null)
+                    if (_error != null && _threads.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(_error!,
@@ -505,24 +516,33 @@ class _NetworkSectionState extends State<NetworkSection> {
                               if (!_hasMore && _threads.isNotEmpty) {
                                 return const SizedBox.shrink();
                               }
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                              if (_threads.isEmpty && !_loading) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 60),
+                                  child: Center(
+                                    child: Text(
+                                        _error ?? '下拉即可刷新',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color:
+                                                scheme.onSurfaceVariant)),
+                                  ),
+                                );
+                              }
+                              if (_threads.isNotEmpty && !_loading) {
+                                // build 期间不能直接 setState：下一帧再翻页。
+                                WidgetsBinding.instance.addPostFrameCallback(
+                                    (_) => _loadMore());
+                              }
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 24),
                                 child: Center(
-                                  child: _loading
-                                      ? const SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                              strokeWidth: 2))
-                                      : _threads.isEmpty
-                                          ? Text(_error == null ? '下拉即可刷新' : '',
-                                              style: TextStyle(
-                                                  color:
-                                                      scheme.onSurfaceVariant))
-                                          : OutlinedButton(
-                                              onPressed: _loadMore,
-                                              child: const Text('加载更多')),
+                                  child: SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2)),
                                 ),
                               );
                             }
@@ -530,7 +550,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                             final done = _imported.contains(thread.tid);
                             final checked = _selected.contains(thread.tid);
                             final date =
-                                TiebaImporter.networkDate(thread.createTime);
+                                TiebaImporter.networkDate(
+                                    thread.createTime);
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: Material(
@@ -538,21 +559,17 @@ class _NetworkSectionState extends State<NetworkSection> {
                                 borderRadius: BorderRadius.circular(20),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(20),
-                                  onTap: done
-                                      ? null
-                                      : () async {
-                                          await Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  ThreadPreviewPage(
-                                                    forum: _forum,
-                                                    fid: _forumFid,
-                                                    thread: thread,
-                                                  ),
-                                            ),
-                                          );
-                                          _refreshImported();
-                                        },
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => TiebaThreadPage(
+                                          fname: _forum,
+                                          fid: _forumFid,
+                                          tid: thread.tid,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 6),
@@ -561,6 +578,11 @@ class _NetworkSectionState extends State<NetworkSection> {
                                         Checkbox(
                                           value: done ? true : checked,
                                           tristate: true,
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize
+                                                  .shrinkWrap,
                                           fillColor:
                                               WidgetStateProperty.resolveWith(
                                                   (states) => done
@@ -570,10 +592,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                                               ? null
                                               : (value) => setState(() {
                                                     value == true
-                                                        ? _selected
-                                                            .add(thread.tid)
-                                                        : _selected
-                                                            .remove(thread.tid);
+                                                        ? _selected.add(
+                                                            thread.tid)
+                                                        : _selected.remove(
+                                                            thread.tid);
                                                   }),
                                         ),
                                         Expanded(
@@ -586,11 +608,10 @@ class _NetworkSectionState extends State<NetworkSection> {
                                                   if (thread.authorPortrait
                                                       .isNotEmpty) ...[
                                                     TiebaAvatar(
-                                                      radius: 10,
-                                                      portrait:
-                                                          thread.authorPortrait,
-                                                      name: thread.author,
-                                                    ),
+                                                        radius: 10,
+                                                        portrait: thread
+                                                            .authorPortrait,
+                                                        name: thread.author),
                                                     const SizedBox(width: 6),
                                                   ],
                                                   Expanded(
@@ -600,11 +621,13 @@ class _NetworkSectionState extends State<NetworkSection> {
                                                           : thread.title,
                                                       maxLines: 2,
                                                       overflow:
-                                                          TextOverflow.ellipsis,
+                                                          TextOverflow
+                                                              .ellipsis,
                                                       style: TextStyle(
                                                           fontSize: 14,
                                                           fontWeight:
-                                                              FontWeight.w600,
+                                                              FontWeight
+                                                                  .w600,
                                                           color: done
                                                               ? scheme
                                                                   .onSurfaceVariant
@@ -622,8 +645,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                                                 '${done ? ' · 已导入' : ''}',
                                                 style: TextStyle(
                                                     fontSize: 11,
-                                                    color: scheme
-                                                        .onSurfaceVariant),
+                                                    color:
+                                                        scheme.onSurfaceVariant),
                                               ),
                                             ],
                                           ),
@@ -647,8 +670,8 @@ class _NetworkSectionState extends State<NetworkSection> {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
                       color: scheme.primaryContainer,
                       borderRadius: BorderRadius.circular(20),

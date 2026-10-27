@@ -7,7 +7,7 @@ import '../network/tieba_import.dart';
 import '../prefs.dart';
 import '../widgets/document_card.dart';
 import 'reader_page.dart';
-import 'thread_preview_page.dart';
+import 'tieba/thread_page.dart';
 
 /// 搜索页：进入自动弹出输入法，本地标题/全文 + 网络三模式，最近 10 条记录。
 class SearchPage extends StatefulWidget {
@@ -276,7 +276,7 @@ class _SearchPageState extends State<SearchPage> {
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) =>
-                    ThreadPreviewPage(forum: thread.forum, thread: thread),
+                    TiebaThreadPage(fname: thread.forum, tid: thread.tid),
               )),
             ),
           ),
