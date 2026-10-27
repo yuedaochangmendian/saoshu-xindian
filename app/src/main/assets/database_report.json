@@ -1,13 +1,13 @@
 {
-  "database": "C:\\Users\\ljlgg\\Documents\\Codex\\2026-10-20\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
-  "bytes": 346677248,
+  "database": "E:\\hu\\work\\app\\app\\src\\main\\assets\\saoshu.db",
+  "bytes": 355377152,
   "integrity": "ok",
   "source": "扫书宝典 3.10.250109；yy小说吧/哀伤雪刃吧提取；优书网；BookSift",
   "data_cutoff": "2026-10-23",
   "documents": 128681,
   "books": 76689,
   "source_rows": 152203,
-  "extract_metadata": 2538,
+  "extract_metadata": 2042,
   "categories": {
     "书评": 31398,
     "扫书": 52540,
@@ -45,5 +45,27 @@
     "booksift_source_rows": 47448
   },
   "storage_mode": "all-substantive-reviews merge with deduplicated App compatibility schema",
-  "generated_at": "2026-10-26T16:49:39.776071+00:00"
+  "generated_at": "2026-10-27T02:03:53.125300+00:00",
+  "user_version": 18,
+  "maintenance": {
+    "date": "2026-10-27",
+    "extract_metadata_orphans_deleted": 496,
+    "books_best_document_id_repaired": 12,
+    "books_dangling_kept": 1188,
+    "indexes_prebuilt": [
+      "documents_date_idx",
+      "documents_title_norm_idx",
+      "books_review_latest_idx",
+      "extract_metadata_forum_idx",
+      "documents_forum_idx",
+      "documents_category_idx",
+      "documents_category_date_idx",
+      "books_review_id_idx"
+    ],
+    "analyze": true,
+    "vacuum": true,
+    "asset_container": "gzip (zlib raw stream was early versions; Flutter _copyFromAssets now detects both)",
+    "final_gz_bytes": 130638988,
+    "sha1": "c33c566d3ec59d066ce1f4c040a72db60073de48"
+  }
 }

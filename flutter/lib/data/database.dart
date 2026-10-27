@@ -21,7 +21,7 @@ class AppDatabase {
   AppDatabase._();
   static final AppDatabase instance = AppDatabase._();
 
-  static const int dbAssetVersion = 17;
+  static const int dbAssetVersion = 18;
 
   Database? _db;
   final List<void Function(String)> _statusListeners = [];
@@ -105,17 +105,41 @@ class AppDatabase {
     return db;
   }
 
-  /// 资产以 gzip 存储（130MB，约为原始 33%），流式解压写盘，
-  /// 避免一次性载入 332MB 原始字节（低内存设备友好）。
+  /// 资产以 gzip 存储（约 130MB，原始库的 38%），分块流式解压写盘，
+  /// 避免一次性载入 346MB 原始字节（低内存设备友好）。
+  ///
+  /// 兼容两种历史容器：标准 gzip（1f 8b 头，现行打包格式）与裸
+  /// zlib（78 xx 头，早期版本）。dart:io 的 ZLibDecoder 默认只认
+  /// zlib——gzip 必须剥掉定长头+可选字段后用 raw inflate。
+  /// 切片全部用 Uint8List.view 共享原始缓冲，不解压不复制。
   Future<void> _copyFromAssets(String target) async {
     _status('正在解压随包数据库…');
     final data = await rootBundle.load('assets/saoshu.db.gz');
-    final compressed =
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final compressed = Uint8List.view(
+        data.buffer, data.offsetInBytes, data.lengthInBytes);
+    final ZLibDecoder decoder;
+    var bodyOffset = 0;
+    if (compressed.length > 2 &&
+        compressed[0] == 0x1f &&
+        compressed[1] == 0x8b) {
+      bodyOffset = _gzipBodyOffset(compressed);
+      decoder = ZLibDecoder(raw: true);
+    } else {
+      decoder = ZLibDecoder();
+    }
+    const chunkSize = 4 << 20;
+    final chunks = <Uint8List>[];
+    for (var off = bodyOffset; off < compressed.length;) {
+      final end = (off + chunkSize).clamp(0, compressed.length);
+      // 切片继续基于原始 ByteData.buffer，避免任何复制。
+      chunks.add(Uint8List.view(data.buffer,
+          data.offsetInBytes + off, end - off));
+      off = end;
+    }
     final sink = File(target).openWrite();
     try {
-      await ZLibDecoder()
-          .bind(Stream<Uint8List>.fromIterable([compressed]))
+      await decoder
+          .bind(Stream<Uint8List>.fromIterable(chunks))
           .pipe(sink);
     } catch (error) {
       await sink.close();
@@ -126,6 +150,33 @@ class AppDatabase {
       rethrow;
     }
     _status('数据库就绪');
+  }
+
+  /// gzip：定长头 10 字节之后按 FLG 跳过 FEXTRA/FNAME/FCOMMENT/FHCRC，
+  /// 返回 deflate 体偏移；截断即抛（宁失败勿写出坏库）。
+  int _gzipBodyOffset(Uint8List b) {
+    if (b.length < 10) throw StateError('gzip header truncated');
+    final flg = b[3];
+    var i = 10;
+    if ((flg & 0x04) != 0) {
+      if (i + 2 > b.length) throw StateError('gzip FEXTRA truncated');
+      i += 2 + (b[i] | (b[i + 1] << 8));
+    }
+    if ((flg & 0x08) != 0) {
+      while (i < b.length && b[i] != 0) {
+        i++;
+      }
+      i++;
+    }
+    if ((flg & 0x10) != 0) {
+      while (i < b.length && b[i] != 0) {
+        i++;
+      }
+      i++;
+    }
+    if ((flg & 0x02) != 0) i += 2;
+    if (i >= b.length) throw StateError('gzip body missing');
+    return i;
   }
 
   Future<void> _initializeLocalSchema(Database db) async {
