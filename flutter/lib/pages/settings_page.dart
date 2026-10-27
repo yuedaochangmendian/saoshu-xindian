@@ -609,6 +609,21 @@ class _UpdateSectionState extends State<_UpdateSection> {
   String _currentVersion = '';
   UpdateInfo? _latest;
 
+  /// 预览版更新频道（prefs update_prerelease）：开启后检查包含 prerelease。
+  bool _prerelease = false;
+  bool _channelLoaded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // initState 里不能碰 InheritedWidget（AppScope.of 会 assert）
+    if (!_channelLoaded) {
+      _channelLoaded = true;
+      _prerelease =
+          AppScope.of(context).prefs.getBool('update_prerelease') ?? false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -630,7 +645,8 @@ class _UpdateSectionState extends State<_UpdateSection> {
       _latest = null;
     });
     try {
-      final latest = await UpdateService.checkLatest();
+      final latest =
+          await UpdateService.checkLatest(includePrerelease: _prerelease);
       final current = _currentVersion;
       final isNewer = current.isEmpty
           ? false
@@ -639,7 +655,10 @@ class _UpdateSectionState extends State<_UpdateSection> {
         setState(() {
           _checking = false;
           _latest = latest;
-          _status = isNewer ? '发现新版本 ${latest.tag}' : '已是最新版本（${latest.tag}）';
+          _status = isNewer
+              ? '发现新版本 ${latest.tag}'
+                  '${latest.prerelease ? '（预览版）' : ''}'
+              : '已是最新版本（${latest.tag}）';
         });
       }
     } catch (error) {
@@ -761,6 +780,17 @@ class _UpdateSectionState extends State<_UpdateSection> {
                   label: Text(mirror.label),
                 ),
               ],
+            ),
+            const SizedBox(height: 4),
+            _SwitchCard(
+              title: '接收预览版更新',
+              hint: '开启后检查更新会包含预发布版本（抢先体验，功能可能不稳定）',
+              value: _prerelease,
+              onChanged: (value) async {
+                setState(() => _prerelease = value);
+                final prefs = AppScope.of(context).prefs;
+                await prefs.setBool('update_prerelease', value);
+              },
             ),
           ],
         ),

@@ -8,8 +8,11 @@ class UpdateInfo {
   final String notes;
   final String apkUrl;
   final DateTime? publishedAt;
+
+  /// 该 Release 是否 GitHub 预发布（prerelease）标记。
+  final bool prerelease;
   const UpdateInfo(this.tag, this.name, this.notes, this.apkUrl,
-      {this.publishedAt});
+      {this.publishedAt, this.prerelease = false});
 }
 
 /// 下载镜像源定义（作用于 GitHub release 资产的下载地址前缀）。
@@ -31,42 +34,71 @@ DownloadMirror mirrorById(String id) => downloadMirrors
     .firstWhere((m) => m.id == id, orElse: () => downloadMirrors.first);
 
 class UpdateService {
+  static const _apiBase =
+      'https://api.github.com/repos/yuedaochangmendian/saoshu-xindian';
+
   /// 查询最新 Release。GitHub API 直连（镜像源只作用于下载地址）。
-  static Future<UpdateInfo> checkLatest() async {
+  ///
+  /// [includePrerelease] 为 true 时走「预览版更新频道」：取 Release 列表
+  /// （created_at 降序）里第一个带 APK 资产的非草稿发布——本项目的预览版
+  /// （prerelease）因此也能被检查到；为 false 时维持 /releases/latest
+  /// 语义（仅正式版）。db-latest / ci-log-* 等无 APK 资产的发布天然跳过。
+  static Future<UpdateInfo> checkLatest(
+      {bool includePrerelease = false}) async {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 12);
     try {
-      final request = await client.getUrl(Uri.parse(
-          'https://api.github.com/repos/yuedaochangmendian/saoshu-xindian/releases/latest'));
-      request.headers.set('Accept', 'application/vnd.github+json');
-      final response =
-          await request.close().timeout(const Duration(seconds: 15));
-      final body = await response.transform(utf8.decoder).join();
-      if (response.statusCode != 200) {
-        throw Exception('GitHub API ${response.statusCode}');
-      }
-      final json = jsonDecode(body) as Map<String, Object?>;
-      final tag = (json['tag_name'] ?? '') as String;
-      final assets = (json['assets'] as List? ?? const []);
-      String apkUrl = '';
-      for (final asset in assets) {
-        final a = asset as Map<String, Object?>;
-        final name = (a['name'] ?? '') as String;
-        if (name.endsWith('.apk')) {
-          apkUrl = (a['browser_download_url'] ?? '') as String;
-          break;
+      if (includePrerelease) {
+        final releases = await _getJson(
+            client, '$_apiBase/releases?per_page=20');
+        // /releases 列表端点返回数组（/releases/latest 才是对象）
+        for (final item in
+            (releases as List).whereType<Map<String, Object?>>()) {
+          if (item['draft'] == true) continue;
+          final info = _toUpdateInfo(item);
+          if (info.apkUrl.isNotEmpty) return info;
         }
+        throw Exception('未找到带 APK 的发布');
       }
-      return UpdateInfo(
-        tag,
-        (json['name'] ?? tag) as String,
-        (json['body'] ?? '') as String,
-        apkUrl,
-        publishedAt: DateTime.tryParse((json['published_at'] ?? '') as String),
-      );
+      final json = await _getJson(client, '$_apiBase/releases/latest');
+      return _toUpdateInfo(json as Map<String, Object?>);
     } finally {
       client.close();
     }
+  }
+
+  static Future<Object?> _getJson(HttpClient client, String url) async {
+    final request = await client.getUrl(Uri.parse(url));
+    request.headers.set('Accept', 'application/vnd.github+json');
+    final response =
+        await request.close().timeout(const Duration(seconds: 15));
+    final body = await response.transform(utf8.decoder).join();
+    if (response.statusCode != 200) {
+      throw Exception('GitHub API ${response.statusCode}');
+    }
+    return jsonDecode(body);
+  }
+
+  static UpdateInfo _toUpdateInfo(Map<String, Object?> json) {
+    final tag = (json['tag_name'] ?? '') as String;
+    final assets = (json['assets'] as List? ?? const []);
+    String apkUrl = '';
+    for (final asset in assets) {
+      final a = asset as Map<String, Object?>;
+      final name = (a['name'] ?? '') as String;
+      if (name.endsWith('.apk')) {
+        apkUrl = (a['browser_download_url'] ?? '') as String;
+        break;
+      }
+    }
+    return UpdateInfo(
+      tag,
+      (json['name'] ?? tag) as String,
+      (json['body'] ?? '') as String,
+      apkUrl,
+      publishedAt: DateTime.tryParse((json['published_at'] ?? '') as String),
+      prerelease: json['prerelease'] == true,
+    );
   }
 
   /// 按镜像源生成实际下载地址。

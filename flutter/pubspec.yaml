@@ -1,7 +1,7 @@
 name: saoshu_xindian
 description: 扫书新典 —— 离线扫书资料阅读器（Flutter 版）
 publish_to: 'none'
-version: 4.7.0+112
+version: 4.7.1+113
 
 environment:
   sdk: ^3.0.0
