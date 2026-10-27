@@ -1,5 +1,6 @@
 package com.saoshu.saoshu_xindian
 
+import android.Manifest
 import android.app.Activity
 import android.content.ContentValues
 import android.os.Build
@@ -30,6 +31,11 @@ class MainActivity : FlutterActivity() {
 
     private var pinResult: MethodChannel.Result? = null
     private val pickImageCode = 4201
+
+    // saveToDownloads 在 API<29 需要 WRITE_EXTERNAL_STORAGE 运行时授权
+    private var saveResult: MethodChannel.Result? = null
+    private var pendingSave: Pair<String, ByteArray>? = null
+    private val savePermCode = 4301
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -138,14 +144,25 @@ class MainActivity : FlutterActivity() {
                                     Environment.DIRECTORY_DOWNLOADS + "/扫书新典/$name"
                                 )
                             } else {
-                                @Suppress("DEPRECATION")
-                                val base = Environment.getExternalStorageDirectory()
-                                val dir = File(base, "Download/扫书新典")
-                                if (!dir.exists() && !dir.mkdirs()) {
-                                    throw IOException("无法创建目录 ${dir.path}")
+                                // API 24-28：需运行时写外部存储权限——先请求，
+                                // 授权回调里完成写入，拒绝才报错（旧实现无权限
+                                // 直接写，必然静默失败）。
+                                if (checkSelfPermission(
+                                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    saveResult = result
+                                    pendingSave = name to bytes
+                                    requestPermissions(
+                                        arrayOf(
+                                            Manifest.permission
+                                                .WRITE_EXTERNAL_STORAGE
+                                        ),
+                                        savePermCode
+                                    )
+                                    return@setMethodCallHandler
                                 }
-                                File(dir, name).writeBytes(bytes)
-                                result.success(dir.absolutePath + "/" + name)
+                                legacyWriteToDownloads(name, bytes, result)
                             }
                         } catch (e: Exception) {
                             result.error("unavailable", e.message, null)
@@ -200,7 +217,47 @@ class MainActivity : FlutterActivity() {
                 }
             }
     }
+private fun legacyWriteToDownloads(
+        name: String,
+        bytes: ByteArray,
+        result: MethodChannel.Result
+    ) {
+        try {
+            @Suppress("DEPRECATION")
+            val base = Environment.getExternalStorageDirectory()
+            val dir = File(base, "Download/扫书新典")
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw IOException("无法创建目录 ${dir.path}")
+            }
+            File(dir, name).writeBytes(bytes)
+            result.success(dir.absolutePath + "/" + name)
+        } catch (e: Exception) {
+            result.error("unavailable", e.message, null)
+        }
+    }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != savePermCode) return
+        val pending = saveResult
+        val payload = pendingSave
+        saveResult = null
+        pendingSave = null
+        if (pending == null || payload == null) return
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            legacyWriteToDownloads(payload.first, payload.second, pending)
+        } else {
+            pending.error(
+                "permission",
+                "未授予存储权限，无法写入公共 Download 目录",
+                null
+            )
+        }
+    }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != pickImageCode) return

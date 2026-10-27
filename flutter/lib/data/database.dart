@@ -153,7 +153,10 @@ class AppDatabase {
   }
 
   /// gzip：定长头 10 字节之后按 FLG 跳过 FEXTRA/FNAME/FCOMMENT/FHCRC，
-  /// 返回 deflate 体偏移；截断即抛（宁失败勿写出坏库）。
+  /// 返回 deflate 体偏移；**头部**截断即抛（宁失败勿写出坏库）。
+  /// 注意：body 级截断 raw inflate 不报错（Z_BUF_ERROR 静默收尾）、
+  /// gzip 尾 CRC 不校验——资产完整性由发布侧 roundtrip sha1 验证保证
+  /// （见 AGENTS.md DB SOP），这里不做二次校验。
   int _gzipBodyOffset(Uint8List b) {
     if (b.length < 10) throw StateError('gzip header truncated');
     final flg = b[3];

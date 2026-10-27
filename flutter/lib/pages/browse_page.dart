@@ -107,6 +107,7 @@ class _BrowseSectionState extends State<BrowseSection> {
 
   /// 持久化当前分类进度。offset 显式传入时（dispose 已在控制器销毁前
   /// 读取位置）用它，否则读实时位置；绝不跨 dispose 之后再碰控制器。
+  /// px=0（用户回到了顶部）同样落盘——跳过 0 值会让陈旧深位置复活。
   Future<void> _saveProgress({double? offset}) async {
     final selected = _selected;
     if (selected == null || _restoring || _restoreLoading || _filtered) {
@@ -116,7 +117,6 @@ class _BrowseSectionState extends State<BrowseSection> {
         (_scrollController.hasClients
             ? _scrollController.position.pixels
             : (_scrollMemory[selected] ?? 0));
-    if (px <= 0) return;
     _scrollMemory[selected] = px;
     final prefs = await AppDatabase.instance.sharedPrefs;
     final pages = (_offset / _pageSize).ceil();
@@ -131,7 +131,7 @@ class _BrowseSectionState extends State<BrowseSection> {
         ? _scrollController.position.pixels
         : null;
     _scrollController.dispose();
-    if (px != null && px > 0) {
+    if (px != null) {
       _saveProgress(offset: px);
     }
     super.dispose();
@@ -140,8 +140,9 @@ class _BrowseSectionState extends State<BrowseSection> {
   void _onScroll() {
     final selected = _selected;
     final px = _scrollController.position.pixels;
-    // 仅内存跟踪；写 prefs 发生在离开页面 / 切换分类时，不再每帧落盘。
-    if (selected != null && px > 0) _scrollMemory[selected] = px;
+    // 仅内存跟踪（含回顶的 0）；prefs 落盘发生在离开页面 / 切换分类 /
+    // 每页加载完成时（后者防进程被杀丢进度），不再每帧落盘。
+    if (selected != null) _scrollMemory[selected] = px;
     if (px > _scrollController.position.maxScrollExtent - 400) {
       _loadMore();
     }
@@ -159,6 +160,9 @@ class _BrowseSectionState extends State<BrowseSection> {
       final pending = _scope?.browseJump.value ?? _pendingJump;
       if (pending != null) {
         _pendingJump = null;
+        // 消费即清值：ValueNotifier 同值不通知，残留会让下次点同一
+        // 分类静默失效（首页快捷入口"点了没反应"）。
+        _scope?.browseJump.value = null;
         final hit = _values
             .where((e) => _labelOf(e) == pending)
             .isNotEmpty;

@@ -6,11 +6,14 @@
     例：python tools/release.py 4.5.2 "feat: xxx"
 
 流程（任一步失败即中止）：
-    1. 校验版本号格式（X.Y.Z）且高于当前版本、tag 不存在
-    2. 校验 pubspec.lock 无镜像源污染（flutter-io.cn）
-    3. bump pubspec version（正则替换，build 号 +1，保持原换行符）
-    4. git add flutter/ + commit + push
-    5. gh workflow run flutter-release.yml（dispatch 前再次检查 tag）
+    1. 校验版本号格式（X.Y.Z）且高于当前版本
+    2. tag 查重（区分 404 与网络错误；错误重试后仍失败即中止）
+    3. 校验 pubspec.lock 无镜像源污染（flutter-io.cn）
+    4. bump pubspec version（正则替换，build 号 +1；read_bytes 按原始
+       字节原位写回，换行符不可能被规范化——read_text 会把 CRLF 抹成
+       LF 令事后检测恒失效，是 v4.6.3 code review 点名的反面教材）
+    5. git add flutter/ + commit + push
+    6. dispatch 前复查 tag，再 gh workflow run flutter-release.yml
 
 注意：本脚本不做本机构建验证（按项目规则，验证以 CI 为准）。
 """
@@ -40,6 +43,26 @@ def ok(message):
     print(f'OK: {message}')
 
 
+def check_tag(tag):
+    """tag 查重分型：'exists'=已存在 / 'free'=不存在(404) / 'error'=查询失败。
+
+    gh api 的 TLS 抖动、未登录、rate-limit 与 404 都返回非零码，只凭
+    returncode 会把一次网络抖动当成「tag 不存在」放行（v4.5.1 撞 tag
+    事故的机制面），因此按输出内容分型，错误重试一次后拒绝猜测。
+    """
+    last = ''
+    for _ in range(2):
+        r = run(['gh', 'api', f'repos/{REPO}/releases/tags/{tag}'])
+        if r.returncode == 0:
+            return 'exists'
+        blob = (r.stderr or '') + (r.stdout or '')
+        if 'Not Found' in blob or '"404"' in blob or 'HTTP 404' in blob:
+            return 'free'
+        last = blob[:160]
+    print(f'WARN: tag check failed: {last}')
+    return 'error'
+
+
 def main():
     if len(sys.argv) < 2:
         fail('usage: python tools/release.py <version> [commit message]')
@@ -47,8 +70,8 @@ def main():
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         fail(f'version format should be X.Y.Z, got: {version}')
 
-    # 1) 当前版本对比
-    pubspec = PUBSPEC.read_text(encoding='utf-8')
+    # 1) 当前版本对比（read_bytes：原始内容直读，换行与磁盘一致）
+    pubspec = PUBSPEC.read_bytes().decode('utf-8')
     m = re.search(r'version: ([^\s]+)', pubspec)
     if not m:
         fail('pubspec.yaml missing version line')
@@ -60,9 +83,12 @@ def main():
 
     # 2) tag 查重
     tag = f'v{version}'
-    check = run(['gh', 'api', f'repos/{REPO}/releases/tags/{tag}'])
-    if check.returncode == 0:
+    state = check_tag(tag)
+    if state == 'exists':
         fail(f'release with tag {tag} already exists - use a higher version')
+    if state == 'error':
+        fail('cannot verify tag availability (gh api errors) - '
+             'check network/proxy and rerun')
     print(f'tag {tag} available')
 
     # 3) lock 镜像检查
@@ -71,18 +97,20 @@ def main():
         fail('pubspec.lock contains mirror flutter-io.cn - restore it first: '
              'git checkout -- flutter/pubspec.lock')
 
-    # 4) bump（保持原换行符）
+    # 4) bump：原始字符串上替换版本行，字节级写回，换行符原样保留
     build_match = re.search(r'\+(\d+)', m.group(1))
     build = (int(build_match.group(1)) + 1) if build_match else 1
     new_version_line = f'version: {version}+{build}'
-    pubspec = re.sub(r'version: [^\s]+', new_version_line, pubspec, count=1)
-    nl = '\r\n' if '\r\n' in pubspec else '\n'
-    PUBSPEC.write_bytes(nl.join(pubspec.split(nl)).encode('utf-8'))
+    new_pubspec = re.sub(r'version: [^\s]+', new_version_line,
+                         pubspec, count=1)
+    PUBSPEC.write_bytes(new_pubspec.encode('utf-8'))
     ok(f'version bumped: {m.group(1)} -> {new_version_line}')
 
     # 5) 提交
     message = sys.argv[2] if len(sys.argv) > 2 else f'release: v{version}'
-    run(['git', 'add', 'flutter/'])
+    add = run(['git', 'add', 'flutter/'])
+    if add.returncode != 0:
+        fail(f'git add failed: {add.stderr[:200]}')
     status = run(['git', 'status', '--short', '--', 'flutter/'])
     if not status.stdout.strip():
         fail('no changes to commit under flutter/')
@@ -95,7 +123,11 @@ def main():
         fail(f'push failed: {push.stderr[:200]}')
     ok('pushed')
 
-    # 6) dispatch
+    # 6) dispatch 前复查 tag（bump→push 窗口期可能已撞车）
+    state = check_tag(tag)
+    if state != 'free':
+        fail(f'tag {tag} re-check before dispatch failed ({state}) - '
+             'commit is already pushed, do NOT re-run the script blindly')
     dispatch = run(['gh', 'workflow', 'run', 'flutter-release.yml',
                     '--repo', REPO, '--ref', 'main'])
     if dispatch.returncode != 0:

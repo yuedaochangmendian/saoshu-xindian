@@ -76,8 +76,8 @@ String _emoticonUrl(int id) =>
     'http://static.tieba.baidu.com/tb/editor/images/client/image_emoticon$id'
     '.png';
 
-/// 楼主头像 URL。TiebaLite 主用 portrait（无 n 后缀）；
-/// portraitn 是历史变体，保留作为加载失败后的第二回落。
+/// 楼主头像 URL。TiebaLite 主用 portrait（无 n 后缀），本实现同源；
+/// 加载失败由 TiebaAvatar 回退名字首字符。
 String tiebaAvatarUrl(String portrait) {
   if (portrait.startsWith('http://') || portrait.startsWith('https://')) {
     return portrait;
