@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../data/database.dart';
-import '../data/models.dart';
 import '../services/system_bridge.dart';
 import '../widgets/category_style.dart';
-import '../widgets/document_card.dart';
-import 'reader_page.dart';
 import 'search_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -14,6 +11,71 @@ class HomePage extends StatefulWidget {
 
   @override
   State<HomePage> createState() => _HomePageState();
+}
+
+/// 功能入口卡片：图标 + 标题 + 说明，点击进入对应页面。
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String desc;
+  final VoidCallback onTap;
+  const _ActionCard(
+      {required this.icon,
+      required this.iconColor,
+      required this.title,
+      required this.desc,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 22, color: iconColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurface)),
+                    Text(desc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 11, color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  size: 20, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CategoryTile extends StatelessWidget {
@@ -59,13 +121,11 @@ class _CategoryTile extends StatelessWidget {
 
 class _HomePageState extends State<HomePage> {
   final _db = AppDatabase.instance;
-  bool _loading = true;
   bool _dbPreparing = false;
   String _prepareStatus = '';
   int _docs = 0;
   int _books = 0;
   int _sources = 0;
-  List<Document> _random = const [];
   List<Map<String, Object?>> _categories = const [];
   String _versionLabel = 'v4';
 
@@ -92,35 +152,27 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> _load({bool refresh = false}) async {
-    if (refresh) {
-      setState(() => _loading = true);
-    } else {
-      setState(() => _dbPreparing = true);
-    }
+  Future<void> _load() async {
+    setState(() => _dbPreparing = true);
     try {
       final stats = await Future.wait(
           [_db.documentCount(), _db.bookCount(), _db.sourceCount()]);
       final docs = stats[0];
       final books = stats[1];
       final sources = stats[2];
-      final random = await _db.randomHomeDocuments(limit: 12);
       final categories = await _db.categoriesWithCounts();
       if (mounted) {
         setState(() {
           _docs = docs;
           _books = books;
           _sources = sources;
-          _random = random;
           _categories = categories;
-          _loading = false;
           _dbPreparing = false;
         });
       }
     } catch (error) {
       if (mounted) {
         setState(() {
-          _loading = false;
           _dbPreparing = false;
           _prepareStatus = '数据库出错：$error';
         });
@@ -128,10 +180,10 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _openReader(Document document) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ReaderPage(documentId: document.id),
-    ));
+  void _gotoTab(int index) {
+    final scope = AppScope.of(context);
+    scope.dockHidden.value = false;
+    scope.tabIndex.value = index;
   }
 
   void _openSearch() {
@@ -141,10 +193,8 @@ class _HomePageState extends State<HomePage> {
 
   /// 首页分类入口：跳转书库-分类浏览并选中该分类。
   void _jumpCategory(String name) {
-    final scope = AppScope.of(context);
-    scope.browseJump.value = name;
-    scope.dockHidden.value = false;
-    scope.tabIndex.value = 1;
+    AppScope.of(context).browseJump.value = name;
+    _gotoTab(1);
   }
 
   @override
@@ -259,40 +309,54 @@ class _HomePageState extends State<HomePage> {
                           (entry['category'] ?? '') as String)),
               ],
             ),
-            const SizedBox(height: 18),
-            Row(
+            const SizedBox(height: 16),
+            Text('功能入口',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 2.1,
               children: [
-                Expanded(
-                  child: Text('随机扫书 · 推书 · 避雷',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface)),
+                _ActionCard(
+                  icon: Icons.public_rounded,
+                  iconColor: const Color(0xFF4477E0),
+                  title: '网络浏览',
+                  desc: '贴吧抓取导入',
+                  onTap: () => _gotoTab(2),
                 ),
-                TextButton(
-                  onPressed: _loading ? null : () => _load(refresh: true),
-                  child: const Text('换一批'),
+                _ActionCard(
+                  icon: Icons.menu_book_rounded,
+                  iconColor: const Color(0xFF7E57C2),
+                  title: '名词解释',
+                  desc: '扫书黑话词典',
+                  onTap: () {
+                    AppScope.of(context).browseJump.value = '__glossary__';
+                    _gotoTab(1);
+                  },
+                ),
+                _ActionCard(
+                  icon: Icons.star_rounded,
+                  iconColor: const Color(0xFFA66A2E),
+                  title: '收藏与简记',
+                  desc: '星标与笔记',
+                  onTap: () => _gotoTab(3),
+                ),
+                _ActionCard(
+                  icon: Icons.backup_rounded,
+                  iconColor: const Color(0xFF009688),
+                  title: '数据与设置',
+                  desc: '备份 · 主题 · 更新',
+                  onTap: () => _gotoTab(4),
                 ),
               ],
             ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_random.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Text('暂无内容',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.onSurfaceVariant)),
-              )
-            else
-              ..._random.map((d) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child:
-                        DocumentCard(document: d, onTap: () => _openReader(d)),
-                  )),
           ],
         ),
       ),

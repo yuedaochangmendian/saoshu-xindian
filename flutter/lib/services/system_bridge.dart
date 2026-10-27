@@ -39,6 +39,13 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// 清空系统 WebView CookieManager 全部 cookie（退出登录时调用）。
+  static Future<void> clearTiebaCookies() async {
+    try {
+      await _channel.invokeMethod('clearTiebaCookies');
+    } catch (_) {}
+  }
+
   /// 读取系统 WebView CookieManager 中指定 URL 的 cookie，
   /// 含 HttpOnly 的 BDUSS/STOKEN（document.cookie 拿不到的那些）。
   static Future<String?> getTiebaCookies(String url) async {

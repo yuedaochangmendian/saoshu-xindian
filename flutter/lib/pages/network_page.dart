@@ -8,6 +8,7 @@ import '../app.dart';
 import 'reader_page.dart';
 import 'thread_preview_page.dart';
 import 'tieba_login_page.dart';
+import '../services/system_bridge.dart';
 import '../widgets/tieba_rich_text.dart';
 
 /// 网络浏览：贴吧主题列表（下拉刷新、分页）+ 勾选抓取导入 + 登录 + 导入历史。
@@ -201,25 +202,37 @@ class _NetworkSectionState extends State<NetworkSection> {
       MaterialPageRoute(builder: (_) => const TiebaLoginPage()),
     );
     if (credentials == null || !mounted) return;
-    final (bduss, stoken) = credentials;
+    final (bduss, stoken, uid, cookieName) = credentials;
     setState(() => _loading = true);
     await SecureStore.set('tieba_bduss', bduss);
     await SecureStore.set('tieba_stoken', stoken);
+    await prefs.setString('tieba_uid', uid);
     _client?.close();
     _client = TiebaClient(bduss: bduss, stoken: stoken);
     String message;
     try {
-      final profile = await client.fetchProfile();
-      if (profile == null) {
-        message = '登录失败：未能从网页获取到有效账号';
-        await prefs.setString('tieba_username', '');
-      } else {
+      final profile = await client.fetchProfile(selfUid: uid);
+      if (profile != null) {
         await prefs.setString('tieba_username', profile.name);
         message = '已登录：${profile.name}';
+      } else if (cookieName.isNotEmpty) {
+        // 服务端资料接口没返回，但 BDUSS 已到手 + web 侧 NAME cookie
+        // 能解析出账号名——按登录成功处理，不让验证失败误伤登录。
+        await prefs.setString('tieba_username', cookieName);
+        message = '已登录：$cookieName';
+      } else {
+        message = '登录失败：未能获取到有效账号信息';
+        await prefs.setString('tieba_username', '');
       }
     } catch (error) {
-      message = '登录验证失败（凭据已保存）：$error';
-      await prefs.setString('tieba_username', '');
+      // 凭据已写入（CookieManager 也确认拿到 BDUSS）：网络原因验证
+      // 失败不代表登录失败，用 web 侧账号名兜底。
+      if (cookieName.isNotEmpty) {
+        await prefs.setString('tieba_username', cookieName);
+        message = '已登录：$cookieName（资料验证暂不可用）';
+      } else {
+        message = '登录验证失败（凭据已保存）：$error';
+      }
     }
     if (mounted) {
       setState(() => _loading = false);
@@ -253,6 +266,10 @@ class _NetworkSectionState extends State<NetworkSection> {
     await SecureStore.set('tieba_bduss', '');
     await SecureStore.set('tieba_stoken', '');
     await prefs.setString('tieba_username', '');
+    await prefs.setString('tieba_uid', '');
+    // 关键：同时清 WebView CookieManager——否则重进登录页会被
+    // 残留的 BDUSS cookie 立刻自动"登录回来"（表现为退出失败）。
+    await SystemBridge.clearTiebaCookies();
     setState(() {
       _client?.close();
       _client = TiebaClient();

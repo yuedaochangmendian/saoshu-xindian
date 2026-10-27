@@ -36,10 +36,13 @@ class _BooksPageState extends State<BooksPage> {
 
   void _onBrowseJump() {
     final scope = _scope;
-    if (scope != null &&
-        scope.browseJump.value != null &&
-        _index != 0 &&
-        mounted) {
+    if (scope == null || !mounted) return;
+    final v = scope.browseJump.value;
+    if (v == null) return;
+    if (v == '__glossary__') {
+      scope.browseJump.value = null;
+      _select(1);
+    } else if (_index != 0) {
       _select(0);
     }
   }

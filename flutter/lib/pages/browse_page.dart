@@ -196,6 +196,11 @@ class _BrowseSectionState extends State<BrowseSection> {
           .clamp(0.0, _scrollController.position.maxScrollExtent));
       _restoring = false;
     }
+    // 正常模式（无保存页数）必须显式载回首页：v4.5.1 把"补载循环"
+    // 当成加载路径，savedPages=0 时循环一次都不跑，页面永远空。
+    if (_offset == 0 && _hasMore && mounted) {
+      await _loadMore();
+    }
   }
 
   /// 读该分类已加载页数（prefs）。

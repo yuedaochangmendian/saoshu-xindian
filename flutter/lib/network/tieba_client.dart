@@ -307,14 +307,26 @@ class TiebaClient {
     return writer;
   }
 
-  /// 登录验证：请求个人资料（参考 TiebaLite UserApiImpl.profileFlow，
+  /// 登录验证：请求个人资料（严格对齐 TiebaLite UserApiImpl.
+  /// userProfileFlow 的 ProfileRequestData 字段组合，
   /// /c/u/user/profile?cmd=303012）。返回 null = BDUSS 无效/未登录。
-  Future<TiebaUserProfile?> fetchProfile() async {
+  /// selfUid 从登录 cookie UID 取得——贴吧服务端要求自查时带 uid，
+  /// 缺省（旧数据手工粘贴的凭据）则不带尝试。
+  Future<TiebaUserProfile?> fetchProfile({String? selfUid}) async {
     final data = PbWriter()
       ..messageField(9, _commonRequest())
-      ..varintField(4, 0) // is_guest
+      ..varintField(2, 1) // need_post_count
+      ..varintField(4, 0) // is_guest（自查=0）
+      ..varintField(6, 1) // pn
+      ..varintField(7, 20) // rn
       ..varintField(8, 1) // has_plist
-      ..textField(5, 'h5view'); // st_type
+      ..varintField(12, 0) // q_type
+      ..varintField(14, 1) // is_from_usercenter
+      ..varintField(15, 1); // page
+    if (selfUid != null && selfUid.isNotEmpty) {
+      final uidNum = int.tryParse(selfUid);
+      if (uidNum != null) data.varintField(1, uidNum); // uid
+    }
     final request = (PbWriter()..messageField(1, data)).toBytes();
     final response = await _postProto('/c/u/user/profile?cmd=303012', request);
     final root = PbMessage.parse(response);

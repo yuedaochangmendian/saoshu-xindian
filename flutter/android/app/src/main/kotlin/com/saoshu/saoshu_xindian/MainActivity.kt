@@ -151,6 +151,21 @@ class MainActivity : FlutterActivity() {
                             result.error("unavailable", e.message, null)
                         }
                     }
+                    "clearTiebaCookies" -> {
+                        // 退出登录必须连 WebView CookieManager 一起清：
+                        // 否则再进登录页会被旧 BDUSS 立刻判定"已登录"，
+                        // 用户表现为"退出登录失败"。
+                        try {
+                            val cm = android.webkit.CookieManager.getInstance()
+                            // removeAllCookies 已含会话 cookie（API 35
+                            // 移除了 removeSessionCookies 无参重载）
+                            cm.removeAllCookies(null)
+                            cm.flush()
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("unavailable", e.message, null)
+                        }
+                    }
                     "getTiebaCookies" -> {
                         // WebView 的 cookie 存在系统 CookieManager 里，
                         // document.cookie 读不到 HttpOnly 的 BDUSS/STOKEN，

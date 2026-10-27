@@ -45,7 +45,8 @@ class _TiebaLoginPageState extends State<TiebaLoginPage> {
 
   /// 从系统 CookieManager 读贴吧域 cookie；拿到 BDUSS 即视为登录成功。
   /// 注意：BDUSS/STOKEN 带 HttpOnly，JS 的 document.cookie 永远读不到，
-  /// 必须走原生 MethodChannel。
+  /// 必须走原生 MethodChannel。UID/NAME 是贴吧 web 侧的普通 cookie，
+  /// 一并带回：NAME 作为账号名兜底显示，UID 供 profile PB 接口自查。
   Future<void> _checkCookies() async {
     if (_checked) return;
     final cookie = await SystemBridge.getTiebaCookies(
@@ -54,10 +55,15 @@ class _TiebaLoginPageState extends State<TiebaLoginPage> {
     final bduss = cookieValueOf(cookie, 'BDUSS');
     if (bduss == null || bduss.isEmpty) return;
     final stoken = cookieValueOf(cookie, 'STOKEN') ?? '';
+    final uid = cookieValueOf(cookie, 'UID') ?? '';
+    var name = cookieValueOf(cookie, 'NAME') ?? '';
+    try {
+      name = Uri.decodeComponent(name);
+    } catch (_) {}
     _checked = true;
     _poll?.cancel();
     if (mounted) {
-      Navigator.of(context).pop((bduss, stoken));
+      Navigator.of(context).pop((bduss, stoken, uid, name));
     }
   }
 
