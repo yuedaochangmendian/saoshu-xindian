@@ -75,6 +75,20 @@ class MainActivity : FlutterActivity() {
                             result.error("unavailable", e.message, null)
                         }
                     }
+                    "getTiebaCookies" -> {
+                        // WebView 的 cookie 存在系统 CookieManager 里，
+                        // document.cookie 读不到 HttpOnly 的 BDUSS/STOKEN，
+                        // 只能从这里取。
+                        try {
+                            val url = call.argument<String>("url")
+                                ?: "https://tieba.baidu.com/"
+                            val cookie = android.webkit.CookieManager
+                                .getInstance().getCookie(url)
+                            result.success(cookie)
+                        } catch (e: Exception) {
+                            result.error("unavailable", e.message, null)
+                        }
+                    }
                     "pickImageAndPinShortcut" -> {
                         // Android 无公开 API 用任意位图替换应用图标；
                         // 官方近似 = 打开系统图片选择器，选完后把带自定义

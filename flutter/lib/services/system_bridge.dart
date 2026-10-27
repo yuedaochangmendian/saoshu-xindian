@@ -27,6 +27,17 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// 读取系统 WebView CookieManager 中指定 URL 的 cookie，
+  /// 含 HttpOnly 的 BDUSS/STOKEN（document.cookie 拿不到的那些）。
+  static Future<String?> getTiebaCookies(String url) async {
+    try {
+      return await _channel.invokeMethod<String>(
+          'getTiebaCookies', {'url': url});
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 从系统文件选择器选一张图片，请求用户确认后以「桌面快捷方式」
   /// 形式钉到桌面（Android 不支持运行时用任意位图替换应用图标，
   /// 这是官方近似方案；与 app 图标并存，指向应用主页）。

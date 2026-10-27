@@ -42,7 +42,9 @@ class _NetworkSectionState extends State<NetworkSection> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_client == null) {
-      _client = TiebaClient(bduss: SecureStore.get('tieba_bduss'));
+      _client = TiebaClient(
+          bduss: SecureStore.get('tieba_bduss'),
+          stoken: SecureStore.get('tieba_stoken'));
       _restoreFromCacheOrReload();
     }
   }
@@ -227,6 +229,38 @@ class _NetworkSectionState extends State<NetworkSection> {
     }
   }
 
+  Future<void> _logout() async {
+    final prefs = AppScope.of(context).prefs;
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('退出贴吧登录'),
+        content: const Text('将清除本机保存的 BDUSS / STOKEN 凭据，'
+            '退出后网络浏览以游客身份访问。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('退出登录')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await SecureStore.set('tieba_bduss', '');
+    await SecureStore.set('tieba_stoken', '');
+    await prefs.setString('tieba_username', '');
+    setState(() {
+      _client?.close();
+      _client = TiebaClient();
+    });
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('已退出贴吧登录')));
+  }
+
   Future<void> _showHistory() async {
     final db = await AppDatabase.instance.database;
     final rows = await db
@@ -352,7 +386,7 @@ class _NetworkSectionState extends State<NetworkSection> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _showLoginDialog,
+                  onPressed: loggedIn ? _logout : _showLoginDialog,
                   icon: Icon(loggedIn ? Icons.logout : Icons.login,
                       size: 20, color: scheme.onSurfaceVariant),
                   tooltip: loggedIn

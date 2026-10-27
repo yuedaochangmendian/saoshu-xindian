@@ -140,17 +140,29 @@ class TiebaClient {
   /// 设备参数的进程级共享缓存：所有实例共用同一设备指纹。
   static TiebaDeviceParams? _sharedDevice;
 
-  /// 从持久化恢复设备参数；无则生成。persist 由调用方提供（写 prefs）。
+  /// 从持久化恢复设备参数；无则生成。load/persist 由调用方提供（读写 prefs）。
   static Future<TiebaDeviceParams> ensureDevice(
+      String? Function(String key) load,
       Future<void> Function(String key, String value) persist) async {
     if (_sharedDevice != null) return _sharedDevice!;
-    final device = TiebaDeviceParams(
-      cuid: 'baidutiebaapp${_randHex(26)}00',
-      clientId: _randHex(32),
-      imei: _randHex(15),
-      c3Aid: '${_randHex(26)}${_randHex(4)}',
-    );
+    final saved = load('tieba_device_cuid');
+    final device = (saved != null && saved.startsWith('baidutiebaapp'))
+        ? TiebaDeviceParams(
+            cuid: saved,
+            clientId: load('tieba_device_client') ?? _randHex(32),
+            imei: load('tieba_device_imei') ?? _randHex(15),
+            c3Aid: load('tieba_device_c3') ?? '${_randHex(26)}${_randHex(4)}',
+          )
+        : TiebaDeviceParams(
+            cuid: 'baidutiebaapp${_randHex(26)}00',
+            clientId: _randHex(32),
+            imei: _randHex(15),
+            c3Aid: '${_randHex(26)}${_randHex(4)}',
+          );
     await persist('tieba_device_cuid', device.cuid);
+    await persist('tieba_device_client', device.clientId);
+    await persist('tieba_device_imei', device.imei);
+    await persist('tieba_device_c3', device.c3Aid);
     _sharedDevice = device;
     return device;
   }

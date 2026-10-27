@@ -38,6 +38,9 @@ class _BrowseSectionState extends State<BrowseSection> {
   double _pendingRestorePx = 0;
   bool _restoring = false;
 
+  /// 恢复补载中：_saveProgress 必须跳过，否则 position.pixels==0 会覆盖已存 px。
+  bool _restoreLoading = false;
+
   /// 按月筛选（'yyyy-MM'）；非空时区间筛选失效（两者互斥）。
   String? _monthFilter;
   final List<Document> _documents = [];
@@ -55,35 +58,42 @@ class _BrowseSectionState extends State<BrowseSection> {
     _loadValues();
   }
 
-  Future<void> _saveProgress() async {
+  /// 持久化当前分类进度。offset 显式传入时（dispose 已在控制器销毁前
+  /// 读取位置）用它，否则读实时位置；绝不跨 dispose 之后再碰控制器。
+  Future<void> _saveProgress({double? offset}) async {
     final selected = _selected;
-    if (selected == null || _restoring) return;
+    if (selected == null || _restoring || _restoreLoading) return;
+    final px = offset ??
+        (_scrollController.hasClients
+            ? _scrollController.position.pixels
+            : (_scrollMemory[selected] ?? 0));
+    if (px <= 0) return;
+    _scrollMemory[selected] = px;
     final prefs = await AppDatabase.instance.sharedPrefs;
     final pages = (_offset / _pageSize).ceil();
     await prefs.setInt('$_progressPrefix${selected}_pages', pages);
-    await prefs.setDouble(
-        '$_progressPrefix${selected}_px', _scrollController.position.pixels);
-    _scrollMemory[selected] = _scrollController.position.pixels;
+    await prefs.setDouble('$_progressPrefix${selected}_px', px);
   }
 
   @override
   void dispose() {
-    if (_selected != null &&
-        _scrollController.hasClients &&
-        _scrollController.position.pixels > 0) {
-      _saveProgress();
-    }
+    final px = _scrollController.hasClients
+        ? _scrollController.position.pixels
+        : null;
     _scrollController.dispose();
+    if (px != null && px > 0) {
+      _saveProgress(offset: px);
+    }
     super.dispose();
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >
-        _scrollController.position.maxScrollExtent - 400) {
+    final selected = _selected;
+    final px = _scrollController.position.pixels;
+    // 仅内存跟踪；写 prefs 发生在离开页面 / 切换分类时，不再每帧落盘。
+    if (selected != null && px > 0) _scrollMemory[selected] = px;
+    if (px > _scrollController.position.maxScrollExtent - 400) {
       _loadMore();
-    }
-    if (_scrollController.position.pixels > 0) {
-      _saveProgress();
     }
   }
 
@@ -109,15 +119,21 @@ class _BrowseSectionState extends State<BrowseSection> {
       _loading = false;
       _fetching = false;
     });
-    // 恢复模式：先把保存的页数补载回来，再跳回滚动位置。
-    for (var i = 0; i < savedPages; i++) {
-      await _loadMore();
+    // 恢复模式：先把保存的页数补载回来（期间屏蔽 _saveProgress，
+    // 否则实时 pixels=0 会覆盖已保存的 px），再跳回滚动位置。
+    final savedPx = savedPages > 0 ? _pendingRestorePx : 0.0;
+    _restoreLoading = true;
+    try {
+      for (var i = 0; i < savedPages; i++) {
+        await _loadMore();
+      }
+    } finally {
+      _restoreLoading = false;
     }
     if (savedPages > 0 && _scrollController.hasClients) {
       _restoring = true;
-      final target = (_scrollMemory[_selected ?? ''] ?? 0.0)
-          .clamp(0.0, _scrollController.position.maxScrollExtent);
-      _scrollController.jumpTo(target);
+      _scrollController.jumpTo(savedPx
+          .clamp(0.0, _scrollController.position.maxScrollExtent));
       _restoring = false;
     }
   }
@@ -268,6 +284,7 @@ class _BrowseSectionState extends State<BrowseSection> {
                     label: Text('${_labelOf(entry)} ${entry['c']}'),
                     selected: _selected == _labelOf(entry),
                     onSelected: (_) {
+                      _saveProgress();
                       setState(() => _selected = _labelOf(entry));
                       _resetDocuments(restore: true);
                     },

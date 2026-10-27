@@ -11,13 +11,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await AppPrefs().load();
   await SecureStore.init(prefs);
-  await TiebaClient.ensureDevice((key, value) async {
-    if (value.isEmpty) {
-      await prefs.remove(key);
-    } else {
-      await prefs.setString(key, value);
-    }
-  });
+  await TiebaClient.ensureDevice(
+    (key) => prefs.getString(key),
+    (key, value) async {
+      if (value.isEmpty) {
+        await prefs.remove(key);
+      } else {
+        await prefs.setString(key, value);
+      }
+    },
+  );
   runApp(SaoshuApp(prefs: prefs));
 }
 
