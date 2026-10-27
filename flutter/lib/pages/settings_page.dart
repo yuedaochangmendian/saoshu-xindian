@@ -106,20 +106,9 @@ class _SettingsPageState extends State<SettingsPage> {
             // 低频设置全部折叠成两组，页面只剩 数据/备份 + 个性化 + 关于。
             _settingsGroup(context,
                 title: '数据与备份',
-                subtitle: '本地备份 / WebDAV / 检查更新',
+                subtitle: '本地备份 / WebDAV',
                 children: [
                   _BackupSection(),
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('检查更新',
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface)),
-                  ),
-                  const SizedBox(height: 8),
-                  _UpdateSection(),
                 ]),
             const SizedBox(height: 16),
             _settingsGroup(context,
@@ -193,6 +182,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           height: 1.5,
                           color: scheme.onSurfaceVariant),
                     ),
+                    const SizedBox(height: 14),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    const SizedBox(height: 10),
+                    Text('检查更新',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface)),
+                    const SizedBox(height: 8),
+                    _UpdateSection(),
                   ],
                 ),
               ),
