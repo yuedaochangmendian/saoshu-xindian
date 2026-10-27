@@ -3,6 +3,12 @@ name: Flutter release build
 on:
   workflow_dispatch:
 
+# 同 workflow 串行：双重 dispatch（历史两次实录）不再并行跑两个
+# 20+ 分钟构建然后在 gh release create 撞 tag。
+concurrency:
+  group: flutter-release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -61,6 +67,28 @@ jobs:
             ls -l /tmp/saoshu.db
             gzip -9 -c /tmp/saoshu.db > flutter/assets/saoshu.db.gz
             ls -l flutter/assets/saoshu.db.gz
+          fi
+
+          # 资产完整性校验：容器魔数 + gzip CRC + SQLite quick_check +
+          # user_version（db-latest 忘更新 / 回退链拿到旧库都在这里现形）。
+          MAGIC=$(od -An -tx1 -N2 flutter/assets/saoshu.db.gz | tr -d ' \n')
+          if [ "$MAGIC" != "1f8b" ]; then
+            echo "FATAL: asset is not a gzip container (magic=$MAGIC)"
+            exit 1
+          fi
+          gzip -t flutter/assets/saoshu.db.gz
+          gzip -dc flutter/assets/saoshu.db.gz > /tmp/verify.db
+          QC=$(sqlite3 /tmp/verify.db "PRAGMA quick_check;" | head -1)
+          UV=$(sqlite3 /tmp/verify.db "PRAGMA user_version;")
+          rm -f /tmp/verify.db
+          echo "asset verify: quick_check=$QC user_version=$UV"
+          if [ "$QC" != "ok" ]; then
+            echo "FATAL: restored database failed quick_check"
+            exit 1
+          fi
+          if [ "${UV:-0}" -lt 18 ]; then
+            echo "FATAL: stale asset db (user_version=$UV < 18) - db-latest missing or fallback used"
+            exit 1
           fi
 
       - name: Read version from pubspec

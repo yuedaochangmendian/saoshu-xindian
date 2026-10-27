@@ -120,6 +120,30 @@ class _CollectionPageState extends State<CollectionPage> {
     _reload();
   }
 
+  /// 滑动删除的确认框：返回 true 才允许滑走并删除。
+  Future<bool> _confirmDeleteNote(Map<String, Object?> note) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除简记'),
+        content: Text('确定删除「${note['title']}」的简记？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _deleteNote(note);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _deleteNote(Map<String, Object?> note) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -214,7 +238,11 @@ class _CollectionPageState extends State<CollectionPage> {
                           child: Dismissible(
                             key: ValueKey('note-${note['id']}'),
                             direction: DismissDirection.endToStart,
-                            onDismissed: (_) => _deleteNote(note),
+                            // 先确认再滑走：onDismissed 是动画完成后
+                            // 才触发，在那里弹"确定删除？"会出现
+                            // "取消了但条目已经消失"的错觉。
+                            confirmDismiss: (_) => _confirmDeleteNote(note),
+                            onDismissed: (_) {},
                             background: Container(
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.only(right: 20),

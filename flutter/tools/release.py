@@ -106,7 +106,12 @@ def main():
     PUBSPEC.write_bytes(new_pubspec.encode('utf-8'))
     ok(f'version bumped: {m.group(1)} -> {new_version_line}')
 
-    # 5) 提交
+    # 5) 提交（仅限 main：在别的分支上跑会出现 commit 进分支、
+    # push main 却 "up-to-date"、CI 构建到旧版本的静默错位）
+    branch = run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+    if branch.stdout.strip() != 'main':
+        fail(f'current branch is {branch.stdout.strip()!r}, release.py must '
+             'run on main')
     message = sys.argv[2] if len(sys.argv) > 2 else f'release: v{version}'
     add = run(['git', 'add', 'flutter/'])
     if add.returncode != 0:
@@ -114,6 +119,10 @@ def main():
     status = run(['git', 'status', '--short', '--', 'flutter/'])
     if not status.stdout.strip():
         fail('no changes to commit under flutter/')
+    # 发布 commit 会吞并 flutter/ 下全部未提交改动——列出来让操作者
+    # 在 push 前看见到底带了什么上车。
+    print('files in this release commit:')
+    print(status.stdout.rstrip())
     commit = run(['git', 'commit', '-m', f'{message} (v{version})'])
     if commit.returncode != 0:
         fail(f'commit failed: {commit.stderr[:200]}')

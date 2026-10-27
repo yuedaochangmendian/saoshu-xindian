@@ -30,11 +30,17 @@ class PbMessage {
         cursor = value.next;
         field = PbField(number, wireType, value.value, null);
       } else if (wireType == 1) {
+        if (cursor + 8 > data.length) {
+          throw const FormatException('Truncated fixed64 field');
+        }
         field = PbField(number, wireType, 0, _slice(data, cursor, cursor + 8));
         cursor += 8;
       } else if (wireType == 2) {
         final length = _readVarint(data, cursor);
         cursor = length.next;
+        if (length.value < 0) {
+          throw const FormatException('Negative protobuf length');
+        }
         final end = cursor + length.value;
         if (end > data.length) {
           throw const FormatException('Truncated protobuf bytes');
@@ -42,6 +48,9 @@ class PbMessage {
         field = PbField(number, wireType, 0, _slice(data, cursor, end));
         cursor = end;
       } else if (wireType == 5) {
+        if (cursor + 4 > data.length) {
+          throw const FormatException('Truncated fixed32 field');
+        }
         field = PbField(number, wireType, 0, _slice(data, cursor, cursor + 4));
         cursor += 4;
       } else {
@@ -62,7 +71,7 @@ class PbMessage {
   String text(int number) {
     final field = _first(number);
     if (field?.bytesValue == null) return '';
-    return utf8.decode(field!.bytesValue!);
+    return utf8.decode(field!.bytesValue!, allowMalformed: true);
   }
 
   Uint8List? bytes(int number) => _first(number)?.bytesValue;

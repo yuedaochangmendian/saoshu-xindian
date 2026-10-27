@@ -113,7 +113,7 @@ class BackupService {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
-    final idMap = await importPostsFromBackup(
+    final (idMap, postsAdded) = await importPostsFromBackup(
         db, posts.map((e) => Map<String, Object?>.from(e as Map)).toList());
     // 收藏 id 翻译：导入帖恢复后是新 id，按映射改写；未命中的保留
     // （对应随包库内容的收藏，其 id 与备份时相同）。
@@ -135,7 +135,7 @@ class BackupService {
     return {
       'favorites': translated.length,
       'notesAdded': notes.length,
-      'postsAdded': idMap.values.where((newId) => newId > 0).length,
+      'postsAdded': postsAdded,
     };
   }
 

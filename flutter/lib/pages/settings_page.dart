@@ -451,12 +451,18 @@ class _BackupSectionState extends State<_BackupSection> {
     passCtrl.dispose();
     dirCtrl.dispose();
     if (confirmed != true || !mounted) return;
-    await prefs.setString('webdav_server', server);
-    await prefs.setString('webdav_user', user);
-    await SecureStore.set('webdav_pass', pass);
-    await prefs.setString('webdav_dir', dir);
+    // 校验先于落盘：空地址若先写 prefs 会把原本可用的配置清掉。
     if (server.isEmpty) {
       _toast('请填写服务器地址');
+      return;
+    }
+    try {
+      await prefs.setString('webdav_server', server);
+      await prefs.setString('webdav_user', user);
+      await SecureStore.set('webdav_pass', pass);
+      await prefs.setString('webdav_dir', dir);
+    } catch (error) {
+      _toast('保存 WebDAV 配置失败：$error');
       return;
     }
     final client = WebDavClient(
@@ -875,7 +881,12 @@ class _IconSectionState extends State<_IconSection> {
       _importStatus = '';
     });
     final messenger = ScaffoldMessenger.of(context);
-    final result = await SystemBridge.pinCustomShortcut();
+    String? result;
+    try {
+      result = await SystemBridge.pinCustomShortcut();
+    } catch (error) {
+      result = error.toString();
+    }
     if (mounted) {
       setState(() {
         _busy = false;
@@ -905,19 +916,32 @@ class _IconSectionState extends State<_IconSection> {
 
   Future<void> _apply(_IconChoice choice) async {
     if (_applying || choice.id == _selected) return;
+    final previous = _selected;
     setState(() {
       _applying = true;
       _selected = choice.id;
     });
-    await AppScope.of(context).prefs.setString('launcher_icon', choice.id);
-    await SystemBridge.setLauncherIcon(choice.alias);
-    if (mounted) {
-      setState(() => _applying = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-            content: Text('桌面图标已切换，启动器将在几秒内刷新'),
-            duration: Duration(seconds: 2)));
+    try {
+      await AppScope.of(context).prefs.setString('launcher_icon', choice.id);
+      await SystemBridge.setLauncherIcon(choice.alias);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+              content: Text('桌面图标已切换，启动器将在几秒内刷新'),
+              duration: Duration(seconds: 2)));
+      }
+    } catch (error) {
+      // 原生通道失败：回滚选中态并明确报错，绝不能让 _applying
+      // 卡死（页面常驻 IndexedStack，State 不会重建）。
+      if (mounted) {
+        setState(() => _selected = previous);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('图标切换失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _applying = false);
     }
   }
 

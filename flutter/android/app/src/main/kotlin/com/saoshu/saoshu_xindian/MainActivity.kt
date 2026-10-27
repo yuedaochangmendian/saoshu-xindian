@@ -45,11 +45,20 @@ class MainActivity : FlutterActivity() {
                     "appVersion" -> {
                         try {
                             val info = packageManager.getPackageInfo(packageName, 0)
+                            // getLongVersionCode 是 API 28+；minSdk 24 上
+                            // 直接调用抛 NoSuchMethodError（Error 不被
+                            // catch(Exception) 接住，会崩掉整个应用）。
+                            val build = if (Build.VERSION.SDK_INT >= 28) {
+                                info.longVersionCode
+                            } else {
+                                @Suppress("DEPRECATION")
+                                info.versionCode.toLong()
+                            }
                             result.success(mapOf(
                                 "version" to info.versionName,
-                                "build" to info.longVersionCode
+                                "build" to build
                             ))
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
                             result.error("unavailable", e.message, null)
                         }
                     }
@@ -151,6 +160,11 @@ class MainActivity : FlutterActivity() {
                                         Manifest.permission.WRITE_EXTERNAL_STORAGE
                                     ) != PackageManager.PERMISSION_GRANTED
                                 ) {
+                                    saveResult?.error(
+                                        "busy",
+                                        "another save is in progress",
+                                        null
+                                    )
                                     saveResult = result
                                     pendingSave = name to bytes
                                     requestPermissions(
@@ -202,6 +216,10 @@ class MainActivity : FlutterActivity() {
                         // 官方近似 = 打开系统图片选择器，选完后把带自定义
                         // 图标的 pinned 快捷方式钉到桌面（与 app 图标并存）。
                         try {
+                            // 重入保护：旧 pending Result 若被覆盖将永不
+                            // complete，Dart 侧 await 无限挂起（_busy 卡死）。
+                            pinResult?.error(
+                                "busy", "another pick is in progress", null)
                             pinResult = result
                             val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                                 addCategory(Intent.CATEGORY_OPENABLE)

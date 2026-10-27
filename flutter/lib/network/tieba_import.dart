@@ -351,9 +351,12 @@ Future<List<Map<String, Object?>>> exportImportedPosts(Database db) async {
 /// 备份恢复用：按 canonical_key 去重写入帖子。
 /// 返回 {备份内 document_id: 恢复后实际 id} 映射（已存在的帖子映射到现有
 /// id），供收藏 id 翻译使用；added 为真正新插入的条数。
-Future<Map<int, int>> importPostsFromBackup(
+/// 返回 (旧id→新id 映射, 真正新插入的条数)。映射含「已存在」帖子
+/// （收藏翻译需要），计数只算新增——恢复摘要不再把跳过项算成新增。
+Future<(Map<int, int>, int)> importPostsFromBackup(
     Database db, List<Map<String, Object?>> posts) async {
   final idMap = <int, int>{};
+  var added = 0;
   for (final post in posts) {
     final key = post['canonical_key'] as String? ?? '';
     if (key.isEmpty) continue;
@@ -429,7 +432,8 @@ Future<Map<int, int>> importPostsFromBackup(
           post['published_at'] as String? ?? '',
           id);
       if (oldId > 0) idMap[oldId] = id;
+      added++;
     });
   }
-  return idMap;
+  return (idMap, added);
 }

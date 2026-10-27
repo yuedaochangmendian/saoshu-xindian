@@ -137,12 +137,20 @@ class _BrowseSectionState extends State<BrowseSection> {
     super.dispose();
   }
 
+  DateTime _lastPersist = DateTime.fromMillisecondsSinceEpoch(0);
+
   void _onScroll() {
     final selected = _selected;
     final px = _scrollController.position.pixels;
-    // 仅内存跟踪（含回顶的 0）；prefs 落盘发生在离开页面 / 切换分类 /
-    // 每页加载完成时（后者防进程被杀丢进度），不再每帧落盘。
+    // 内存跟踪（含回顶的 0）+ 节流落盘：dispose 时 ListView 已先被框架
+    // 卸载（hasClients 恒 false），"离开页面才写盘"实际永远拿不到最新
+    // 位置——必须在滚动存活期以 ≥1.5s 间隔持久化。
     if (selected != null) _scrollMemory[selected] = px;
+    final now = DateTime.now();
+    if (now.difference(_lastPersist) >= const Duration(milliseconds: 1500)) {
+      _lastPersist = now;
+      _saveProgress();
+    }
     if (px > _scrollController.position.maxScrollExtent - 400) {
       _loadMore();
     }
@@ -174,8 +182,15 @@ class _BrowseSectionState extends State<BrowseSection> {
     }
   }
 
+  int _resetSeq = 0;
+
   Future<void> _resetDocuments({bool restore = false}) async {
+    // 序号防重入 + generation 失效在飞分页：旧分类的 _loadMore 响应
+    // 不得再污染新分类的列表/进度（v4.2.3② 同款守卫补齐到 reset 链路）。
+    final seq = ++_resetSeq;
+    ++_generation;
     final savedPages = restore ? (await _loadSavedPages(_selected ?? '')) : 0;
+    if (!mounted || seq != _resetSeq) return;
     setState(() {
       _documents.clear();
       _offset = 0;
@@ -194,6 +209,7 @@ class _BrowseSectionState extends State<BrowseSection> {
     } finally {
       _restoreLoading = false;
     }
+    if (!mounted || seq != _resetSeq) return;
     if (savedPages > 0 && _scrollController.hasClients) {
       _restoring = true;
       _scrollController.jumpTo(savedPx
@@ -202,7 +218,7 @@ class _BrowseSectionState extends State<BrowseSection> {
     }
     // 正常模式（无保存页数）必须显式载回首页：v4.5.1 把"补载循环"
     // 当成加载路径，savedPages=0 时循环一次都不跑，页面永远空。
-    if (_offset == 0 && _hasMore && mounted) {
+    if (_offset == 0 && _hasMore && mounted && seq == _resetSeq) {
       await _loadMore();
     }
   }
@@ -211,7 +227,11 @@ class _BrowseSectionState extends State<BrowseSection> {
   Future<int> _loadSavedPages(String category) async {
     final prefs = await AppDatabase.instance.sharedPrefs;
     final pages = prefs.getInt('$_progressPrefix${category}_pages') ?? 0;
-    _pendingRestorePx = prefs.getDouble('$_progressPrefix${category}_px') ?? 0;
+    // 进程内最新位置优先：_onScroll 持续维护的内存值比 prefs 上次
+    // 落盘值新，直接用 prefs 覆盖会把用户最后停留位置丢掉。
+    final memPx = _scrollMemory[category] ?? 0;
+    final prefsPx = prefs.getDouble('$_progressPrefix${category}_px') ?? 0;
+    _pendingRestorePx = memPx > 0 ? memPx : prefsPx;
     _scrollMemory[category] = _pendingRestorePx;
     return pages;
   }

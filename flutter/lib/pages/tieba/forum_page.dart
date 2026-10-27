@@ -26,8 +26,11 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
   TiebaClient? _client;
   String _forum = _forums.first;
 
-  /// 当前吧的 fid（requestThreads 带回，帖子页楼中楼请求需要）。
-  int _forumFid = 0;
+  /// fid 按吧缓存（单字段会在切吧后把旧吧 fid 传给新吧帖子页，
+  /// 楼中楼 302002 带错 forum_id）。
+  static final Map<String, int> _fidByForum = {};
+
+  int get _forumFid => _fidByForum[_forum] ?? 0;
   int _page = 0;
   bool _hasMore = true;
   bool _loading = false;
@@ -73,6 +76,12 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
       _refreshImported();
       return;
     }
+    // 切到无缓存的吧：先清掉上一个吧的列表——留着会让窗口期内
+    // 点击的帖子带错 fname/fid（stale 占位只服务同吧下拉刷新）。
+    setState(() {
+      _threads.clear();
+      _error = null;
+    });
     _reload();
   }
 
@@ -87,13 +96,17 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
 
   Future<void> _loadMore({bool force = false}) async {
     if (_loading || !_hasMore) return;
+    final forum = _forum; // 请求归属快照（切吧守卫用）
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final page = await client.requestThreads(_forum, _page + 1);
-      if (page.fid != 0) _forumFid = page.fid;
+      final page = await client.requestThreads(forum, _page + 1);
+      if (page.fid != 0) _fidByForum[forum] = page.fid;
+      // F1 守卫：请求在飞时用户切了吧——响应属于旧吧，整包丢弃，
+      // 否则会污染新吧列表、静态缓存与页码（v4.2.3② generation 同款）。
+      if (!mounted || forum != _forum) return;
       if (mounted) {
         setState(() {
           _page++;
@@ -107,9 +120,9 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
           }
           _hasMore = page.hasMore;
           _loading = false;
-          _cache[_forum] = List.of(_threads);
-          _pageByForum[_forum] = _page;
-          _hasMoreByForum[_forum] = _hasMore;
+          _cache[forum] = List.of(_threads);
+          _pageByForum[forum] = _page;
+          _hasMoreByForum[forum] = _hasMore;
         });
       }
     } catch (error) {
@@ -219,6 +232,7 @@ class _TiebaForumPageState extends State<TiebaForumPage> {
     // 关键：同时清 WebView CookieManager——否则重进登录页会被
     // 残留的 BDUSS cookie 立刻自动"登录回来"（表现为退出失败）。
     await SystemBridge.clearTiebaCookies();
+    if (!mounted) return;
     setState(() {
       _client?.close();
       _client = TiebaClient();

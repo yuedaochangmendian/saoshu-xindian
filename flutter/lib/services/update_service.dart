@@ -63,7 +63,9 @@ class UpdateService {
       final json = await _getJson(client, '$_apiBase/releases/latest');
       return _toUpdateInfo(json as Map<String, Object?>);
     } finally {
-      client.close();
+      // force：超时被放弃的请求仍挂在 client 上，非 force close 会
+      // 等它到永远——「检查更新」按钮就永久转圈。
+      client.close(force: true);
     }
   }
 

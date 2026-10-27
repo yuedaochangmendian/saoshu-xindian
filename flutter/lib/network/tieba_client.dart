@@ -16,6 +16,29 @@ class TiebaException implements Exception {
   String toString() => message;
 }
 
+/// 吧内搜索命中项。
+class SearchHit {
+  final int tid;
+  final String forum;
+  final String title;
+  final String content;
+  final int time;
+  final String author;
+  const SearchHit(
+      {required this.tid,
+      required this.forum,
+      required this.title,
+      required this.content,
+      required this.time,
+      required this.author});
+}
+
+class SearchPostsResult {
+  final List<SearchHit> hits;
+  final bool hasMore;
+  const SearchPostsResult(this.hits, this.hasMore);
+}
+
 /// /c/s/login 验证结果。
 class TiebaLoginResult {
   final TiebaUserProfile? profile;
@@ -266,12 +289,23 @@ class TiebaClient {
 
   DateTime _lastRequest = DateTime.fromMillisecondsSinceEpoch(0);
 
-  Future<void> _throttle() async {
+  /// 串行节流队列：并发调用排队领取时隙（旧的 check-then-delay 对
+  /// 同 tick 的 burst 完全失效——所有调用读到同一个 _lastRequest 后
+  /// 一起零延迟放行）。
+  Future<void> _throttleTail = Future<void>.value();
+
+  Future<void> _throttle() {
     final minimum = const Duration(milliseconds: 1600);
-    final elapsed = DateTime.now().difference(_lastRequest);
-    if (elapsed < minimum) {
-      await Future.delayed(minimum - elapsed);
-    }
+    final ticket = _throttleTail.then((_) async {
+      final elapsed = DateTime.now().difference(_lastRequest);
+      if (elapsed < minimum) {
+        await Future.delayed(minimum - elapsed);
+      }
+      _lastRequest = DateTime.now();
+    });
+    // 队列尾巴吞掉错误，避免一次失败卡死后续所有请求。
+    _throttleTail = ticket.catchError((_) {});
+    return ticket;
   }
 
   Future<ThreadsPage> requestThreads(String fname, int page) async {
@@ -418,6 +452,126 @@ class TiebaClient {
     return writer;
   }
 
+  /// c.tieba.baidu.com JSON 接口通用发送：表单编码 + tiebaclient 签名
+  /// （sign = md5(raw "k=v" 字典序排序无分隔拼接 + 'tiebaclient!!!')，
+  /// SortAndSignInterceptor.calculateSign 语义；body 用编码对排序 & 连接）。
+  Future<Map<String, Object?>> _signAndPostForm(
+      String url, Map<String, String> params,
+      {String userAgent = 'bdtb for Android 12.25.1.0'}) async {
+    final rawPairs =
+        params.entries.map((e) => '${e.key}=${e.value}').toList()..sort();
+    final sign = md5
+        .convert(utf8.encode('${rawPairs.join()}tiebaclient!!!'))
+        .toString();
+    final encodedPairs = params.entries
+        .map((e) =>
+            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .toList()
+      ..sort();
+    final body = utf8.encode('${encodedPairs.join('&')}&sign=$sign');
+
+    await _throttle();
+    _lastRequest = DateTime.now();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12);
+    try {
+      final request = await client.postUrl(Uri.parse(url));
+      request.headers.set('User-Agent', userAgent);
+      request.headers.set('Cookie', 'ka=open');
+      request.headers.set('Charset', 'UTF-8');
+      request.headers.contentType =
+          ContentType('application', 'x-www-form-urlencoded');
+      request.add(body);
+      final response =
+          await request.close().timeout(const Duration(seconds: 20));
+      final text = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        throw TiebaException('HTTP ${response.statusCode} ($url)');
+      }
+      try {
+        return jsonDecode(text) as Map<String, Object?>;
+      } on FormatException {
+        // 风控 HTML 页 / 空 body / 网关错误：包装成领域异常。
+        throw TiebaException('接口返回非 JSON（可能被风控拦截）');
+      }
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 吧内搜索（TiebaLite MiniTiebaApi.searchPost 等价：
+  /// POST /c/s/searchpost，word/kw/pn/rn/only_thread/sm + MINI 公共参数集，
+  /// 标题与正文都参与匹配——这才是真正的搜索，替代旧的"拉列表客户端过滤"）。
+  Future<SearchPostsResult> searchPosts(String keyword, String forum,
+      {int page = 1}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final params = <String, String>{
+      // defaultCommonParamInterceptor（登录时带 BDUSS，游客不带）
+      if (_bduss.isNotEmpty) 'BDUSS': _bduss,
+      '_client_id': _device.clientId,
+      '_client_type': '2',
+      '_os_version': '13',
+      'model': _device.model,
+      'net_type': '1',
+      '_phone_imei': _device.imei,
+      'timestamp': '$now',
+      // MINI_TIEBA_API 附加
+      'cuid': _device.cuid,
+      'cuid_galaxy2': _device.cuid,
+      'from': '1021636m',
+      '_client_version': '7.2.0.0',
+      'subapp_type': 'mini',
+      // searchPost 显式字段
+      'word': keyword,
+      'kw': forum,
+      'pn': '$page',
+      'rn': '30',
+      'only_thread': '0',
+      'sm': '1',
+    };
+    final json = await _signAndPostForm(
+        'http://c.tieba.baidu.com/c/s/searchpost', params,
+        userAgent: 'bdtb for Android 7.2.0.0');
+    final code = (json['error_code'] ?? '').toString();
+    if (code.isNotEmpty && code != '0') {
+      throw TiebaException(
+          '搜索失败 $code ${(json['error_msg'] ?? '').toString()}');
+    }
+    final hits = <SearchHit>[];
+    final postList = json['post_list'];
+    for (final item in (postList is List ? postList : const [])) {
+      if (item is! Map) continue;
+      final m = item.cast<String, Object?>();
+      final tid = int.tryParse((m['tid'] ?? '').toString()) ?? 0;
+      if (tid == 0) continue;
+      final authorRaw = m['author'];
+      final author = authorRaw is Map ? authorRaw.cast<String, Object?>() : null;
+      var name = (author?['name_show'] ?? '').toString();
+      if (name.isEmpty) name = (author?['name'] ?? '').toString();
+      hits.add(SearchHit(
+        tid: tid,
+        forum: (m['fname'] ?? forum).toString(),
+        title: (m['title'] ?? '').toString(),
+        content: _stripHtml((m['content'] ?? '').toString()),
+        time: int.tryParse((m['time'] ?? '').toString()) ?? 0,
+        author: name,
+      ));
+    }
+    final pageRaw = json['page'];
+    final pageInfo = pageRaw is Map ? pageRaw.cast<String, Object?>() : null;
+    final hasMore = (pageInfo?['has_more'] ?? '0').toString() == '1';
+    return SearchPostsResult(hits, hasMore);
+  }
+
+  static final RegExp _htmlTag = RegExp(r'<[^>]*>');
+
+  /// 搜索摘要去 HTML 标签（接口返回带 <em> 高亮等标记）。
+  static String _stripHtml(String text) =>
+      text.replaceAll(_htmlTag, '').trim();
+
   /// 登录验证（TiebaLite AccountUtil.updateLoginInfo → loginFlow 等价实现）：
   /// POST http://c.tieba.baidu.com/c/s/login，FormUrlEncoded。
   /// 公共参数集 = defaultCommonParamInterceptor（BDUSS 被 DROP_PARAMS 排除）
@@ -476,60 +630,29 @@ class TiebaClient {
       '_client_version': '11.10.8.6',
       'authsid': 'null',
     };
-    // sign：raw 对排序、无分隔拼接、加盐 MD5（小写 hex）。
-    final rawPairs =
-        params.entries.map((e) => '${e.key}=${e.value}').toList()..sort();
-    final sign = md5
-        .convert(utf8.encode('${rawPairs.join()}tiebaclient!!!'))
-        .toString();
-    // body：编码对排序 & 连接 + sign。
-    final encodedPairs = params.entries
-        .map((e) =>
-            '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-        .toList()
-      ..sort();
-    final body = utf8.encode('${encodedPairs.join('&')}&sign=$sign');
-
-    await _throttle();
-    _lastRequest = DateTime.now();
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 12);
-    try {
-      final request = await client
-          .postUrl(Uri.parse('http://c.tieba.baidu.com/c/s/login'));
-      request.headers.set('User-Agent', 'bdtb for Android 12.25.1.0');
-      request.headers.set('Cookie', 'ka=open');
-      request.headers.set('Charset', 'UTF-8');
-      request.headers.contentType =
-          ContentType('application', 'x-www-form-urlencoded');
-      request.add(body);
-      final response =
-          await request.close().timeout(const Duration(seconds: 20));
-      final text = await response.transform(utf8.decoder).join();
-      if (response.statusCode != 200) {
-        throw TiebaException('login HTTP ${response.statusCode}');
-      }
-      final json = jsonDecode(text) as Map<String, Object?>;
-      final code = (json['error_code'] ?? '').toString();
-      final msg = (json['error_msg'] ?? '').toString();
-      if (code != '0') {
-        return TiebaLoginResult(null, code, msg); // 凭据无效
-      }
-      final user = json['user'] as Map<String, Object?>?;
-      final name = (user?['name'] ?? '').toString();
-      if (user == null || name.isEmpty) {
-        return TiebaLoginResult(null, code, '响应缺少 user');
-      }
-      return TiebaLoginResult(
-          TiebaUserProfile(
-              id: int.tryParse((user['id'] ?? '').toString()) ?? 0,
-              name: name,
-              portrait: (user['portrait'] ?? '').toString()),
-          code,
-          msg);
-    } finally {
-      client.close(force: true);
+    final json = await _signAndPostForm(
+        'http://c.tieba.baidu.com/c/s/login', params,
+        // UA 版本必须与 _client_version=11.10.8.6 一致（TiebaLite
+        // loginFlow 显式覆盖 UA；版本交叉不一致可能触发风控）。
+        userAgent: 'bdtb for Android 11.10.8.6');
+    final code = (json['error_code'] ?? '').toString();
+    final msg = (json['error_msg'] ?? '').toString();
+    if (code != '0') {
+      return TiebaLoginResult(null, code, msg); // 凭据无效
     }
+    final userRaw = json['user'];
+    final user = userRaw is Map ? userRaw.cast<String, Object?>() : null;
+    final name = (user?['name'] ?? '').toString();
+    if (user == null || name.isEmpty) {
+      return TiebaLoginResult(null, code, '响应缺少 user');
+    }
+    return TiebaLoginResult(
+        TiebaUserProfile(
+            id: int.tryParse((user['id'] ?? '').toString()) ?? 0,
+            name: name,
+            portrait: (user['portrait'] ?? '').toString()),
+        code,
+        msg);
   }
 
   /// 请求个人资料（严格对齐 TiebaLite UserApiImpl.userProfileFlow 的
@@ -614,14 +737,15 @@ class TiebaClient {
       request.add(body);
       final response =
           await request.close().timeout(const Duration(seconds: 30));
-      final bytes = <int>[];
-      await for (final chunk in response) {
-        bytes.addAll(chunk);
-      }
+      // body 阶段也要有超时：慢速滴流的服务端会让 await-for 永久挂起。
+      final bytes = await response
+          .fold<BytesBuilder>(
+              BytesBuilder(copy: false), (builder, chunk) => builder..add(chunk))
+          .timeout(const Duration(seconds: 60));
       if (response.statusCode != 200) {
         throw TiebaException('贴吧 HTTP ${response.statusCode}');
       }
-      return Uint8List.fromList(bytes);
+      return bytes.toBytes();
     } on SocketException {
       throw TiebaException('网络连接失败');
     } on TimeoutException {
@@ -709,7 +833,10 @@ class TiebaClient {
               '',
           authorId: authorId,
           subNumber: post.varint(13),
-          subPosts: _parseSubPostLists(post.messages(15))));
+          // Post.sub_post_list(15) 是 SubPost 包装消息：
+          // {pid=1, repeated SubPostList=2}——预览列表在其 field 2。
+          subPosts:
+              _parseSubPostLists(post.message(15)?.messages(2) ?? const [])));
     }
     return PostsPage(hasMore, title, author, createTime, replyNum, viewNum,
         floors,

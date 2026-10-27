@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/database.dart';
 import '../data/models.dart';
 import '../network/tieba_client.dart';
+import '../services/secure_store.dart';
 import '../network/tieba_import.dart';
 import '../prefs.dart';
 import '../widgets/document_card.dart';
@@ -29,10 +30,14 @@ class _SearchPageState extends State<SearchPage> {
   bool _hasMore = false;
   int _offset = 0;
   List<Document> _results = const [];
-  List<ThreadSummary> _networkResults = const [];
+  List<SearchHit> _networkResults = const [];
+  int _netPage = 0;
+  bool _netHasMore = false;
   List<String> _history = [];
   String _lastQuery = '';
-  final TiebaClient _client = TiebaClient();
+  late final TiebaClient _client = TiebaClient(
+      bduss: SecureStore.get('tieba_bduss'),
+      stoken: SecureStore.get('tieba_stoken'));
   String _networkError = '';
 
   @override
@@ -61,8 +66,20 @@ class _SearchPageState extends State<SearchPage> {
       return;
     }
     final offset = append ? _offset : 0;
-    final results = await _db.searchDocuments(query.trim(),
-        fullText: _mode == _SearchMode.localFullText, offset: offset);
+    List<Document> results;
+    try {
+      results = await _db.searchDocuments(query.trim(),
+          fullText: _mode == _SearchMode.localFullText, offset: offset);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _searching = false;
+          _searched = true;
+          _networkError = '本地搜索失败：$error';
+        });
+      }
+      return;
+    }
     if (!append) {
       AppHistory.push(query.trim());
     }
@@ -83,22 +100,34 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  /// 网络搜索：与网络浏览同一接口——抓两吧前 3 页列表，按标题过滤。
+  /// 网络搜索：贴吧官方吧内搜索接口（/c/s/searchpost，TiebaLite
+  /// MiniTiebaApi.searchPost 同款）——标题与正文全文匹配，按页翻页；
+  /// 两个吧各搜一页后合并去重（旧实现是"拉列表前 3 页客户端过滤标题"，
+  /// 搜不到正文、覆盖只有最新 3 页，已废弃）。
   Future<void> _runNetworkSearch(String query, {bool append = false}) async {
     const forums = ['yy小说吧', '哀伤雪刃'];
-    var matches = <ThreadSummary>[];
+    final page = append ? _netPage + 1 : 1;
     try {
+      final merged = <SearchHit>[];
+      // 仅 append 时对已有结果去重：全新搜索若也拿旧查询的 tid 当
+      // 去重域，会把新旧查询共同命中的帖子静默丢掉。
+      final seen = <int>{
+        if (append) for (final h in _networkResults) h.tid
+      };
+      var hasMore = false;
       for (final forum in forums) {
-        for (var page = 1; page <= 3; page++) {
-          final result = await _client.requestThreads(forum, page);
-          matches.addAll(result.threads.where(
-              (t) => !t.deleted && !t.masked && t.title.contains(query)));
-          if (!result.hasMore) break;
+        final result = await _client.searchPosts(query, forum, page: page);
+        hasMore = hasMore || result.hasMore;
+        for (final hit in result.hits) {
+          if (seen.add(hit.tid)) merged.add(hit);
         }
       }
       if (mounted) {
         setState(() {
-          _networkResults = matches;
+          _networkResults =
+              append ? [..._networkResults, ...merged] : merged;
+          _netPage = page;
+          _netHasMore = hasMore;
           _networkError = '';
           _searched = true;
           _lastQuery = query;
@@ -189,7 +218,10 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
             Expanded(
-              child: _searching
+              child: _searching &&
+                      (_mode == _SearchMode.network
+                          ? _networkResults.isEmpty
+                          : _results.isEmpty)
                   ? const Center(child: CircularProgressIndicator())
                   : !_searched
                       ? ListView(
@@ -241,7 +273,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildNetworkResults(ColorScheme scheme) {
-    if (_networkError.isNotEmpty) {
+    if (_networkError.isNotEmpty && _networkResults.isEmpty) {
       return Center(
           child: Text(_networkError,
               textAlign: TextAlign.center,
@@ -249,15 +281,59 @@ class _SearchPageState extends State<SearchPage> {
     }
     if (_networkResults.isEmpty) {
       return Center(
-          child: Text('贴吧前 3 页未找到含该关键词的帖子',
+          child: Text('两个吧内未搜到「$_lastQuery」相关帖子',
               style: TextStyle(color: scheme.onSurfaceVariant)));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _networkResults.length,
+      itemCount: _networkResults.length + 1,
       itemBuilder: (context, index) {
-        final thread = _networkResults[index];
-        final date = TiebaImporter.networkDate(thread.createTime);
+        if (index == _networkResults.length) {
+          // append 失败：保留已加载结果，尾部给错误 + 重试入口。
+          if (_networkError.isNotEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                children: [
+                  Text(_networkError,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _searching = true;
+                        _networkError = '';
+                      });
+                      _runNetworkSearch(_lastQuery, append: true);
+                    },
+                    child: const Text('重试加载更多'),
+                  ),
+                ],
+              ),
+            );
+          }
+          if (!_netHasMore) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: _searching
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : OutlinedButton(
+                      onPressed: () {
+                        setState(() => _searching = true);
+                        _runNetworkSearch(_lastQuery, append: true);
+                      },
+                      child: const Text('加载更多结果')),
+            ),
+          );
+        }
+        final hit = _networkResults[index];
+        final date = TiebaImporter.networkDate(hit.time);
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(
@@ -266,17 +342,30 @@ class _SearchPageState extends State<SearchPage> {
             child: ListTile(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20)),
-              title: Text(thread.title,
+              title: Text(
+                  hit.title.isEmpty ? '（无标题）' : hit.title,
                   maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                  '${thread.author} · 回复 ${thread.replyCount}'
-                  '${date.isEmpty ? '' : ' · $date'}',
-                  style:
-                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hit.content.isNotEmpty)
+                    Text(hit.content,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurface)),
+                  const SizedBox(height: 2),
+                  Text(
+                      '${hit.author.isEmpty ? '匿名' : hit.author} · ${hit.forum}'
+                      '${date.isEmpty ? '' : ' · $date'}',
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.onSurfaceVariant)),
+                ],
+              ),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) =>
-                    TiebaThreadPage(fname: thread.forum, tid: thread.tid),
+                    TiebaThreadPage(fname: hit.forum, tid: hit.tid),
               )),
             ),
           ),
