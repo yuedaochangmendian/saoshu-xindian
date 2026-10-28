@@ -62,8 +62,11 @@ class _CollectionPageState extends State<CollectionPage> {
   }
 
   Future<void> _editNote([Map<String, Object?>? note]) async {
+    // 历史版本把空标题强存成「未命名」——编辑时还原为空字段，
+    // 否则用户删掉保存又变回来（"标题删不掉"）。
+    final rawTitle = note?['title'] as String? ?? '';
     final titleController =
-        TextEditingController(text: note?['title'] as String? ?? '');
+        TextEditingController(text: rawTitle == '未命名' ? '' : rawTitle);
     final contentController =
         TextEditingController(text: note?['content'] as String? ?? '');
     final saved = await showModalBottomSheet<bool>(
@@ -80,7 +83,14 @@ class _CollectionPageState extends State<CollectionPage> {
           children: [
             TextField(
                 controller: titleController,
-                decoration: const InputDecoration(hintText: '简记标题')),
+                decoration: InputDecoration(
+                    hintText: '标题（可留空）',
+                    hintStyle: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.55),
+                        fontSize: 14))),
             const SizedBox(height: 10),
             TextField(
                 controller: contentController,
@@ -100,7 +110,7 @@ class _CollectionPageState extends State<CollectionPage> {
     final now = DateTime.now().toIso8601String();
     if (note == null) {
       await db.insert('user_notes', {
-        'title': titleController.text.isEmpty ? '未命名' : titleController.text,
+        'title': titleController.text.trim(),
         'content': contentController.text,
         'created_at': now,
         'updated_at': now,
@@ -149,7 +159,9 @@ class _CollectionPageState extends State<CollectionPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除简记'),
-        content: Text('确定删除「${note['title']}」？'),
+        content: Text((note['title'] as String? ?? '').isEmpty
+            ? '确定删除这条简记？'
+            : '确定删除「${note['title']}」？'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -256,9 +268,18 @@ class _CollectionPageState extends State<CollectionPage> {
                               child: ListTile(
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(20)),
-                                title: Text(note['title'] as String? ?? '',
+                                title: Text(
+                                    (note['title'] as String? ?? '')
+                                            .isEmpty
+                                        ? '（未命名）'
+                                        : note['title'] as String,
                                     maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: (note['title'] as String? ?? '')
+                                            .isEmpty
+                                        ? TextStyle(
+                                            color: scheme.onSurfaceVariant)
+                                        : null),
                                 subtitle: Text(note['content'] as String? ?? '',
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis),
