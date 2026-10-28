@@ -32,6 +32,18 @@ class SystemBridge {
     }
   }
 
+  /// SAF 选一个文本文件并读取内容。返回 {name, content}；取消返回 null。
+  static Future<Map<String, String>?> pickTextFile() async {
+    try {
+      final result = await _channel.invokeMethod('pickTextFile');
+      if (result == null) return null;
+      return Map<String, Object?>.from(result as Map).map(
+          (key, value) => MapEntry(key, value?.toString() ?? ''));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 切换桌面图标：启用指定 alias、禁用其余。alias 如 'LauncherPhoto'。
   static Future<void> setLauncherIcon(String alias) async {
     try {

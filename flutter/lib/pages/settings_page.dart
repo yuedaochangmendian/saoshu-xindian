@@ -393,6 +393,29 @@ class _BackupSectionState extends State<_BackupSection> {
     });
   }
 
+  /// 从任意位置的备份 .json 恢复（SAF 选文件）：导出的备份在公共
+  /// 下载目录，「从本机恢复」只列私有目录副本，此为补全入口。
+  Future<void> _restoreFromFile() async {
+    final scope = AppScope.of(context);
+    final picked = await SystemBridge.pickTextFile();
+    if (!mounted || picked == null) return;
+    final name = picked['name'] ?? '';
+    final content = picked['content'] ?? '';
+    if (!content.trim().startsWith('{')) {
+      _toast('所选文件不是备份 JSON（$name）');
+      return;
+    }
+    final db = await AppDatabase.instance.database;
+    await _run(() async {
+      final summary = await BackupService.restoreFromContent(
+          content, scope.prefs, db);
+      _syncAfterRestore(scope);
+      return '恢复完成（$name）：收藏 ${summary['favorites']} 条，'
+          '简记 ${summary['notesAdded']} 条，'
+          '网络帖子 ${summary['postsAdded'] ?? 0} 条';
+    });
+  }
+
   /// WebDAV 流程：保存配置 → 执行备份（或列出云端备份选择恢复）。
   Future<void> _webdavFlow({required bool restore}) async {
     final scope = AppScope.of(context);
@@ -553,6 +576,12 @@ class _BackupSectionState extends State<_BackupSection> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            _MiniAction(
+              icon: Icons.file_open_outlined,
+              label: '从文件恢复备份（选 .json）',
+              onTap: _busy ? null : _restoreFromFile,
             ),
             const Divider(height: 24),
             Text('WebDAV 云备份',
