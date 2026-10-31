@@ -120,7 +120,7 @@ class _CollectionPageState extends State<CollectionPage> {
       await db.update(
           'user_notes',
           {
-            'title': titleController.text,
+            'title': titleController.text.trim(),
             'content': contentController.text,
             'updated_at': now,
           },
@@ -136,7 +136,9 @@ class _CollectionPageState extends State<CollectionPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除简记'),
-        content: Text('确定删除「${note['title']}」的简记？'),
+        content: (note['title'] as String? ?? '').trim().isEmpty
+            ? const Text('确定删除这条简记？')
+            : Text('确定删除「${note['title']}」的简记？'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
