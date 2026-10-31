@@ -17,7 +17,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import android.provider.MediaStore
-import android.provider.OpenableColumns
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -32,10 +31,6 @@ class MainActivity : FlutterActivity() {
 
     private var pinResult: MethodChannel.Result? = null
     private val pickImageCode = 4201
-
-    // pickTextFile：SAF 选文本文件（简记 .txt / 备份 .json）并读回内容
-    private var textFileResult: MethodChannel.Result? = null
-    private val pickTextCode = 4202
 
     // saveToDownloads 在 API<29 需要 WRITE_EXTERNAL_STORAGE 运行时授权
     private var saveResult: MethodChannel.Result? = null
@@ -216,30 +211,6 @@ class MainActivity : FlutterActivity() {
                             result.error("unavailable", e.message, null)
                         }
                     }
-                    "pickTextFile" -> {
-                        try {
-                            textFileResult?.error(
-                                "busy", "another file pick is in progress", null)
-                            textFileResult = result
-                            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type = "*/*"
-                                putExtra(
-                                    Intent.EXTRA_MIME_TYPES,
-                                    arrayOf(
-                                        "text/plain",
-                                        "application/json",
-                                        "text/*",
-                                        "application/octet-stream"
-                                    )
-                                )
-                            }
-                            startActivityForResult(picker, pickTextCode)
-                        } catch (e: Exception) {
-                            textFileResult = null
-                            result.error("unavailable", e.message, null)
-                        }
-                    }
                     "pickImageAndPinShortcut" -> {
                         // Android 无公开 API 用任意位图替换应用图标；
                         // 官方近似 = 打开系统图片选择器，选完后把带自定义
@@ -305,43 +276,8 @@ private fun legacyWriteToDownloads(
             )
         }
     }
-    /// 读取 SAF 选中的文本文件（UTF-8），返回 {name, content}；取消返回 null。
-    private fun handleTextFileResult(resultCode: Int, data: Intent?) {
-        val pending = textFileResult
-        textFileResult = null
-        if (pending == null) return
-        if (resultCode != Activity.RESULT_OK || data?.data == null) {
-            pending.success(null)
-            return
-        }
-        try {
-            val uri = data.data!!
-            var name = "导入的文件"
-            contentResolver.query(
-                uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    name = cursor.getString(0) ?: name
-                }
-            }
-            val bytes = contentResolver.openInputStream(uri)?.use {
-                it.readBytes()
-            } ?: throw IOException("无法读取所选文件")
-            pending.success(mapOf(
-                "name" to name,
-                "content" to bytes.toString(Charsets.UTF_8)
-            ))
-        } catch (e: Exception) {
-            pending.error("unavailable", e.message, null)
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == pickTextCode) {
-            handleTextFileResult(resultCode, data)
-            return
-        }
         if (requestCode != pickImageCode) return
         val pending = pinResult
         pinResult = null

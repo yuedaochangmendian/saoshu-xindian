@@ -1,13 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../prefs.dart';
 import '../data/database.dart';
 import '../data/models.dart';
-import '../services/system_bridge.dart';
 import '../widgets/document_card.dart';
 import 'reader_page.dart';
 
@@ -134,107 +130,6 @@ class _CollectionPageState extends State<CollectionPage> {
     _reload();
   }
 
-  /// 单篇简记的纯文本形式。
-  String _noteText(Map<String, Object?> note) {
-    final title =
-        (note['title'] as String? ?? '').trim();
-    final content = (note['content'] as String? ?? '').trim();
-    final updated = (note['updated_at'] as String? ?? '');
-    final buffer = StringBuffer();
-    buffer.writeln(title.isEmpty ? '（未命名简记）' : title);
-    buffer.writeln();
-    buffer.writeln(content.isEmpty ? '（空内容）' : content);
-    buffer.writeln();
-    buffer.writeln('—— 扫书新典${updated.isEmpty ? '' : ' · ${updated.replaceAll('T', ' ').substring(0, 16)}'}');
-    return buffer.toString();
-  }
-
-  String _safeFileName(String raw, {String fallback = '未命名简记'}) {
-    var name = raw
-        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (name.isEmpty) name = fallback;
-    if (name.length > 40) name = name.substring(0, 40);
-    return '简记-$name.txt';
-  }
-
-  Future<void> _exportNote(Map<String, Object?> note) async {
-    final name =
-        _safeFileName((note['title'] as String? ?? '').trim());
-    final result = await SystemBridge.saveToDownloads(
-        name, Uint8List.fromList(utf8.encode(_noteText(note))));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-          content: Text(result.startsWith('error:')
-              ? '导出失败：$result'
-              : '已导出：$result')));
-  }
-
-  Future<void> _exportAllNotes() async {
-    final messenger = ScaffoldMessenger.of(context);
-    var ok = 0;
-    String? lastError;
-    for (final note in _notes) {
-      final name =
-          _safeFileName((note['title'] as String? ?? '').trim());
-      final result = await SystemBridge.saveToDownloads(
-          name, Uint8List.fromList(utf8.encode(_noteText(note))));
-      if (result.startsWith('error:')) {
-        lastError = result;
-      } else {
-        ok++;
-      }
-    }
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-          content: Text(lastError == null
-              ? '已导出 $ok 篇简记（每篇一个 txt，位于 下载/扫书新典/）'
-              : '导出 $ok 篇，$lastError')));
-  }
-
-  /// 从 .txt 文件导入简记：文件名作标题，全文作内容。
-  Future<void> _importNotesFromFile() async {
-    final picked = await SystemBridge.pickTextFile();
-    if (!mounted || picked == null) return;
-    final rawName = (picked['name'] ?? '').trim();
-    var title = rawName.replaceAll(RegExp(r'\.(txt|md|json)$', caseSensitive: false), '').trim();
-    final content = picked['content'] ?? '';
-    if (content.trim().isEmpty) {
-      _toast('所选文件为空');
-      return;
-    }
-    if (title.isEmpty) {
-      title = content
-          .split('\n')
-          .map((line) => line.trim())
-          .firstWhere((line) => line.isNotEmpty, orElse: () => '')
-          .replaceAll('#', '')
-          .trim();
-      if (title.length > 30) title = title.substring(0, 30);
-    }
-    final db = await _db.database;
-    final now = DateTime.now().toIso8601String();
-    await db.insert('user_notes', {
-      'title': title,
-      'content': content,
-      'created_at': now,
-      'updated_at': now,
-    });
-    _toast('已导入：${title.isEmpty ? '未命名简记' : title}');
-    _reload();
-  }
-
-  void _toast(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
   /// 滑动删除的确认框：返回 true 才允许滑走并删除。
   Future<bool> _confirmDeleteNote(Map<String, Object?> note) async {
     final confirmed = await showDialog<bool>(
@@ -338,33 +233,11 @@ class _CollectionPageState extends State<CollectionPage> {
                           ),
                         )),
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('简记',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: scheme.onSurface)),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton.icon(
-                            onPressed: _importNotesFromFile,
-                            icon: const Icon(Icons.file_open_outlined,
-                                size: 18),
-                            label: const Text('导入'),
-                          ),
-                          TextButton.icon(
-                            onPressed: _notes.isEmpty ? null : _exportAllNotes,
-                            icon: const Icon(Icons.ios_share_rounded,
-                                size: 18),
-                            label: const Text('导出全部'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                  Text('简记',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface)),
                   if (_notes.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -411,26 +284,6 @@ class _CollectionPageState extends State<CollectionPage> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis),
                                 onTap: () => _editNote(note),
-                                trailing: PopupMenuButton<String>(
-                                  tooltip: '更多',
-                                  onSelected: (action) {
-                                    if (action == 'export') {
-                                      _exportNote(note);
-                                    } else if (action == 'delete') {
-                                      _confirmDeleteNote(note).then((ok) {
-                                        if (ok) _reload();
-                                      });
-                                    }
-                                  },
-                                  itemBuilder: (_) => const [
-                                    PopupMenuItem(
-                                        value: 'export',
-                                        child: Text('导出为 txt 文件')),
-                                    PopupMenuItem(
-                                        value: 'delete',
-                                        child: Text('删除简记')),
-                                  ],
-                                ),
                               ),
                             ),
                           ),
